@@ -1,0 +1,261 @@
+
+    <div *ngIf="loading" class="spinner-overlay" style="min-height:400px;">
+      <div class="spinner"></div>
+    </div>
+
+    <div *ngIf="!loading && !session" class="container" style="padding:60px 24px;text-align:center;">
+      <div style="font-size:3rem;margin-bottom:12px;">😕</div>
+      <h2 style="color:#4A5568;">Session introuvable</h2>
+      <a routerLink="/sessions" class="btn btn-primary" style="margin-top:20px;">Retour aux sessions</a>
+    </div>
+
+    <ng-container *ngIf="!loading && session">
+      <!-- Header -->
+      <div class="session-header" [class.header-cancelled]="session.status === 'CANCELLED'">
+        <div class="container">
+          <div class="header-top">
+            <a routerLink="/sessions" class="back-link">← Retour aux sessions</a>
+            <span class="badge" [ngClass]="'badge-' + session.status.toLowerCase()">
+              {{ getStatusLabel(session.status) }}
+            </span>
+          </div>
+          <h1>{{ session.title }}</h1>
+          <p class="session-subtitle">{{ session.description }}</p>
+        </div>
+      </div>
+
+      <!-- Cancelled banner -->
+      <div class="cancelled-banner" *ngIf="session.status === 'CANCELLED'">
+        <div class="container">
+          <div class="cancelled-inner">
+            <span class="cancelled-icon">🚫</span>
+            <div>
+              <strong>Session annulée</strong>
+              <p>Cette session a été annulée et n'accepte plus de candidatures. Consultez nos autres sessions disponibles.</p>
+            </div>
+            <a routerLink="/sessions" class="btn btn-outline-white">Voir les sessions →</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="container" style="padding-top:32px;padding-bottom:48px;">
+        <div class="detail-layout">
+          <!-- Main Content -->
+          <div class="detail-main">
+
+            <!-- Countdown (OPEN only) -->
+            <div class="countdown-card" *ngIf="session.status === 'OPEN'">
+              <div class="countdown-icon">⏳</div>
+              <div class="countdown-content">
+                <div class="countdown-label">Temps restant pour candidater</div>
+                <div class="countdown-value" [class.urgent]="getDaysLeft() < 7">
+                  {{ getDaysLeft() > 0 ? getDaysLeft() + ' jours' : 'Délai expiré' }}
+                </div>
+                <div class="countdown-date">Deadline : {{ session.submissionDeadline | date:'dd MMMM yyyy' }}</div>
+              </div>
+            </div>
+
+            <!-- Already applied: show submitted data -->
+            <div class="applied-card" *ngIf="myCandidature">
+              <div class="applied-header">
+                <span class="applied-icon">✅</span>
+                <div>
+                  <h2>Votre candidature est soumise</h2>
+                  <p>Déposée le {{ myCandidature.submittedAt | date:'dd/MM/yyyy à HH:mm' }}</p>
+                </div>
+                <span class="cand-status-badge" [ngClass]="'cs-' + myCandidature.status.toLowerCase()">
+                  {{ getCandidatureStatusLabel(myCandidature.status) }}
+                </span>
+              </div>
+
+              <!-- Score if available -->
+              <div class="score-row-block" *ngIf="myCandidature.totalScore !== null">
+                <span class="score-label-txt">Score obtenu</span>
+                <div class="score-pill">{{ myCandidature.totalScore | number:'1.1-1' }} / 10</div>
+              </div>
+
+              <!-- Rejection reason -->
+              <div class="rejection-note" *ngIf="myCandidature.status === 'REJECTED' && myCandidature.rejectionReason">
+                <strong>Motif du rejet :</strong> {{ myCandidature.rejectionReason }}
+              </div>
+
+              <div class="applied-body">
+                <div class="data-section">
+                  <h3>Informations du projet</h3>
+                  <div class="data-grid">
+                    <div class="data-item">
+                      <span class="data-label">Nom du projet</span>
+                      <span class="data-val">{{ myCandidature.projectName }}</span>
+                    </div>
+                    <div class="data-item">
+                      <span class="data-label">Domaine</span>
+                      <span class="data-val">{{ myCandidature.domain }}</span>
+                    </div>
+                    <div class="data-item">
+                      <span class="data-label">Stade</span>
+                      <span class="data-val">{{ myCandidature.currentStage }}</span>
+                    </div>
+                    <div class="data-item">
+                      <span class="data-label">Taille de l'équipe</span>
+                      <span class="data-val">{{ myCandidature.teamSize }} membre(s)</span>
+                    </div>
+                    <div class="data-item">
+                      <span class="data-label">Tech Stack</span>
+                      <span class="data-val">{{ myCandidature.techStack }}</span>
+                    </div>
+                    <div class="data-item">
+                      <span class="data-label">Marché cible</span>
+                      <span class="data-val">{{ myCandidature.targetMarket }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="data-section">
+                  <h3>Description</h3>
+                  <div class="data-text-block">
+                    <div class="data-label">Description générale</div>
+                    <p>{{ myCandidature.projectDescription }}</p>
+                  </div>
+                  <div class="data-text-block">
+                    <div class="data-label">Problème identifié</div>
+                    <p>{{ myCandidature.problemStatement }}</p>
+                  </div>
+                  <div class="data-text-block">
+                    <div class="data-label">Solution proposée</div>
+                    <p>{{ myCandidature.solutionDescription }}</p>
+                  </div>
+                  <div class="data-text-block">
+                    <div class="data-label">Modèle économique</div>
+                    <p>{{ myCandidature.businessModel }}</p>
+                  </div>
+                  <div class="data-text-block">
+                    <div class="data-label">Parcours de l'équipe</div>
+                    <p>{{ myCandidature.teamBackground }}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="applied-footer">
+                <a routerLink="/my-application" class="btn btn-primary">Voir mon dossier complet →</a>
+              </div>
+            </div>
+
+            <!-- About -->
+            <div class="detail-card">
+              <h2 class="card-title">À propos de cette session</h2>
+              <p class="about-text">{{ session.description }}</p>
+            </div>
+
+            <!-- Criteria -->
+            <div class="detail-card">
+              <h2 class="card-title">Critères d'évaluation</h2>
+              <div class="criteria-grid">
+                <div class="criteria-item">
+                  <div class="criteria-score">30%</div>
+                  <div class="criteria-label">Innovation</div>
+                </div>
+                <div class="criteria-item">
+                  <div class="criteria-score">25%</div>
+                  <div class="criteria-label">Faisabilité technique</div>
+                </div>
+                <div class="criteria-item">
+                  <div class="criteria-score">25%</div>
+                  <div class="criteria-label">Impact marché</div>
+                </div>
+                <div class="criteria-item">
+                  <div class="criteria-score">20%</div>
+                  <div class="criteria-label">Qualité de l'équipe</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sidebar -->
+          <div class="detail-sidebar">
+            <!-- Session Info -->
+            <div class="sidebar-card">
+              <h3>Informations</h3>
+              <div class="info-list">
+                <div class="info-item">
+                  <span class="info-icon">📅</span>
+                  <div>
+                    <div class="info-label">Date de début</div>
+                    <div class="info-value">{{ session.startDate | date:'dd/MM/yyyy' }}</div>
+                  </div>
+                </div>
+                <div class="info-item">
+                  <span class="info-icon">📅</span>
+                  <div>
+                    <div class="info-label">Date de fin</div>
+                    <div class="info-value">{{ session.endDate | date:'dd/MM/yyyy' }}</div>
+                  </div>
+                </div>
+                <div class="info-item">
+                  <span class="info-icon">⏰</span>
+                  <div>
+                    <div class="info-label">Deadline candidature</div>
+                    <div class="info-value deadline">{{ session.submissionDeadline | date:'dd/MM/yyyy' }}</div>
+                  </div>
+                </div>
+                <div class="info-item">
+                  <span class="info-icon">🏢</span>
+                  <div>
+                    <div class="info-label">Projets maximum</div>
+                    <div class="info-value">{{ session.maxProjects }} projets</div>
+                  </div>
+                </div>
+                <div class="info-item">
+                  <span class="info-icon">👤</span>
+                  <div>
+                    <div class="info-label">Créé par</div>
+                    <div class="info-value">{{ session.createdByAdminName }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- CTA sidebar — OPEN and not yet applied -->
+            <div class="cta-card" *ngIf="session.status === 'OPEN' && !myCandidature">
+              <ng-container *ngIf="isPorteur(); else notPorteur">
+                <h3>Prêt à candidater ?</h3>
+                <p>Soumettez votre projet innovant pour cette session.</p>
+                <a [routerLink]="['/apply', session.id]" class="btn btn-accent" style="width:100%;margin-top:12px;">
+                  Déposer ma candidature
+                </a>
+              </ng-container>
+              <ng-template #notPorteur>
+                <ng-container *ngIf="!isLoggedIn(); else wrongRole">
+                  <h3>Candidater à cette session</h3>
+                  <p>Connectez-vous pour déposer votre candidature.</p>
+                  <a routerLink="/login" class="btn btn-primary" style="width:100%;margin-top:12px;">Se connecter</a>
+                  <a routerLink="/register" class="btn btn-outline" style="width:100%;margin-top:8px;">Créer un compte</a>
+                </ng-container>
+                <ng-template #wrongRole>
+                  <div class="info-note">Seuls les porteurs de projet peuvent candidater.</div>
+                </ng-template>
+              </ng-template>
+            </div>
+
+            <!-- Already applied sidebar badge -->
+            <div class="sidebar-applied" *ngIf="session.status === 'OPEN' && myCandidature">
+              <div class="sa-icon">✅</div>
+              <div class="sa-text">
+                <strong>Déjà postulé</strong>
+                <span>Votre candidature est en cours de traitement.</span>
+              </div>
+            </div>
+
+            <!-- Not open notice -->
+            <div class="closed-notice" *ngIf="session.status !== 'OPEN'">
+              <div style="font-size:1.5rem;margin-bottom:8px;">
+                {{ session.status === 'CANCELLED' ? '🚫' : '🔒' }}
+              </div>
+              <p>{{ session.status === 'CANCELLED'
+                  ? 'Cette session a été annulée.'
+                  : 'Cette session n\'accepte plus de candidatures.' }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+ 

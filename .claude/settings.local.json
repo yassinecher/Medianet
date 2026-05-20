@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($src = Get-Item \"C:\\\\Users\\\\EL PANDAs\\\\Downloads\\\\System d'incubation.docx\"; Copy-Item -LiteralPath $src.FullName -Destination \"C:\\\\Users\\\\EL PANDAs\\\\Downloads\\\\System_incubation.docx\"; Write-Host \"Done\")",
+      "Read(//c/Users/EL PANDAs/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/c87187b2-3a90-45a8-9b9e-d561cf023cff/3f85d931-856c-4c03-8983-446a166be657/skills/docx/**)",
+      "Bash(python scripts/office/unpack.py \"C:/Users/EL PANDAs/Downloads/System_incubation.docx\" unpacked_doc/)",
+      "Bash(npm create *)",
+      "Bash(npm install *)",
+      "PowerShell(java -version 2>&1)",
+      "PowerShell(javac -version 2>&1)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Where-Object { $_ -match \"Java|JDK|JRE|Maven|Eclipse\" })",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(del \"C:\\\\Users\\\\EL PANDAs\\\\Documents\\\\Medianet\\\\backend\\\\auth-service\\\\src\\\\main\\\\java\\\\com\\\\medianet\\\\auth\\\\entity\\\\PermissionCatalog.java\")"
+    ]
+  }
+}

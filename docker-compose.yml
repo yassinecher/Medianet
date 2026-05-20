@@ -1,0 +1,208 @@
+version: '3.8'
+
+services:
+  postgres-auth:
+    image: postgres:15
+    container_name: postgres-auth
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: medianet
+      POSTGRES_PASSWORD: medianet2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    networks:
+      - medianet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medianet -d auth_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-session:
+    image: postgres:15
+    container_name: postgres-session
+    environment:
+      POSTGRES_DB: session_db
+      POSTGRES_USER: medianet
+      POSTGRES_PASSWORD: medianet2024
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_session_data:/var/lib/postgresql/data
+    networks:
+      - medianet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medianet -d session_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-candidature:
+    image: postgres:15
+    container_name: postgres-candidature
+    environment:
+      POSTGRES_DB: candidature_db
+      POSTGRES_USER: medianet
+      POSTGRES_PASSWORD: medianet2024
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_candidature_data:/var/lib/postgresql/data
+    networks:
+      - medianet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medianet -d candidature_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: medianet-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - medianet-network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: medianet-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: medianet
+      RABBITMQ_DEFAULT_PASS: medianet2024
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - medianet-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  eureka-server:
+    build: ./backend/eureka-server
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    networks:
+      - medianet-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8761/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  auth-service:
+    build: ./backend/auth-service
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-auth:5432/auth_db
+      SPRING_DATASOURCE_USERNAME: medianet
+      SPRING_DATASOURCE_PASSWORD: medianet2024
+      JWT_SECRET: medianet-super-secret-jwt-key-2024-medianet-incubation
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: medianet
+      SPRING_RABBITMQ_PASSWORD: medianet2024
+      EUREKA_URI: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - medianet-network
+
+  session-service:
+    build: ./backend/session-service
+    container_name: session-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-session:5432/session_db
+      SPRING_DATASOURCE_USERNAME: medianet
+      SPRING_DATASOURCE_PASSWORD: medianet2024
+      JWT_SECRET: medianet-super-secret-jwt-key-2024-medianet-incubation
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: medianet
+      SPRING_RABBITMQ_PASSWORD: medianet2024
+      EUREKA_URI: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-session:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - medianet-network
+
+  candidature-service:
+    build: ./backend/candidature-service
+    container_name: candidature-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-candidature:5432/candidature_db
+      SPRING_DATASOURCE_USERNAME: medianet
+      SPRING_DATASOURCE_PASSWORD: medianet2024
+      JWT_SECRET: medianet-super-secret-jwt-key-2024-medianet-incubation
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: medianet
+      SPRING_RABBITMQ_PASSWORD: medianet2024
+      AUTH_SERVICE_URL: http://auth-service:8081
+      EUREKA_URI: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-candidature:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - medianet-network
+
+  api-gateway:
+    build: ./backend/api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      EUREKA_URI: http://eureka-server:8761/eureka
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - medianet-network
+
+  frontoffice:
+    build: ./frontend/frontoffice
+    container_name: frontoffice
+    ports:
+      - "4200:80"
+    networks:
+      - medianet-network
+
+  backoffice:
+    build: ./frontend/backoffice
+    container_name: backoffice
+    ports:
+      - "4300:80"
+    networks:
+      - medianet-network
+
+networks:
+  medianet-network:
+    driver: bridge
+
+volumes:
+  postgres_auth_data:
+  postgres_session_data:
+  postgres_candidature_data:

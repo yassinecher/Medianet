@@ -1,0 +1,401 @@
+package com.medianet.auth.service;
+
+import com.medianet.auth.dto.*;
+import com.medianet.auth.entity.*;
+import com.medianet.auth.repository.*;
+import com.medianet.auth.security.JwtService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class AuthService {
+
+    private final UserRepository           userRepository;
+    private final RoleRepository           roleRepository;
+    private final PermissionRepository     permissionRepository;
+    private final AdminProfileRepository   adminProfileRepository;
+    private final MentorProfileRepository  mentorProfileRepository;
+    private final PorteurProfileRepository porteurProfileRepository;
+    private final JuryProfileRepository    juryProfileRepository;
+    private final PasswordEncoder          passwordEncoder;
+    private final JwtService               jwtService;
+
+    // ── Auth ─────────────────────────────────────────────────────────────────
+
+    public AuthResponse register(RegisterRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new IllegalArgumentException("Email already in use");
+        }
+
+        // Determine role name(s)
+        Set<String> roleNames = new HashSet<>();
+        if (request.getRoles() != null && !request.getRoles().isEmpty()) {
+            roleNames.addAll(request.getRoles());
+        } else if (request.getRole() != null && !request.getRole().isBlank()) {
+            roleNames.add(request.getRole().toUpperCase());
+        } else {
+            roleNames.add("CANDIDAT");
+        }
+
+        Set<Role> roles = resolveRoles(roleNames);
+
+        User user = User.builder()
+                .email(request.getEmail())
+                .firstName(request.getFirstName())
+                .lastName(request.getLastName())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .roles(roles)
+                .directPermissions(new HashSet<>())
+                .active(true)
+                .build();
+        userRepository.save(user);
+
+        // Auto-create role profile placeholders
+        ensureProfiles(user, roles);
+
+        String token = jwtService.generateToken(user);
+        return buildAuthResponse(token, user);
+    }
+
+    public AuthResponse login(LoginRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new BadCredentialsException("Invalid credentials"));
+        if (!user.isActive()) throw new BadCredentialsException("Account is disabled");
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new BadCredentialsException("Invalid credentials");
+        }
+        String token = jwtService.generateToken(user);
+        return buildAuthResponse(token, user);
+    }
+
+    // ── User reads ────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public UserDto getUserByEmail(String email) {
+        return toDto(userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found")));
+    }
+
+    @Transactional(readOnly = true)
+    public UserDto getUserById(Long id) {
+        return toDto(findUser(id));
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserDto> getAllUsers() {
+        return userRepository.findAll().stream().map(this::toDto).collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserDto> getUsersByRole(String role) {
+        return userRepository.findByRoleName(role.toUpperCase())
+                .stream().map(this::toDto).collect(Collectors.toList());
+    }
+
+    // ── Role management ───────────────────────────────────────────────────────
+
+    /** Legacy: set exactly one role */
+    public UserDto updateRole(Long id, String roleName) {
+        User user = findUser(id);
+        Set<Role> newRoles = resolveRoles(Set.of(roleName.toUpperCase()));
+        user.getRoles().clear();
+        user.getRoles().addAll(newRoles);
+        userRepository.save(user);
+        ensureProfiles(user, newRoles);
+        return toDto(user);
+    }
+
+    /** Replace the full roles set */
+    public UserDto syncRoles(Long id, Set<String> roleNames) {
+        User user = findUser(id);
+        Set<Role> newRoles = resolveRoles(toUpper(roleNames));
+        user.getRoles().clear();
+        user.getRoles().addAll(newRoles);
+        userRepository.save(user);
+        ensureProfiles(user, newRoles);
+        return toDto(user);
+    }
+
+    /** Append roles without removing existing */
+    public UserDto assignRoles(Long id, Set<String> roleNames) {
+        User user = findUser(id);
+        Set<Role> toAdd = resolveRoles(toUpper(roleNames));
+        user.getRoles().addAll(toAdd);
+        userRepository.save(user);
+        ensureProfiles(user, toAdd);
+        return toDto(user);
+    }
+
+    /** Remove specific roles */
+    public UserDto removeRoles(Long id, Set<String> roleNames) {
+        User user = findUser(id);
+        Set<String> upperNames = toUpper(roleNames);
+        user.getRoles().removeIf(r -> upperNames.contains(r.getName()));
+        userRepository.save(user);
+        return toDto(user);
+    }
+
+    // ── Direct permission management ──────────────────────────────────────────
+
+    public UserDto grantPermissions(Long id, Set<String> slugs) {
+        User user = findUser(id);
+        Set<Permission> toGrant = resolvePermissions(slugs);
+        user.getDirectPermissions().addAll(toGrant);
+        userRepository.save(user);
+        return toDto(user);
+    }
+
+    public UserDto revokePermissions(Long id, Set<String> slugs) {
+        User user = findUser(id);
+        user.getDirectPermissions().removeIf(p -> slugs.contains(p.getSlug()));
+        userRepository.save(user);
+        return toDto(user);
+    }
+
+    public UserDto syncPermissions(Long id, Set<String> slugs) {
+        User user = findUser(id);
+        user.getDirectPermissions().clear();
+        if (slugs != null && !slugs.isEmpty()) {
+            user.getDirectPermissions().addAll(resolvePermissions(slugs));
+        }
+        userRepository.save(user);
+        return toDto(user);
+    }
+
+    // ── Role-profile management ───────────────────────────────────────────────
+
+    public AdminProfileDto updateAdminProfile(Long userId, UpdateAdminProfileRequest req) {
+        User user = findUser(userId);
+        AdminProfile p = adminProfileRepository.findByUserId(userId)
+                .orElseGet(() -> AdminProfile.builder().user(user).build());
+        if (req.getDepartment()  != null) p.setDepartment(req.getDepartment());
+        if (req.getPhoneNumber() != null) p.setPhoneNumber(req.getPhoneNumber());
+        if (req.getAdminLevel()  != null) p.setAdminLevel(req.getAdminLevel());
+        return toAdminDto(adminProfileRepository.save(p));
+    }
+
+    public MentorProfileDto updateMentorProfile(Long userId, UpdateMentorProfileRequest req) {
+        User user = findUser(userId);
+        MentorProfile p = mentorProfileRepository.findByUserId(userId)
+                .orElseGet(() -> MentorProfile.builder().user(user).build());
+        if (req.getTitle()              != null) p.setTitle(req.getTitle());
+        if (req.getBio()                != null) p.setBio(req.getBio());
+        if (req.getExpertise()          != null) p.setExpertise(req.getExpertise());
+        if (req.getSpecializations()    != null) p.setSpecializations(req.getSpecializations());
+        if (req.getAvailability()       != null) p.setAvailability(req.getAvailability());
+        if (req.getLinkedInUrl()        != null) p.setLinkedInUrl(req.getLinkedInUrl());
+        if (req.getWebsite()            != null) p.setWebsite(req.getWebsite());
+        if (req.getYearsOfExperience()  != null) p.setYearsOfExperience(req.getYearsOfExperience());
+        return toMentorDto(mentorProfileRepository.save(p));
+    }
+
+    public PorteurProfileDto updatePorteurProfile(Long userId, UpdatePorteurProfileRequest req) {
+        User user = findUser(userId);
+        PorteurProfile p = porteurProfileRepository.findByUserId(userId)
+                .orElseGet(() -> PorteurProfile.builder().user(user).build());
+        if (req.getCompany()     != null) p.setCompany(req.getCompany());
+        if (req.getSector()      != null) p.setSector(req.getSector());
+        if (req.getCity()        != null) p.setCity(req.getCity());
+        if (req.getPhoneNumber() != null) p.setPhoneNumber(req.getPhoneNumber());
+        if (req.getWebsite()     != null) p.setWebsite(req.getWebsite());
+        if (req.getLinkedInUrl() != null) p.setLinkedInUrl(req.getLinkedInUrl());
+        if (req.getBio()         != null) p.setBio(req.getBio());
+        return toPorteurDto(porteurProfileRepository.save(p));
+    }
+
+    public JuryProfileDto updateJuryProfile(Long userId, UpdateJuryProfileRequest req) {
+        User user = findUser(userId);
+        JuryProfile p = juryProfileRepository.findByUserId(userId)
+                .orElseGet(() -> JuryProfile.builder().user(user).build());
+        if (req.getTitle()       != null) p.setTitle(req.getTitle());
+        if (req.getBio()         != null) p.setBio(req.getBio());
+        if (req.getAffiliation() != null) p.setAffiliation(req.getAffiliation());
+        if (req.getExpertise()   != null) p.setExpertise(req.getExpertise());
+        if (req.getLinkedInUrl() != null) p.setLinkedInUrl(req.getLinkedInUrl());
+        return toJuryDto(juryProfileRepository.save(p));
+    }
+
+    // ── Other user operations ─────────────────────────────────────────────────
+
+    public UserDto updateProfile(Long userId, UpdateProfileRequest request) {
+        User user = findUser(userId);
+        if (request.getNewPassword() != null && !request.getNewPassword().isBlank()) {
+            if (request.getCurrentPassword() == null ||
+                    !passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+                throw new IllegalArgumentException("Mot de passe actuel incorrect");
+            }
+            if (request.getNewPassword().length() < 8) {
+                throw new IllegalArgumentException("Le nouveau mot de passe doit contenir au moins 8 caractères");
+            }
+            user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        }
+        user.setFirstName(request.getFirstName());
+        user.setLastName(request.getLastName());
+        userRepository.save(user);
+        return toDto(user);
+    }
+
+    public UserDto toggleActive(Long id) {
+        User user = findUser(id);
+        user.setActive(!user.isActive());
+        userRepository.save(user);
+        return toDto(user);
+    }
+
+    /** Return all permissions as {slug → displayName} map */
+    public Map<String, String> getPermissionCatalog() {
+        return permissionRepository.findAll().stream()
+                .collect(Collectors.toMap(Permission::getSlug, Permission::getDisplayName,
+                        (a, b) -> a, java.util.LinkedHashMap::new));
+    }
+
+    /** Return all roles as {name → displayName} map */
+    public Map<String, String> getRoleCatalog() {
+        return roleRepository.findAll().stream()
+                .collect(Collectors.toMap(Role::getName, Role::getDisplayName,
+                        (a, b) -> a, java.util.LinkedHashMap::new));
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private User findUser(Long id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found: " + id));
+    }
+
+    /** Resolve role name strings to Role entities; create if missing (dev convenience) */
+    private Set<Role> resolveRoles(Set<String> names) {
+        Set<Role> result = new HashSet<>();
+        for (String name : names) {
+            String upper = name.toUpperCase();
+            result.add(roleRepository.findByName(upper)
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown role: " + upper)));
+        }
+        return result;
+    }
+
+    /** Resolve permission slugs to Permission entities */
+    private Set<Permission> resolvePermissions(Set<String> slugs) {
+        Set<Permission> result = new HashSet<>();
+        for (String slug : slugs) {
+            result.add(permissionRepository.findBySlug(slug)
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown permission: " + slug)));
+        }
+        return result;
+    }
+
+    /**
+     * Auto-create empty profile records for newly-assigned roles.
+     * Existing profiles are never touched.
+     */
+    private void ensureProfiles(User user, Set<Role> roles) {
+        for (Role r : roles) {
+            switch (r.getName()) {
+                case "ADMIN" -> {
+                    if (adminProfileRepository.findByUserId(user.getId()).isEmpty()) {
+                        adminProfileRepository.save(AdminProfile.builder().user(user).build());
+                    }
+                }
+                case "MENTOR" -> {
+                    if (mentorProfileRepository.findByUserId(user.getId()).isEmpty()) {
+                        mentorProfileRepository.save(MentorProfile.builder().user(user).build());
+                    }
+                }
+                case "PORTEUR" -> {
+                    if (porteurProfileRepository.findByUserId(user.getId()).isEmpty()) {
+                        porteurProfileRepository.save(PorteurProfile.builder().user(user).build());
+                    }
+                }
+                case "JURY" -> {
+                    if (juryProfileRepository.findByUserId(user.getId()).isEmpty()) {
+                        juryProfileRepository.save(JuryProfile.builder().user(user).build());
+                    }
+                }
+            }
+        }
+    }
+
+    private AuthResponse buildAuthResponse(String token, User user) {
+        return AuthResponse.builder()
+                .token(token)
+                .userId(user.getId())
+                .email(user.getEmail())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .roles(user.getRoleNames())
+                .permissions(user.getAllPermissionSlugs())
+                .role(user.getPrimaryRole())
+                .build();
+    }
+
+    UserDto toDto(User user) {
+        return UserDto.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .roles(user.getRoleNames())
+                .directPermissions(user.getDirectPermissionSlugs())
+                .allPermissions(user.getAllPermissionSlugs())
+                .role(user.getPrimaryRole())
+                .active(user.isActive())
+                .createdAt(user.getCreatedAt())
+                .adminProfile(user.getAdminProfile()   != null ? toAdminDto(user.getAdminProfile())   : null)
+                .mentorProfile(user.getMentorProfile() != null ? toMentorDto(user.getMentorProfile()) : null)
+                .porteurProfile(user.getPorteurProfile() != null ? toPorteurDto(user.getPorteurProfile()) : null)
+                .juryProfile(user.getJuryProfile()     != null ? toJuryDto(user.getJuryProfile())     : null)
+                .build();
+    }
+
+    // ── Profile mappers ───────────────────────────────────────────────────────
+
+    private AdminProfileDto toAdminDto(AdminProfile p) {
+        if (p == null) return null;
+        return AdminProfileDto.builder()
+                .id(p.getId()).department(p.getDepartment())
+                .phoneNumber(p.getPhoneNumber()).adminLevel(p.getAdminLevel())
+                .lastLoginAt(p.getLastLoginAt()).build();
+    }
+
+    private MentorProfileDto toMentorDto(MentorProfile p) {
+        if (p == null) return null;
+        return MentorProfileDto.builder()
+                .id(p.getId()).title(p.getTitle()).bio(p.getBio())
+                .expertise(p.getExpertise()).specializations(p.getSpecializations())
+                .rating(p.getRating()).availability(p.getAvailability())
+                .linkedInUrl(p.getLinkedInUrl()).website(p.getWebsite())
+                .yearsOfExperience(p.getYearsOfExperience()).sessionCount(p.getSessionCount()).build();
+    }
+
+    private PorteurProfileDto toPorteurDto(PorteurProfile p) {
+        if (p == null) return null;
+        return PorteurProfileDto.builder()
+                .id(p.getId()).company(p.getCompany()).sector(p.getSector())
+                .city(p.getCity()).phoneNumber(p.getPhoneNumber())
+                .website(p.getWebsite()).linkedInUrl(p.getLinkedInUrl())
+                .bio(p.getBio()).candidatureCount(p.getCandidatureCount()).build();
+    }
+
+    private JuryProfileDto toJuryDto(JuryProfile p) {
+        if (p == null) return null;
+        return JuryProfileDto.builder()
+                .id(p.getId()).title(p.getTitle()).bio(p.getBio())
+                .affiliation(p.getAffiliation()).expertise(p.getExpertise())
+                .linkedInUrl(p.getLinkedInUrl()).evaluationCount(p.getEvaluationCount())
+                .averageScore(p.getAverageScore()).build();
+    }
+
+    private static Set<String> toUpper(Set<String> input) {
+        Set<String> out = new HashSet<>();
+        if (input != null) input.forEach(r -> out.add(r.toUpperCase()));
+        return out;
+    }
+}
