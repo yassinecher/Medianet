@@ -1,0 +1,263 @@
+# Production override — use with:
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# In CI/CD this file is used standalone (all images pulled from Docker Hub):
+# docker compose -f docker-compose.prod.yml up -d
+
+version: '3.8'
+
+x-pull-policy: &pull-always
+  pull_policy: always
+
+services:
+  # ── Nginx reverse proxy ───────────────────────────────────────────────────
+  nginx:
+    image: ${DOCKER_USERNAME}/medianet-nginx:${TAG:-latest}
+    <<: *pull-always
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt/live/medianet.dz/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - /etc/letsencrypt/live/medianet.dz/privkey.pem:/etc/nginx/certs/privkey.pem:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - nextjs-frontoffice
+      - nextjs-backoffice
+      - api-gateway
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── Frontoffice ───────────────────────────────────────────────────────────
+  nextjs-frontoffice:
+    image: ${DOCKER_USERNAME}/medianet-frontoffice:${TAG:-latest}
+    <<: *pull-always
+    container_name: nextjs-frontoffice
+    expose:
+      - "3000"
+    environment:
+      NEXT_PUBLIC_API_URL: https://app.medianet.dz
+      NODE_ENV: production
+    depends_on:
+      api-gateway:
+        condition: service_started
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── Backoffice ────────────────────────────────────────────────────────────
+  nextjs-backoffice:
+    image: ${DOCKER_USERNAME}/medianet-backoffice:${TAG:-latest}
+    <<: *pull-always
+    container_name: nextjs-backoffice
+    expose:
+      - "3000"
+    environment:
+      NEXT_PUBLIC_API_URL: https://admin.medianet.dz
+      NODE_ENV: production
+    depends_on:
+      api-gateway:
+        condition: service_started
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── API Gateway ───────────────────────────────────────────────────────────
+  api-gateway:
+    image: ${DOCKER_USERNAME}/medianet-api-gateway:${TAG:-latest}
+    <<: *pull-always
+    expose:
+      - "8080"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── Eureka ────────────────────────────────────────────────────────────────
+  eureka-server:
+    image: ${DOCKER_USERNAME}/medianet-eureka-server:${TAG:-latest}
+    <<: *pull-always
+    expose:
+      - "8761"
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── Auth Service ──────────────────────────────────────────────────────────
+  auth-service:
+    image: ${DOCKER_USERNAME}/medianet-auth-service:${TAG:-latest}
+    <<: *pull-always
+    expose:
+      - "8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-auth:5432/${POSTGRES_AUTH_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_AUTH_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── Session Service ───────────────────────────────────────────────────────
+  session-service:
+    image: ${DOCKER_USERNAME}/medianet-session-service:${TAG:-latest}
+    <<: *pull-always
+    expose:
+      - "8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-session:5432/${POSTGRES_SESSION_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_SESSION_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_SESSION_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── Candidature Service ───────────────────────────────────────────────────
+  candidature-service:
+    image: ${DOCKER_USERNAME}/medianet-candidature-service:${TAG:-latest}
+    <<: *pull-always
+    expose:
+      - "8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-candidature:5432/${POSTGRES_CANDIDATURE_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_CANDIDATURE_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_CANDIDATURE_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── Notification Service ──────────────────────────────────────────────────
+  notification-service:
+    image: ${DOCKER_USERNAME}/medianet-notification-service:${TAG:-latest}
+    <<: *pull-always
+    expose:
+      - "8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-notification:5432/${POSTGRES_NOTIFICATION_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_NOTIFICATION_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_NOTIFICATION_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      SPRING_MAIL_HOST: ${MAIL_HOST}
+      SPRING_MAIL_PORT: ${MAIL_PORT}
+      SPRING_MAIL_USERNAME: ${MAIL_USERNAME}
+      SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── Programme Service ─────────────────────────────────────────────────────
+  programme-service:
+    image: ${DOCKER_USERNAME}/medianet-programme-service:${TAG:-latest}
+    <<: *pull-always
+    expose:
+      - "8085"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-programme:5432/${POSTGRES_PROGRAMME_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_PROGRAMME_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PROGRAMME_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── AI Scoring Service ────────────────────────────────────────────────────
+  ai-scoring-service:
+    image: ${DOCKER_USERNAME}/medianet-ai-scoring-service:${TAG:-latest}
+    <<: *pull-always
+    expose:
+      - "8086"
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── AI Matching Service ───────────────────────────────────────────────────
+  ai-matching-service:
+    image: ${DOCKER_USERNAME}/medianet-ai-matching-service:${TAG:-latest}
+    <<: *pull-always
+    expose:
+      - "8087"
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - medianet-network
+    restart: unless-stopped
+
+  # ── Infrastructure (unchanged from dev) ───────────────────────────────────
+  postgres-auth:
+    environment:
+      POSTGRES_DB: ${POSTGRES_AUTH_DB}
+      POSTGRES_USER: ${POSTGRES_AUTH_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
+    restart: unless-stopped
+
+  postgres-session:
+    environment:
+      POSTGRES_DB: ${POSTGRES_SESSION_DB}
+      POSTGRES_USER: ${POSTGRES_SESSION_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_SESSION_PASSWORD}
+    restart: unless-stopped
+
+  postgres-candidature:
+    environment:
+      POSTGRES_DB: ${POSTGRES_CANDIDATURE_DB}
+      POSTGRES_USER: ${POSTGRES_CANDIDATURE_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_CANDIDATURE_PASSWORD}
+    restart: unless-stopped
+
+  postgres-notification:
+    environment:
+      POSTGRES_DB: ${POSTGRES_NOTIFICATION_DB}
+      POSTGRES_USER: ${POSTGRES_NOTIFICATION_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_NOTIFICATION_PASSWORD}
+    restart: unless-stopped
+
+  postgres-programme:
+    environment:
+      POSTGRES_DB: ${POSTGRES_PROGRAMME_DB}
+      POSTGRES_USER: ${POSTGRES_PROGRAMME_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PROGRAMME_PASSWORD}
+    restart: unless-stopped
+
+  rabbitmq:
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  ollama:
+    restart: unless-stopped
+
+volumes:
+  nginx_logs:
+
+networks:
+  medianet-network:
+    driver: bridge

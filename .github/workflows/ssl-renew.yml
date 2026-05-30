@@ -1,0 +1,36 @@
+name: SSL — Renew Let's Encrypt certificates
+
+on:
+  schedule:
+    # Run at 02:00 UTC on the 1st of every month
+    - cron: '0 2 1 * *'
+  workflow_dispatch:
+
+jobs:
+  renew:
+    name: Renew SSL certificates
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Renew certs via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            # Stop nginx temporarily for standalone certbot renewal
+            docker exec nginx nginx -s stop || true
+
+            # Renew certificates
+            certbot renew --standalone --non-interactive
+
+            # Copy renewed certs to expected location (if using symlinks, this is a no-op)
+            echo "Certs renewed, restarting nginx..."
+
+            # Restart nginx
+            cd /opt/medianet
+            docker compose -f docker-compose.prod.yml restart nginx
+
+            echo "SSL renewal complete ✅"

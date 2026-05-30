@@ -71,12 +71,12 @@ public class AuthServiceApplication {
             seedRole(roleRepository, "CANDIDAT", "Candidat",             "Utilisateur enregistré sans rôle attribué",     candidatPerms);
 
             // ── 3. Seed admin user ────────────────────────────────────────────
-            if (userRepository.findByEmail("admin@medianet.tn").isEmpty()) {
+            if (userRepository.findByEmail("admin@medianet.dz").isEmpty()) {
                 Role adminRole = roleRepository.findByName("ADMIN")
                         .orElseThrow(() -> new RuntimeException("ADMIN role not found"));
 
                 User admin = User.builder()
-                        .email("admin@medianet.tn")
+                        .email("admin@medianet.dz")
                         .password(passwordEncoder.encode("Admin1234!"))
                         .firstName("Admin")
                         .lastName("Medianet")

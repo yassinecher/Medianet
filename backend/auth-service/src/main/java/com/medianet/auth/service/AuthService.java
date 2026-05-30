@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,8 +26,10 @@ public class AuthService {
     private final MentorProfileRepository  mentorProfileRepository;
     private final PorteurProfileRepository porteurProfileRepository;
     private final JuryProfileRepository    juryProfileRepository;
+    private final CompanyRepository        companyRepository;
     private final PasswordEncoder          passwordEncoder;
     private final JwtService               jwtService;
+    private final NotificationClient       notificationClient;
 
     // ── Auth ─────────────────────────────────────────────────────────────────
 
@@ -35,16 +38,10 @@ public class AuthService {
             throw new IllegalArgumentException("Email already in use");
         }
 
-        // Determine role name(s)
-        Set<String> roleNames = new HashSet<>();
-        if (request.getRoles() != null && !request.getRoles().isEmpty()) {
-            roleNames.addAll(request.getRoles());
-        } else if (request.getRole() != null && !request.getRole().isBlank()) {
-            roleNames.add(request.getRole().toUpperCase());
-        } else {
-            roleNames.add("CANDIDAT");
-        }
-
+        // Self-registration is intentionally restricted to PORTEUR.
+        // JURY and MENTOR accounts are created only by admin invitation
+        // (see registerFromInvitation) or by an admin via the user panel.
+        Set<String> roleNames = Set.of("PORTEUR");
         Set<Role> roles = resolveRoles(roleNames);
 
         User user = User.builder()
@@ -63,6 +60,79 @@ public class AuthService {
 
         String token = jwtService.generateToken(user);
         return buildAuthResponse(token, user);
+    }
+
+    /**
+     * Finish account creation from an invitation email.
+     *
+     * <p>The invitation carries both the recipient email and the target role,
+     * so the recipient cannot pick either. The token is consumed on success.
+     */
+    public AuthResponse registerFromInvitation(RegisterFromInvitationRequest req) {
+        Map<String, Object> invitation = notificationClient.getInvitationByToken(req.getToken());
+
+        String status = (String) invitation.getOrDefault("status", "");
+        if ("ACCEPTED".equalsIgnoreCase(status)) {
+            throw new IllegalStateException("This invitation has already been used");
+        }
+        if ("DECLINED".equalsIgnoreCase(status)) {
+            throw new IllegalStateException("This invitation was declined");
+        }
+
+        String email = (String) invitation.get("recipientEmail");
+        String type  = (String) invitation.get("type");   // JURY | MENTOR | PORTEUR | …
+        if (email == null || type == null) {
+            throw new IllegalArgumentException("Invitation is missing recipient or role");
+        }
+
+        if (userRepository.existsByEmail(email)) {
+            // Edge case: account already exists. Mark accepted and let them log in.
+            notificationClient.markAccepted(req.getToken());
+            throw new IllegalStateException("An account already exists for " + email + ". Please log in.");
+        }
+
+        // Role comes from the invitation — never from the request body.
+        Set<Role> roles = resolveRoles(Set.of(type.toUpperCase()));
+
+        User user = User.builder()
+                .email(email.toLowerCase())
+                .firstName(req.getFirstName())
+                .lastName(req.getLastName())
+                .password(passwordEncoder.encode(req.getPassword()))
+                .roles(roles)
+                .directPermissions(new HashSet<>())
+                .active(true)
+                .build();
+        userRepository.save(user);
+        ensureProfiles(user, roles);
+
+        // Optionally save the phone number on the role profile.
+        if (req.getPhone() != null && !req.getPhone().isBlank()) {
+            attachPhone(user, type, req.getPhone());
+        }
+
+        // Mark invitation as accepted (best-effort).
+        notificationClient.markAccepted(req.getToken());
+
+        String token = jwtService.generateToken(user);
+        return buildAuthResponse(token, user);
+    }
+
+    private void attachPhone(User user, String role, String phone) {
+        switch (role.toUpperCase()) {
+            case "MENTOR" -> mentorProfileRepository.findByUserId(user.getId()).ifPresent(p -> {
+                p.setLinkedInUrl(p.getLinkedInUrl()); // no-op to keep field shape; mentor profile has no phone yet
+            });
+            case "PORTEUR" -> porteurProfileRepository.findByUserId(user.getId()).ifPresent(p -> {
+                p.setPhoneNumber(phone);
+                porteurProfileRepository.save(p);
+            });
+            case "ADMIN" -> adminProfileRepository.findByUserId(user.getId()).ifPresent(p -> {
+                p.setPhoneNumber(phone);
+                adminProfileRepository.save(p);
+            });
+            default -> { /* JURY profile has no phone field — silently skip */ }
+        }
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -397,5 +467,124 @@ public class AuthService {
         Set<String> out = new HashSet<>();
         if (input != null) input.forEach(r -> out.add(r.toUpperCase()));
         return out;
+    }
+
+    // ── Company management ────────────────────────────────────────────────────
+
+    /** Create a new company owned by the given porteur. */
+    public CompanyDto createCompany(Long porteurId, CreateCompanyRequest req) {
+        User porteur = userRepository.findById(porteurId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + porteurId));
+
+        if (companyRepository.existsByPorteurIdAndNameIgnoreCase(porteurId, req.getName())) {
+            throw new IllegalArgumentException("You already have a company named '" + req.getName() + "'");
+        }
+
+        Company company = Company.builder()
+                .porteur(porteur)
+                .name(req.getName())
+                .sector(req.getSector())
+                .stage(parseStage(req.getStage()))
+                .description(req.getDescription())
+                .city(req.getCity())
+                .website(req.getWebsite())
+                .linkedInUrl(req.getLinkedInUrl())
+                .logoUrl(req.getLogoUrl())
+                .teamSize(req.getTeamSize())
+                .build();
+
+        return toCompanyDto(companyRepository.save(company));
+    }
+
+    /** All active companies belonging to a porteur. */
+    @Transactional(readOnly = true)
+    public List<CompanyDto> getMyCompanies(Long porteurId) {
+        return companyRepository.findByPorteurIdAndActiveTrue(porteurId)
+                .stream().map(this::toCompanyDto).collect(Collectors.toList());
+    }
+
+    /** Single company by id — any authenticated user (used by other services). */
+    @Transactional(readOnly = true)
+    public CompanyDto getCompanyById(Long id) {
+        Company c = companyRepository.findByIdAndActiveTrue(id)
+                .orElseThrow(() -> new IllegalArgumentException("Company not found: " + id));
+        return toCompanyDto(c);
+    }
+
+    /** Update a company — caller must be the owner or an admin. */
+    public CompanyDto updateCompany(Long companyId, Long callerId, boolean isAdmin, UpdateCompanyRequest req) {
+        Company c = companyRepository.findById(companyId)
+                .orElseThrow(() -> new IllegalArgumentException("Company not found: " + companyId));
+
+        if (!isAdmin && !c.getPorteur().getId().equals(callerId)) {
+            throw new SecurityException("You do not own this company");
+        }
+
+        if (req.getName()        != null) c.setName(req.getName());
+        if (req.getSector()      != null) c.setSector(req.getSector());
+        if (req.getStage()       != null) c.setStage(parseStage(req.getStage()));
+        if (req.getDescription() != null) c.setDescription(req.getDescription());
+        if (req.getCity()        != null) c.setCity(req.getCity());
+        if (req.getWebsite()     != null) c.setWebsite(req.getWebsite());
+        if (req.getLinkedInUrl() != null) c.setLinkedInUrl(req.getLinkedInUrl());
+        if (req.getLogoUrl()     != null) c.setLogoUrl(req.getLogoUrl());
+        if (req.getTeamSize()    != null) c.setTeamSize(req.getTeamSize());
+
+        return toCompanyDto(companyRepository.save(c));
+    }
+
+    /** Soft-delete a company — caller must be owner or admin. */
+    public void deleteCompany(Long companyId, Long callerId, boolean isAdmin) {
+        Company c = companyRepository.findById(companyId)
+                .orElseThrow(() -> new IllegalArgumentException("Company not found: " + companyId));
+
+        if (!isAdmin && !c.getPorteur().getId().equals(callerId)) {
+            throw new SecurityException("You do not own this company");
+        }
+        c.setActive(false);
+        companyRepository.save(c);
+    }
+
+    /** Admin: list all active companies. */
+    @Transactional(readOnly = true)
+    public List<CompanyDto> getAllCompanies() {
+        return companyRepository.findByActiveTrue()
+                .stream().map(this::toCompanyDto).collect(Collectors.toList());
+    }
+
+    /** All companies (including inactive) for a given porteur — admin use. */
+    @Transactional(readOnly = true)
+    public List<CompanyDto> getCompaniesByPorteur(Long porteurId) {
+        return companyRepository.findByPorteurId(porteurId)
+                .stream().map(this::toCompanyDto).collect(Collectors.toList());
+    }
+
+    // ── Company mapper ────────────────────────────────────────────────────────
+
+    private CompanyDto toCompanyDto(Company c) {
+        return CompanyDto.builder()
+                .id(c.getId())
+                .name(c.getName())
+                .sector(c.getSector())
+                .stage(c.getStage() != null ? c.getStage().name() : null)
+                .description(c.getDescription())
+                .city(c.getCity())
+                .website(c.getWebsite())
+                .linkedInUrl(c.getLinkedInUrl())
+                .logoUrl(c.getLogoUrl())
+                .teamSize(c.getTeamSize())
+                .active(c.getActive())
+                .porteurId(c.getPorteur().getId())
+                .porteurName(c.getPorteur().getFirstName() + " " + c.getPorteur().getLastName())
+                .porteurEmail(c.getPorteur().getEmail())
+                .createdAt(c.getCreatedAt())
+                .updatedAt(c.getUpdatedAt())
+                .build();
+    }
+
+    private CompanyStage parseStage(String stage) {
+        if (stage == null || stage.isBlank()) return CompanyStage.IDEA;
+        try { return CompanyStage.valueOf(stage.toUpperCase()); }
+        catch (IllegalArgumentException e) { return CompanyStage.IDEA; }
     }
 }

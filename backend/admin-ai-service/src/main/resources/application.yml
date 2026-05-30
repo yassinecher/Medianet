@@ -1,0 +1,50 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: admin-ai-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres-admin-ai:5432/admin_ai_db}
+    username: ${SPRING_DATASOURCE_USERNAME:medianet}
+    password: ${SPRING_DATASOURCE_PASSWORD:medianet2024}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka}
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+
+# JWT shared secret across services
+jwt:
+  secret: ${JWT_SECRET:medianet-super-secret-jwt-key-2024-medianet-incubation}
+
+# LLM backend — defaults to HuggingFace Inference Providers.
+# The admin can also override these from the backoffice UI (Paramètres → Assistant IA).
+# Get a free HF token: https://huggingface.co/settings/tokens (role: Read)
+llm:
+  # Optional env-var fallback for the API key. DB row takes precedence.
+  api-key: ${HF_TOKEN:}
+  # Optional model + base-url overrides. Leave empty to use provider defaults.
+  model:    ${LLM_MODEL:}
+  base-url: ${LLM_BASE_URL:}
+  app-name: ${LLM_APP_NAME:Medianet Incubateur}
+
+# Internal service URLs (Docker network DNS)
+services:
+  programme-url:    ${PROGRAMME_SERVICE_URL:http://programme-service:8086}
+  auth-url:         ${AUTH_SERVICE_URL:http://auth-service:8081}
+  candidature-url:  ${CANDIDATURE_SERVICE_URL:http://candidature-service:8083}
+  notification-url: ${NOTIFICATION_SERVICE_URL:http://notification-service:8087}
+
+logging:
+  level:
+    com.medianet.adminai: INFO

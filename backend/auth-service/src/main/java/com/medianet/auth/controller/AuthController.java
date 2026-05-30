@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -30,6 +31,16 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    /**
+     * Finish account creation from an invitation email.
+     * <p>Public — the invitation token itself is the proof of authorization.
+     */
+    @PostMapping("/register-from-invitation")
+    public ResponseEntity<AuthResponse> registerFromInvitation(
+            @Valid @RequestBody RegisterFromInvitationRequest req) {
+        return ResponseEntity.ok(authService.registerFromInvitation(req));
     }
 
     @GetMapping("/me")
@@ -194,5 +205,87 @@ public class AuthController {
             @RequestAttribute("userId") Long userId,
             @RequestBody UpdateJuryProfileRequest req) {
         return ResponseEntity.ok(authService.updateJuryProfile(userId, req));
+    }
+
+    // ── AI-service helpers (any authenticated caller) ─────────────────────────
+
+    /** Returns all active mentor users — used by ai-matching-service. */
+    @GetMapping("/mentors")
+    public ResponseEntity<List<UserDto>> getAvailableMentors() {
+        return ResponseEntity.ok(authService.getUsersByRole("MENTOR"));
+    }
+
+    // ── Company endpoints ─────────────────────────────────────────────────────
+
+    /**
+     * Create a new company.
+     * The caller must be authenticated (any role can own a company, but
+     * typically PORTEUR). porteurId is taken from the JWT — no spoofing.
+     */
+    @PostMapping("/companies")
+    public ResponseEntity<CompanyDto> createCompany(
+            @RequestAttribute("userId") Long userId,
+            @Valid @RequestBody CreateCompanyRequest req) {
+        return ResponseEntity.status(201).body(authService.createCompany(userId, req));
+    }
+
+    /** List the caller's own companies (active). */
+    @GetMapping("/companies/mine")
+    public ResponseEntity<List<CompanyDto>> getMyCompanies(
+            @RequestAttribute("userId") Long userId) {
+        return ResponseEntity.ok(authService.getMyCompanies(userId));
+    }
+
+    /**
+     * Get a single company by id.
+     * Any authenticated user may call this (used by programme-service etc.).
+     */
+    @GetMapping("/companies/{id}")
+    public ResponseEntity<CompanyDto> getCompanyById(@PathVariable Long id) {
+        return ResponseEntity.ok(authService.getCompanyById(id));
+    }
+
+    /**
+     * Update a company.
+     * The caller must be the owner OR an admin.
+     */
+    @SuppressWarnings("unchecked")
+    @PutMapping("/companies/{id}")
+    public ResponseEntity<CompanyDto> updateCompany(
+            @PathVariable Long id,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute(value = "userRoles", required = false) Object userRoles,
+            @Valid @RequestBody UpdateCompanyRequest req) {
+        boolean isAdmin = userRoles instanceof Set<?> s && s.contains("ADMIN");
+        return ResponseEntity.ok(authService.updateCompany(id, userId, isAdmin, req));
+    }
+
+    /**
+     * Soft-delete a company.
+     * The caller must be the owner OR an admin.
+     */
+    @SuppressWarnings("unchecked")
+    @DeleteMapping("/companies/{id}")
+    public ResponseEntity<Void> deleteCompany(
+            @PathVariable Long id,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute(value = "userRoles", required = false) Object userRoles) {
+        boolean isAdmin = userRoles instanceof Set<?> s && s.contains("ADMIN");
+        authService.deleteCompany(id, userId, isAdmin);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Admin: list all active companies. */
+    @GetMapping("/admin/companies")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<CompanyDto>> getAllCompanies() {
+        return ResponseEntity.ok(authService.getAllCompanies());
+    }
+
+    /** Admin: list all companies (including inactive) for a specific porteur. */
+    @GetMapping("/admin/companies/porteur/{porteurId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<CompanyDto>> getCompaniesByPorteur(@PathVariable Long porteurId) {
+        return ResponseEntity.ok(authService.getCompaniesByPorteur(porteurId));
     }
 }

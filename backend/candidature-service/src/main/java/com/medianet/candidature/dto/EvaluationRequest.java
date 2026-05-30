@@ -1,33 +1,34 @@
 package com.medianet.candidature.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
+
+import java.util.List;
 
 @Data
 public class EvaluationRequest {
+
     private String juryEmail;
     private String juryName;
 
-    @NotNull
-    @Min(0)
-    @Max(10)
+    // ── Dynamic criteria scores (programme-defined, preferred) ────────────────
+    /** When provided, these take priority over the legacy 4 fields below. */
+    @Valid
+    private List<CriteriaScoreRequest> criteriaScores;
+
+    // ── Legacy fixed-weight scores (kept for backward compatibility) ──────────
+    @Min(0) @Max(10)
     private Integer innovationScore;
 
-    @NotNull
-    @Min(0)
-    @Max(10)
+    @Min(0) @Max(10)
     private Integer feasibilityScore;
 
-    @NotNull
-    @Min(0)
-    @Max(10)
+    @Min(0) @Max(10)
     private Integer marketImpactScore;
 
-    @NotNull
-    @Min(0)
-    @Max(10)
+    @Min(0) @Max(10)
     private Integer teamQualityScore;
 
     private String comment;

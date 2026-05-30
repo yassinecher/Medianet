@@ -1,0 +1,63 @@
+# ─── Secrets & env ───────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.prod
+*.pem
+*.key
+*.p12
+*.jks
+
+# ─── Java / Maven ────────────────────────────────────────────
+**/target/
+**/.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+# ─── Node / Next.js ──────────────────────────────────────────
+**/node_modules/
+**/.next/
+**/out/
+**/.turbo/
+**/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ─── Docker ──────────────────────────────────────────────────
+nginx/certs/
+
+# ─── IDE ─────────────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.project
+.classpath
+.settings/
+
+# ─── OS ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Logs ────────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── Ollama models (large blobs) ─────────────────────────────
+ollama_data/

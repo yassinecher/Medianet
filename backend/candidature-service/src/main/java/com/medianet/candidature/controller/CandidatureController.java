@@ -21,26 +21,46 @@ public class CandidatureController {
 
     private final CandidatureService candidatureService;
 
+    // ── Submit ────────────────────────────────────────────────────────────────
+
     @PostMapping
     @PreAuthorize("hasRole('PORTEUR')")
     public ResponseEntity<CandidatureDto> submit(
             @Valid @RequestBody SubmitCandidatureRequest request,
             HttpServletRequest httpRequest) {
-        Long porteurId = (Long) httpRequest.getAttribute("userId");
+        Long porteurId    = (Long)   httpRequest.getAttribute("userId");
         String porteurEmail = (String) httpRequest.getAttribute("userEmail");
-        String firstName = (String) httpRequest.getAttribute("userFirstName");
-        String lastName = (String) httpRequest.getAttribute("userLastName");
-        String porteurName = (firstName != null ? firstName : "") + " " + (lastName != null ? lastName : "");
+        String firstName  = (String) httpRequest.getAttribute("userFirstName");
+        String lastName   = (String) httpRequest.getAttribute("userLastName");
+        String porteurName = ((firstName != null ? firstName : "") + " " + (lastName != null ? lastName : "")).trim();
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(candidatureService.submitCandidature(request, porteurId, porteurEmail, porteurName.trim()));
+                .body(candidatureService.submitCandidature(request, porteurId, porteurEmail, porteurName));
     }
 
+    // ── List / Get ────────────────────────────────────────────────────────────
+
+    /** All candidatures — admin/jury, optionally filtered by ?status= */
     @GetMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('JURY')")
     public ResponseEntity<List<CandidatureDto>> getAll(
-            @RequestParam(required = false) CandidatureStatus status,
-            @RequestParam(required = false) Long sessionId) {
-        return ResponseEntity.ok(candidatureService.getAllCandidatures(status, sessionId));
+            @RequestParam(required = false) CandidatureStatus status) {
+        return ResponseEntity.ok(candidatureService.getAllCandidatures(status));
+    }
+
+    /** Candidatures for a specific programme — admin/jury */
+    @GetMapping("/programme/{programmeId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('JURY')")
+    public ResponseEntity<List<CandidatureDto>> getByProgramme(
+            @PathVariable Long programmeId,
+            @RequestParam(required = false) CandidatureStatus status) {
+        return ResponseEntity.ok(candidatureService.getCandidaturesByProgramme(programmeId, status));
+    }
+
+    /** Per-programme stats — admin only */
+    @GetMapping("/programme/{programmeId}/stats")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Long>> getProgrammeStats(@PathVariable Long programmeId) {
+        return ResponseEntity.ok(candidatureService.getProgrammeStats(programmeId));
     }
 
     @GetMapping("/my")
@@ -62,11 +82,7 @@ public class CandidatureController {
         return ResponseEntity.ok(candidatureService.getCandidatureById(id));
     }
 
-    @GetMapping("/session/{sessionId}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('JURY')")
-    public ResponseEntity<List<CandidatureDto>> getBySession(@PathVariable Long sessionId) {
-        return ResponseEntity.ok(candidatureService.getCandidaturesBySession(sessionId));
-    }
+    // ── Jury assignment ───────────────────────────────────────────────────────
 
     @PostMapping("/{id}/assign-jury")
     @PreAuthorize("hasRole('ADMIN')")
@@ -75,6 +91,8 @@ public class CandidatureController {
             @Valid @RequestBody AssignJuryRequest request) {
         return ResponseEntity.ok(candidatureService.assignJury(id, request));
     }
+
+    // ── Evaluate ──────────────────────────────────────────────────────────────
 
     @PostMapping("/{id}/evaluate")
     @PreAuthorize("hasRole('JURY')")
@@ -85,6 +103,8 @@ public class CandidatureController {
         Long juryId = (Long) httpRequest.getAttribute("userId");
         return ResponseEntity.ok(candidatureService.evaluateCandidature(id, juryId, request));
     }
+
+    // ── Accept / Reject ───────────────────────────────────────────────────────
 
     @PatchMapping("/{id}/accept")
     @PreAuthorize("hasRole('ADMIN')")
@@ -104,6 +124,8 @@ public class CandidatureController {
         Long adminId = (Long) httpRequest.getAttribute("userId");
         return ResponseEntity.ok(candidatureService.rejectCandidature(id, request.getReason(), adminId));
     }
+
+    // ── Stats ─────────────────────────────────────────────────────────────────
 
     @GetMapping("/stats")
     @PreAuthorize("hasRole('ADMIN')")

@@ -4,7 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -16,10 +18,16 @@ public class EvaluationDto {
     private Long juryId;
     private String juryEmail;
     private String juryName;
+
+    // Dynamic criteria scores (non-empty when evaluated against a programme)
+    private List<CriteriaScoreDto> criteriaScores;
+
+    // Legacy fixed-weight fields (null when dynamic scores used)
     private Integer innovationScore;
     private Integer feasibilityScore;
     private Integer marketImpactScore;
     private Integer teamQualityScore;
+
     private Double weightedScore;
     private String comment;
     private LocalDateTime evaluatedAt;

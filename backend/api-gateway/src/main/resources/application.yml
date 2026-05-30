@@ -15,23 +15,54 @@ spring:
           uri: lb://auth-service
           predicates:
             - Path=/api/auth/**
-        - id: session-service
-          uri: lb://session-service
-          predicates:
-            - Path=/api/sessions/**
         - id: candidature-service
           uri: lb://candidature-service
           predicates:
             - Path=/api/candidatures/**
+        - id: programme-service
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/programmes/**
+        - id: programme-service-partners
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/partners/**
+        - id: programme-service-tasks
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/tasks/**
+        - id: programme-service-files
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/files/**
+        - id: programme-service-landing
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/landing-page/**
+        - id: admin-ai-service
+          uri: lb://admin-ai-service
+          predicates:
+            - Path=/api/admin-ai/**
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**
+        - id: ai-scoring-service
+          uri: ${AI_SCORING_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/ai/score/**
+        - id: ai-matching-service
+          uri: ${AI_MATCHING_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/api/ai/match/**
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
       globalcors:
         cors-configurations:
           '[/**]':
             allowedOriginPatterns:
-              - "http://localhost:4200"
-              - "http://localhost:4300"
-              - "http://localhost:*"
+              - "http://localhost:[*]"
+              - "http://127.0.0.1:[*]"
             allowedMethods:
               - GET
               - POST
@@ -41,6 +72,7 @@ spring:
               - OPTIONS
             allowedHeaders: "*"
             allowCredentials: true
+            maxAge: 3600
 
 eureka:
   client:

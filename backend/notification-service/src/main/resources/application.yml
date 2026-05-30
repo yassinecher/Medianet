@@ -1,0 +1,53 @@
+server:
+  port: 8087
+
+spring:
+  application:
+    name: notification-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5435/notification_db}
+    username: ${SPRING_DATASOURCE_USERNAME:medianet}
+    password: ${SPRING_DATASOURCE_PASSWORD:medianet2024}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  mail:
+    host: ${MAIL_HOST:smtp-relay.brevo.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:yassinecherni9@gmail.com}
+    password: ${MAIL_PASSWORD:xsmtpsib-6d75f3a0b99bd3d46f424229b923edb06985736497f2321976b31bead9554701-afO3b8sYFI3WbyXp}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
+jwt:
+  secret: ${JWT_SECRET:medianet-super-secret-jwt-key-2024-medianet-incubation}
+
+app:
+  mail:
+    from: ${MAIL_FROM:yassinecherni9@gmail.com}
+    from-name: ${MAIL_FROM_NAME:Medianet Incubateur}
+  frontend-url: ${FRONTEND_URL:http://localhost:4200}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka}
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    com.medianet: DEBUG

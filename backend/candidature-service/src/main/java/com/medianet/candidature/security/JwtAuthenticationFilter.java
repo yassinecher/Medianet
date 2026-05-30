@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -35,23 +36,44 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (jwtService.isTokenValid(token)) {
                 Claims claims = jwtService.extractAllClaims(token);
                 String email = claims.getSubject();
-                String role = claims.get("role", String.class);
-                Long userId = claims.get("userId", Long.class);
+
+                // ── Read ALL roles from the JWT (multi-role aware) ───────────
+                List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+                Object rolesObj = claims.get("roles");
+                if (rolesObj instanceof List<?> roleList && !roleList.isEmpty()) {
+                    for (Object r : roleList) {
+                        if (r != null) {
+                            authorities.add(new SimpleGrantedAuthority("ROLE_" + r));
+                        }
+                    }
+                } else {
+                    // fallback: single "role" claim (backward compat)
+                    String singleRole = claims.get("role", String.class);
+                    if (singleRole != null) {
+                        authorities.add(new SimpleGrantedAuthority("ROLE_" + singleRole));
+                    }
+                }
+
+                // ── userId: handle Integer vs Long JSON deserialization ──────
+                Object userIdObj = claims.get("userId");
+                Long userId = null;
+                if (userIdObj instanceof Long l)    userId = l;
+                else if (userIdObj instanceof Integer i) userId = i.longValue();
+
                 String firstName = claims.get("firstName", String.class);
-                String lastName = claims.get("lastName", String.class);
+                String lastName  = claims.get("lastName",  String.class);
+                // Primary role for backward-compat attribute
+                String primaryRole = claims.get("role", String.class);
 
                 if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                    var auth = new UsernamePasswordAuthenticationToken(
-                            email, null,
-                            List.of(new SimpleGrantedAuthority("ROLE_" + role))
-                    );
+                    var auth = new UsernamePasswordAuthenticationToken(email, null, authorities);
                     auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(auth);
-                    request.setAttribute("userId", userId);
-                    request.setAttribute("userRole", role);
-                    request.setAttribute("userEmail", email);
+                    request.setAttribute("userId",        userId);
+                    request.setAttribute("userRole",      primaryRole);
+                    request.setAttribute("userEmail",     email);
                     request.setAttribute("userFirstName", firstName);
-                    request.setAttribute("userLastName", lastName);
+                    request.setAttribute("userLastName",  lastName);
                 }
             }
         } catch (Exception ignored) {}
