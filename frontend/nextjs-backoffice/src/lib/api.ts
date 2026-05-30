@@ -198,6 +198,12 @@ export const adminAiApi = {
   /** Generate JSON content for a single landing-page section (no agent loop). */
   landingSuggest: (data: { section: string; brief?: string; locale?: string }) =>
     api.post<Record<string, any>>('/api/admin-ai/landing-suggest', data),
+  /** Image search for the editors — same provider chain as the AI's search_photos tool. */
+  searchPhotos: (data: { query: string; context?: string; count?: number; width?: number; height?: number }) =>
+    api.post<{
+      items: Array<{ url: string; thumbnail?: string; credit?: string; title?: string; size?: string }>
+      query: string; source: string; count: number
+    }>('/api/admin-ai/search-photos', data),
   conversations: () => api.get('/api/admin-ai/conversations'),
   messages: (id: number) => api.get(`/api/admin-ai/conversations/${id}/messages`),
   deleteConversation: (id: number) => api.delete(`/api/admin-ai/conversations/${id}`),

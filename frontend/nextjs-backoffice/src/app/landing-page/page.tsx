@@ -653,6 +653,7 @@ export default function LandingPageEditor() {
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Image héros (optionnelle — apparaît en arrière-plan)</label>
             <ImageUpload value={page.heroImageUrl} folder="hero" previewHeight={120}
+              searchContext="hero" defaultQuery={page.heroTitle || 'tunisia startup incubator modern'}
               onChange={(url) => set('heroImageUrl', url)} />
           </div>
         </MagicCard>
@@ -768,6 +769,7 @@ export default function LandingPageEditor() {
                   <div>
                     <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Image (remplace l'icône)</label>
                     <ImageUpload value={f.imageUrl} folder="features" previewHeight={60} compact
+                      searchContext="feature" defaultQuery={f.title || 'startup business modern'}
                       onChange={(url) => updateFeature(i, { imageUrl: url })} />
                   </div>
                 </div>
@@ -806,6 +808,7 @@ export default function LandingPageEditor() {
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Image (affichée à droite du texte)</label>
             <ImageUpload value={page.aboutImageUrl} folder="about" previewHeight={140}
+              searchContext="feature" defaultQuery={page.aboutTitle || 'tunisia entrepreneurs teamwork office'}
               onChange={(url) => set('aboutImageUrl', url)} />
           </div>
         </MagicCard>
@@ -945,6 +948,7 @@ export default function LandingPageEditor() {
                   <div>
                     <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Photo (optionnelle)</label>
                     <ImageUpload value={t.photoUrl} folder="testimonials" previewHeight={50} compact
+                      searchContext="team" defaultQuery={t.authorName ? `${t.authorName} portrait professional` : 'professional portrait smiling person'}
                       onChange={(url) => testimonials.update(i, { photoUrl: url })} />
                   </div>
                 </div>

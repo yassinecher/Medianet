@@ -113,6 +113,28 @@ public final class ToolCatalog {
                 "Call this BEFORE update_landing_page so you know the existing shape and don't overwrite fields.",
                 Map.of("type", "object", "properties", Map.of())),
 
+            tool("generate_landing_section",
+                "Generate ready-to-use JSON content for ONE landing-page section (copywriting only — " +
+                "no DB write, no confirmation needed). Returns a JSON object whose keys map directly onto " +
+                "update_landing_page fields. PREFERRED workflow for landing-page content: " +
+                "(1) generate_landing_section(section=\"hero\", brief=\"...\") → get polished JSON, " +
+                "(2) optionally search_photos for any image fields, " +
+                "(3) update_landing_page(patch={ ...generated JSON..., heroImageUrl: <photo url> }). " +
+                "Sections: hero, about, process, testimonials, faq, cta, stats, features. " +
+                "Call once per section. Much better than hand-writing the copy yourself.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "section", Map.of("type", "string",
+                            "enum", List.of("hero", "about", "process", "testimonials", "faq", "cta", "stats", "features"),
+                            "description", "Which section to write content for"),
+                        "brief", Map.of("type", "string",
+                            "description", "Optional context to steer the copy (tone, focus, programme name…). " +
+                                "Leave empty for sensible Medianet defaults."),
+                        "locale", Map.of("type", "string", "description", "Language code, default 'fr'")
+                    ),
+                    "required", List.of("section"))),
+
             tool("search_photos",
                 "Find topical photos for the landing page, programmes, partner logos, etc. Tries Unsplash first " +
                 "(curated, beautiful) if an Access Key is configured, falls back to OpenVerse (CC, no auth). " +

@@ -571,6 +571,8 @@ export default function CandidaterPage() {
   /** Required first step: porteur must select (or create) an organisation. */
   const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null)
   const [selectedOrgName, setSelectedOrgName] = useState<string>('')
+  /** Flips true when the user tries to advance with missing required fields → highlights them. */
+  const [showStepErrors, setShowStepErrors] = useState(false)
 
   useEffect(() => {
     if (!user) { router.push('/login'); return }
@@ -808,7 +810,7 @@ export default function CandidaterPage() {
               return (
                 <div key={s.id} className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
                   <button
-                    onClick={() => done && setStep(i)}
+                    onClick={() => done && (setShowStepErrors(false), setStep(i))}
                     disabled={!done}
                     className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all
                       ${active ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30 scale-110' :
@@ -843,7 +845,8 @@ export default function CandidaterPage() {
                 <SectionRenderer
                   section={currentCustomSection}
                   answers={customAnswers}
-                  onChange={setCustomAnswer} />
+                  onChange={setCustomAnswer}
+                  showErrors={showStepErrors} />
               )}
               {/* Custom schema review */}
               {useCustom && currentKey === 'review' && (
@@ -866,7 +869,18 @@ export default function CandidaterPage() {
             </Button>
 
             {step < STEPS.length - 1 ? (
-              <Button onClick={() => setStep(s => s + 1)} disabled={!canProceed()} className="gap-2">
+              <Button onClick={() => {
+                if (canProceed()) { setShowStepErrors(false); setStep(s => s + 1) }
+                else {
+                  setShowStepErrors(true)
+                  if (step === 0 && !selectedOrgId) {
+                    toast.error('Sélectionnez d\'abord votre organisation en haut de la page')
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  } else {
+                    toast.error('Complétez les champs obligatoires (en rouge) avant de continuer')
+                  }
+                }
+              }} className="gap-2">
                 Suivant
                 <ArrowRight className="h-4 w-4" />
               </Button>

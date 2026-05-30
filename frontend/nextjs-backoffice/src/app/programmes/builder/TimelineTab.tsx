@@ -31,7 +31,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Plus, X, Trash2, Calendar, MapPin, Users, ChevronDown, ChevronUp,
   Loader2, ArrowUpRight, Sparkles, AlertTriangle, Info, GripVertical,
-  Layers, Clock, Tag, FileText,
+  Layers, Clock, Tag, FileText, Pencil, UserPlus,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { sessionsApi, SESSION_TYPES, ACTIVITY_TYPES, type SessionType, type ActivityType } from '@/lib/api'
@@ -1088,15 +1088,18 @@ function DayCanvas({ programmeId, session, onChanged }: {
   return (
     <div className="overflow-auto bg-muted/5">
       <div className="flex h-full" style={{ minWidth: dayCount * 260 }}>
-        {/* Hours column (sticky left) */}
-        <div className="sticky left-0 z-10 bg-card border-r border-border w-12 shrink-0">
-          <div className="h-9 border-b border-border" />
-          {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i).map(h => (
-            <div key={h} className="text-[10px] font-bold uppercase text-muted-foreground text-right pr-1 -mt-1.5"
-              style={{ height: HOUR_PX }}>
-              {h}h
-            </div>
-          ))}
+        {/* Hours column (sticky left) — labels aligned on each grid line */}
+        <div className="sticky left-0 z-20 bg-card border-r border-border w-12 shrink-0">
+          <div className="h-9 border-b-2 border-border" />
+          <div className="relative" style={{ height: (HOUR_END - HOUR_START) * HOUR_PX }}>
+            {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i).map((h, i) => (
+              <div key={h}
+                className="absolute right-1 -translate-y-1/2 text-[10px] font-bold uppercase text-muted-foreground tabular-nums"
+                style={{ top: i * HOUR_PX }}>
+                {h}h
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Day columns */}
@@ -1122,66 +1125,118 @@ function DayCanvas({ programmeId, session, onChanged }: {
 //                              DAY COLUMN
 // ──────────────────────────────────────────────────────────────────────────
 
+/** Greedy interval-partitioning: place overlapping activities in side-by-side columns. */
+function layoutActivities(acts: Activity[]): Map<number, { col: number; cols: number }> {
+  const res = new Map<number, { col: number; cols: number }>()
+  const items = acts.filter(a => a.id != null).sort(
+    (a, b) => (timeToMin(a.startTime) - timeToMin(b.startTime)) || (timeToMin(a.endTime) - timeToMin(b.endTime)))
+  let cluster: Activity[] = []
+  let clusterEnd = -1
+  const flush = () => {
+    if (!cluster.length) return
+    const colEnds: number[] = []
+    const colOf = new Map<number, number>()
+    for (const a of cluster) {
+      const s = timeToMin(a.startTime)
+      let placed = colEnds.findIndex(end => end <= s)
+      if (placed === -1) { placed = colEnds.length; colEnds.push(0) }
+      colEnds[placed] = Math.max(s + SNAP_MIN, timeToMin(a.endTime))
+      colOf.set(a.id!, placed)
+    }
+    const cols = colEnds.length
+    for (const a of cluster) res.set(a.id!, { col: colOf.get(a.id!) ?? 0, cols })
+    cluster = []; clusterEnd = -1
+  }
+  for (const a of items) {
+    const s = timeToMin(a.startTime), e = Math.max(s + SNAP_MIN, timeToMin(a.endTime))
+    if (cluster.length && s >= clusterEnd) flush()
+    cluster.push(a); clusterEnd = Math.max(clusterEnd, e)
+  }
+  flush()
+  return res
+}
+
 function DayColumn({ day, onAddActivity, onUpdateActivity, onRemoveActivity }: {
   day: SessionDay
-  onAddActivity: () => void
+  onAddActivity: (startMin?: number) => void
   onUpdateActivity: (aid: number, patch: Partial<Activity>) => void
   onRemoveActivity: (aid: number) => void
 }) {
-  const COLUMN_HEIGHT = (HOUR_END - HOUR_START + 1) * HOUR_PX
-  const dateLabel = day.date ? new Date(day.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : '?'
+  const HOURS = HOUR_END - HOUR_START
+  const COLUMN_HEIGHT = HOURS * HOUR_PX
+  const gridRef = useRef<HTMLDivElement>(null)
+  const acts = day.activities ?? []
+  const lay = useMemo(() => layoutActivities(acts), [acts])
 
-  /** Convert HH:mm:ss → vertical Y offset in px from top of column body. */
-  const timeToY = (t?: string): number => {
-    if (!t) return 0
-    const [h, m] = t.split(':').map(Number)
-    return ((h - HOUR_START) + (m ?? 0) / 60) * HOUR_PX
+  const dt = day.date ? new Date(day.date + 'T12:00:00') : null
+  const dateLabel = dt ? dt.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : 'date ?'
+  const isToday = dt ? dt.toDateString() === new Date().toDateString() : false
+
+  /** clientY → minutes-since-midnight (relative to the grid body). */
+  const yToMin = (clientY: number): number => {
+    const el = gridRef.current
+    if (!el) return HOUR_START * 60
+    const y = clientY - el.getBoundingClientRect().top
+    return HOUR_START * 60 + (y / HOUR_PX) * 60
   }
-  const yToTime = (y: number): string => {
-    const totalHours = y / HOUR_PX + HOUR_START
-    const h = Math.max(HOUR_START, Math.min(HOUR_END, Math.floor(totalHours)))
-    const m = Math.round((totalHours - h) * 60 / 15) * 15
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`
-  }
+
+  const now = new Date()
+  const nowTop = isToday ? ((now.getHours() + now.getMinutes() / 60) - HOUR_START) * HOUR_PX : -1
 
   return (
-    <div className="border-r border-border min-w-[200px] flex-1 flex flex-col">
+    <div className="border-r border-border min-w-[240px] flex-1 flex flex-col">
       {/* Day header */}
-      <div className="sticky top-0 z-10 bg-card border-b-2 border-border h-9 flex items-center justify-between px-2 shadow-sm">
-        <span className="text-[11px] font-bold text-foreground">
-          Jour {day.dayOrder}
+      <div className="sticky top-0 z-20 bg-card border-b-2 border-border h-9 flex items-center gap-1.5 px-2 shadow-sm">
+        <span className="flex h-5 items-center justify-center rounded-md bg-foreground/10 px-1.5 text-[10px] font-extrabold text-foreground">
+          J{day.dayOrder}
         </span>
-        <span className="text-[9px] uppercase tracking-wider text-muted-foreground">
+        <span className="text-[10px] font-semibold text-muted-foreground capitalize truncate flex-1">
           {dateLabel}
         </span>
-        <button onClick={onAddActivity} title="Ajouter une activité"
-          className="text-emerald-600 hover:text-emerald-700 p-0.5 rounded hover:bg-emerald-500/10">
-          <Plus className="h-3.5 w-3.5" />
+        <span className="text-[9px] text-muted-foreground tabular-nums">{acts.length} act.</span>
+        <button onClick={() => onAddActivity()} title="Ajouter une activité"
+          className="inline-flex items-center gap-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold">
+          <Plus className="h-3 w-3" />Activité
         </button>
       </div>
 
-      {/* Hour grid */}
-      <div className="relative" style={{ height: COLUMN_HEIGHT }}>
-        {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => (
-          <div key={i} className={`absolute left-0 right-0 border-t ${i % 2 === 0 ? 'border-border/40' : 'border-border/20'}`}
-            style={{ top: i * HOUR_PX, height: HOUR_PX }} />
+      {/* Hour grid — click a free slot to add an activity at that time */}
+      <div ref={gridRef}
+        onClick={(e) => { if (e.target === e.currentTarget) onAddActivity(snap(yToMin(e.clientY))) }}
+        title="Astuce : cliquez sur une plage libre pour ajouter une activité à cette heure"
+        className="relative cursor-copy" style={{ height: COLUMN_HEIGHT }}>
+        {Array.from({ length: HOURS }, (_, i) => (
+          <div key={i}>
+            <div className="absolute left-0 right-0 border-t border-border/40 pointer-events-none" style={{ top: i * HOUR_PX }} />
+            <div className="absolute left-0 right-0 border-t border-dashed border-border/15 pointer-events-none" style={{ top: i * HOUR_PX + HOUR_PX / 2 }} />
+          </div>
         ))}
+        <div className="absolute left-0 right-0 border-t border-border/40 pointer-events-none" style={{ top: COLUMN_HEIGHT }} />
+
+        {/* now-line */}
+        {nowTop >= 0 && nowTop <= COLUMN_HEIGHT && (
+          <div className="absolute left-0 right-0 z-10 pointer-events-none" style={{ top: nowTop }}>
+            <div className="border-t border-rose-500/70" />
+            <div className="absolute left-0 -top-[3px] h-1.5 w-1.5 rounded-full bg-rose-500" />
+          </div>
+        )}
 
         {/* Activities */}
-        {(day.activities ?? []).map(a => (
+        {acts.map(a => (
           <ActivityBlock key={a.id}
             activity={a}
-            yToTime={yToTime}
-            timeToY={timeToY}
+            place={a.id != null ? lay.get(a.id) : undefined}
+            colHeight={COLUMN_HEIGHT}
             onUpdate={(patch) => a.id && onUpdateActivity(a.id, patch)}
             onRemove={() => a.id && onRemoveActivity(a.id)}
           />
         ))}
 
-        {(day.activities ?? []).length === 0 && (
-          <button onClick={onAddActivity}
-            className="absolute inset-2 rounded-lg border-2 border-dashed border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/60 transition-colors flex items-center justify-center text-[10px] font-bold text-emerald-700 dark:text-emerald-300 gap-1">
-            <Plus className="h-3 w-3" />Ajouter une activité
+        {acts.length === 0 && (
+          <button onClick={() => onAddActivity()}
+            className="absolute inset-x-2 top-2 h-20 rounded-lg border-2 border-dashed border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/60 transition-colors flex flex-col items-center justify-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300 gap-0.5">
+            <Plus className="h-4 w-4" />Ajouter une activité
+            <span className="text-[9px] font-normal text-muted-foreground">ou cliquez sur une heure</span>
           </button>
         )}
       </div>
@@ -1193,74 +1248,253 @@ function DayColumn({ day, onAddActivity, onUpdateActivity, onRemoveActivity }: {
 //                             ACTIVITY BLOCK
 // ──────────────────────────────────────────────────────────────────────────
 
-function ActivityBlock({ activity, yToTime, timeToY, onUpdate, onRemove }: {
+function ActivityBlock({ activity, place, colHeight, onUpdate, onRemove }: {
   activity: Activity
-  yToTime: (y: number) => string
-  timeToY: (t?: string) => number
+  place?: { col: number; cols: number }
+  colHeight: number
   onUpdate: (patch: Partial<Activity>) => void
   onRemove: () => void
 }) {
-  const top    = timeToY(activity.startTime)
-  const bottom = timeToY(activity.endTime ?? activity.startTime)
-  const height = Math.max(20, bottom - top)
   const c = ACTIVITY_TYPE_COLOR[activity.type as string] ?? '#10B981'
+  const label = ACTIVITY_TYPE_LABEL[activity.type as string] ?? 'Activité'
   const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState(activity.title)
-  useEffect(() => { setTitle(activity.title) }, [activity.title])
+  const [preview, setPreview] = useState<{ start: number; end: number } | null>(null)
+  const dragRef = useRef<{ mode: 'move' | 'resize'; startY: number; origStart: number; origEnd: number; moved: boolean } | null>(null)
+
+  const baseStart = timeToMin(activity.startTime)
+  const baseEnd   = Math.max(baseStart + SNAP_MIN, timeToMin(activity.endTime))
+  const startMin  = preview?.start ?? baseStart
+  const endMin    = preview?.end ?? baseEnd
+
+  const top    = ((startMin - HOUR_START * 60) / 60) * HOUR_PX
+  const height = Math.max(24, ((endMin - startMin) / 60) * HOUR_PX)
+
+  const cols = place?.cols ?? 1
+  const col  = place?.col ?? 0
+  const leftPct  = (col / cols) * 100
+  const widthPct = 100 / cols
+
+  const begin = (e: React.PointerEvent, mode: 'move' | 'resize') => {
+    e.stopPropagation()
+    ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+    dragRef.current = { mode, startY: e.clientY, origStart: baseStart, origEnd: baseEnd, moved: false }
+  }
+  const move = (e: React.PointerEvent) => {
+    const dr = dragRef.current
+    if (!dr) return
+    if (Math.abs(e.clientY - dr.startY) > 3) dr.moved = true
+    const dMin = ((e.clientY - dr.startY) / HOUR_PX) * 60
+    if (dr.mode === 'move') {
+      const dur = dr.origEnd - dr.origStart
+      const ns = Math.max(HOUR_START * 60, Math.min(HOUR_END * 60 - dur, snap(dr.origStart + dMin)))
+      setPreview({ start: ns, end: ns + dur })
+    } else {
+      const ne = Math.max(dr.origStart + SNAP_MIN, Math.min(HOUR_END * 60, snap(dr.origEnd + dMin)))
+      setPreview({ start: dr.origStart, end: ne })
+    }
+  }
+  const end = () => {
+    const dr = dragRef.current
+    dragRef.current = null
+    if (!dr) return
+    const p = preview
+    setPreview(null)
+    if (!dr.moved) { setEditing(true); return }
+    if (p) {
+      if (dr.mode === 'move') onUpdate({ startTime: minToTime(p.start), endTime: minToTime(p.end) })
+      else onUpdate({ endTime: minToTime(p.end) })
+    }
+  }
+
+  const resp   = activity.responsibles ?? []
+  const guests = activity.guests ?? []
+  const compact = height < 52
+  const openAbove = top > colHeight * 0.55
 
   return (
-    <div
-      onClick={() => setEditing(true)}
-      style={{ top, height, left: 4, right: 4, background: c, borderLeft: `3px solid ${c}` }}
-      className="absolute rounded-md text-white text-[10px] font-bold p-1 shadow-md cursor-pointer hover:shadow-lg transition-shadow overflow-hidden">
-      <div className="flex items-start justify-between gap-1">
-        <span className="truncate flex-1">{activity.title || 'Sans titre'}</span>
-        <button onClick={(e) => { e.stopPropagation(); onRemove() }}
-          className="text-white/70 hover:text-white" title="Supprimer">
-          <X className="h-2.5 w-2.5" />
-        </button>
-      </div>
-      <div className="text-[9px] opacity-90">
-        {(activity.startTime ?? '').slice(0, 5)} → {(activity.endTime ?? '').slice(0, 5)}
+    <>
+      <div
+        onPointerDown={(e) => begin(e, 'move')}
+        onPointerMove={move}
+        onPointerUp={end}
+        style={{
+          top, height,
+          left:  `calc(${leftPct}% + ${col === 0 ? 4 : 2}px)`,
+          width: `calc(${widthPct}% - ${cols > 1 ? 4 : 8}px)`,
+          background: `linear-gradient(135deg, ${c}, ${c}E6)`,
+          boxShadow: preview ? `0 10px 22px -6px ${c}` : undefined,
+        }}
+        className={`absolute rounded-lg text-white shadow-md cursor-grab active:cursor-grabbing select-none overflow-hidden ring-1 ring-black/10 hover:ring-2 hover:ring-white/70 transition-[box-shadow] ${preview ? 'z-30 opacity-95' : 'z-20'}`}>
+        {/* header row */}
+        <div className="flex items-center gap-1 px-1.5 pt-1">
+          <span className="inline-flex items-center rounded-full bg-white/25 px-1.5 py-px text-[8px] font-extrabold uppercase tracking-wide leading-none">
+            {label}
+          </span>
+          {durLabel(activity) && (
+            <span className="ml-auto text-[8px] font-bold opacity-90 tabular-nums">{durLabel(activity)}</span>
+          )}
+          <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setEditing(true) }}
+            className={`${durLabel(activity) ? '' : 'ml-auto'} text-white/80 hover:text-white`} title="Modifier">
+            <Pencil className="h-2.5 w-2.5" />
+          </button>
+          <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRemove() }}
+            className="text-white/80 hover:text-white" title="Supprimer">
+            <Trash2 className="h-2.5 w-2.5" />
+          </button>
+        </div>
+        {/* title + meta */}
+        <div className="px-1.5 mt-0.5">
+          <div className="text-[11px] font-bold leading-tight line-clamp-2">{activity.title || 'Sans titre'}</div>
+          {!compact && (
+            <div className="text-[9px] opacity-90 tabular-nums mt-0.5">
+              {fmtHM(minToTime(startMin))}–{fmtHM(minToTime(endMin))}
+            </div>
+          )}
+          {!compact && (activity.location || resp.length > 0 || guests.length > 0) && (
+            <div className="mt-0.5 flex flex-col gap-px text-[8.5px] opacity-90">
+              {activity.location && (
+                <span className="inline-flex items-center gap-0.5 truncate"><MapPin className="h-2.5 w-2.5 shrink-0" />{activity.location}</span>
+              )}
+              {resp.length > 0 && (
+                <span className="inline-flex items-center gap-0.5 truncate"><Users className="h-2.5 w-2.5 shrink-0" />{resp.slice(0, 2).join(', ')}{resp.length > 2 ? ` +${resp.length - 2}` : ''}</span>
+              )}
+            </div>
+          )}
+        </div>
+        {/* resize handle (bottom) */}
+        <div onPointerDown={(e) => begin(e, 'resize')}
+          className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize flex items-end justify-center pb-0.5 group/rz"
+          title="Glisser pour changer la durée">
+          <div className="h-0.5 w-6 rounded-full bg-white/50 group-hover/rz:bg-white" />
+        </div>
       </div>
 
-      {/* Inline editor popover */}
+      {/* Editor popover — rendered as a sibling so it escapes the block's overflow-hidden */}
       {editing && (
-        <div onClick={(e) => e.stopPropagation()}
-          className="absolute z-30 top-full left-0 mt-1 w-60 rounded-md bg-card text-foreground border-2 shadow-xl p-2 space-y-1.5"
-          style={{ borderColor: c }}>
-          <div className="flex items-center gap-1">
-            <select value={activity.type ?? 'ACTIVITY'}
-              onChange={(e) => onUpdate({ type: e.target.value as any })}
-              className="text-[10px] rounded border bg-background px-1 py-0.5">
-              {ACTIVITY_TYPES.map(t => <option key={t} value={t}>{ACTIVITY_TYPE_LABEL[t]}</option>)}
-            </select>
-            <button onClick={() => setEditing(false)} className="ml-auto p-0.5 rounded hover:bg-accent" title="Fermer">
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-          <input value={title} onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => { if (title !== activity.title) onUpdate({ title }) }}
-            placeholder="Titre"
-            className="w-full h-7 px-1.5 text-[11px] rounded border bg-background font-bold" />
-          <div className="grid grid-cols-2 gap-1">
-            <input type="time" value={(activity.startTime ?? '').slice(0, 5)}
-              onChange={(e) => onUpdate({ startTime: e.target.value + ':00' })}
-              className="w-full h-7 px-1.5 text-[10px] rounded border bg-background" />
-            <input type="time" value={(activity.endTime ?? '').slice(0, 5)}
-              onChange={(e) => onUpdate({ endTime: e.target.value + ':00' })}
-              className="w-full h-7 px-1.5 text-[10px] rounded border bg-background" />
-          </div>
-          <input value={activity.location ?? ''}
-            onChange={(e) => onUpdate({ location: e.target.value })}
-            placeholder="Lieu"
-            className="w-full h-7 px-1.5 text-[10px] rounded border bg-background" />
-          <input value={(activity.responsibles ?? []).join(', ')}
-            onChange={(e) => onUpdate({ responsibles: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-            placeholder="Responsables (virgule)"
-            className="w-full h-7 px-1.5 text-[10px] rounded border bg-background" />
+        <div className="absolute z-40"
+          style={{
+            top:    openAbove ? undefined : top + height + 4,
+            bottom: openAbove ? `calc(100% - ${Math.max(0, top - 4)}px)` : undefined,
+            left:   `calc(${leftPct}% + 4px)`,
+            width:  252, maxWidth: 'calc(100% - 8px)',
+          }}>
+          <ActivityEditor activity={activity} color={c}
+            onUpdate={onUpdate} onRemove={onRemove} onClose={() => setEditing(false)} />
         </div>
       )}
+    </>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//                             ACTIVITY EDITOR (popover)
+// ──────────────────────────────────────────────────────────────────────────
+
+function ActivityEditor({ activity, color, onUpdate, onRemove, onClose }: {
+  activity: Activity
+  color: string
+  onUpdate: (patch: Partial<Activity>) => void
+  onRemove: () => void
+  onClose: () => void
+}) {
+  const [title, setTitle]   = useState(activity.title ?? '')
+  const [desc, setDesc]     = useState(activity.description ?? '')
+  const [loc, setLoc]       = useState(activity.location ?? '')
+  const [resp, setResp]     = useState((activity.responsibles ?? []).join(', '))
+  const [guests, setGuests] = useState((activity.guests ?? []).join(', '))
+  useEffect(() => { setTitle(activity.title ?? '') }, [activity.title])
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+  const toList = (v: string) => v.split(',').map(s => s.trim()).filter(Boolean)
+
+  return (
+    <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
+      className="rounded-xl bg-card text-foreground border-2 shadow-2xl p-2.5 space-y-2 cursor-default max-h-[60vh] overflow-y-auto"
+      style={{ borderColor: color }}>
+      <div className="flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+        <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color }}>Activité</span>
+        <button onClick={onClose} className="ml-auto p-0.5 rounded hover:bg-accent text-muted-foreground" title="Fermer (Échap)">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* type chips */}
+      <div className="flex flex-wrap gap-1">
+        {ACTIVITY_TYPES.map(t => {
+          const tc = ACTIVITY_TYPE_COLOR[t]
+          const active = (activity.type ?? 'ACTIVITY') === t
+          return (
+            <button key={t} onClick={() => onUpdate({ type: t as any })}
+              className="rounded-full px-1.5 py-0.5 text-[9px] font-bold border transition-all"
+              style={active
+                ? { background: tc, color: '#fff', borderColor: tc }
+                : { color: tc, borderColor: tc + '55', background: tc + '12' }}>
+              {ACTIVITY_TYPE_LABEL[t]}
+            </button>
+          )
+        })}
+      </div>
+
+      <input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus
+        onBlur={() => { if (title !== activity.title) onUpdate({ title }) }}
+        placeholder="Titre de l'activité"
+        className="w-full h-8 px-2 text-[12px] font-bold rounded-md border bg-background" />
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><Clock className="h-2.5 w-2.5" />Début</span>
+          <input type="time" step={900} value={fmtHM(activity.startTime)}
+            onChange={(e) => onUpdate({ startTime: e.target.value + ':00' })}
+            className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
+        </label>
+        <label className="block">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Fin</span>
+          <input type="time" step={900} value={fmtHM(activity.endTime)}
+            onChange={(e) => onUpdate({ endTime: e.target.value + ':00' })}
+            className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
+        </label>
+      </div>
+
+      <label className="block">
+        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><MapPin className="h-2.5 w-2.5" />Lieu</span>
+        <input value={loc} onChange={(e) => setLoc(e.target.value)}
+          onBlur={() => { if (loc !== (activity.location ?? '')) onUpdate({ location: loc }) }}
+          placeholder="Salle, lien visio…"
+          className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
+      </label>
+
+      <label className="block">
+        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><Users className="h-2.5 w-2.5" />Responsables</span>
+        <input value={resp} onChange={(e) => setResp(e.target.value)}
+          onBlur={() => onUpdate({ responsibles: toList(resp) })}
+          placeholder="Noms, séparés par des virgules"
+          className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
+      </label>
+
+      <label className="block">
+        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><UserPlus className="h-2.5 w-2.5" />Invités</span>
+        <input value={guests} onChange={(e) => setGuests(e.target.value)}
+          onBlur={() => onUpdate({ guests: toList(guests) })}
+          placeholder="Intervenants externes…"
+          className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
+      </label>
+
+      <label className="block">
+        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><FileText className="h-2.5 w-2.5" />Description</span>
+        <textarea rows={2} value={desc} onChange={(e) => setDesc(e.target.value)}
+          onBlur={() => { if (desc !== (activity.description ?? '')) onUpdate({ description: desc }) }}
+          placeholder="Détails, objectifs…"
+          className="mt-0.5 w-full px-2 py-1 text-[11px] rounded-md border bg-background resize-y" />
+      </label>
+
+      <button onClick={() => { onRemove(); onClose() }}
+        className="w-full inline-flex items-center justify-center gap-1 text-[10px] font-bold text-destructive hover:bg-destructive/10 px-2 py-1.5 rounded-md border border-destructive/30">
+        <Trash2 className="h-3 w-3" />Supprimer l&rsquo;activité
+      </button>
     </div>
   )
 }

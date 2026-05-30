@@ -274,6 +274,13 @@ public class AdminAiService {
                 - context : "hero" pour le bandeau principal, "feature" pour les cards, "partner_logo" pour
                   un logo, "team" pour un portrait, "abstract" pour un fond décoratif.
               Ne dis JAMAIS "je ne peux pas trouver d'images" — tu peux, via search_photos.
+            • ── PAGE D'ACCUEIL : workflow recommandé ──
+                Pour rédiger / refondre une section de la page d'accueil :
+                1. generate_landing_section(section="hero", brief="...") → renvoie un JSON prêt
+                   (heroTitle, heroSubtitle, etc.). UN appel par section (hero, about, faq, cta, …).
+                2. (si la section a une image) search_photos(query="...", context="hero"|"feature"|"team").
+                3. update_landing_page(patch={ ...JSON généré..., heroImageUrl: <url de search_photos> }).
+                Ne rédige PAS le copywriting à la main quand generate_landing_section peut le faire.
             • Workflow photos page d'accueil (DEUX étapes dans la MÊME réponse) :
                 1. search_photos(query="modern tunisia tech coworking", context="hero", count=1)  // pour heroImageUrl
                 2. search_photos(query="african startup founder presenting", context="feature", count=4) // pour features
@@ -527,6 +534,30 @@ public class AdminAiService {
                     toolMsg.put("content", "Question posée à l'admin — j'attends sa réponse.");
                     appendMessage(conv, "tool", toolMsg);
                     continue; // skip the rest of write/read handling
+                }
+
+                // ── Special tool: generate_landing_section ────────────────
+                // Pure copywriting — runs the one-shot JSON generator and feeds
+                // the result straight back so the model can pass it to
+                // update_landing_page. No DB write, no confirmation.
+                if ("generate_landing_section".equals(toolName)) {
+                    String genResult;
+                    try {
+                        String section = String.valueOf(args.getOrDefault("section", "hero"));
+                        String brief   = args.get("brief")  == null ? null : String.valueOf(args.get("brief"));
+                        String locale  = args.get("locale") == null ? "fr" : String.valueOf(args.get("locale"));
+                        Map<String, Object> generated = suggestLandingContent(section, brief, locale);
+                        genResult = json.writeValueAsString(generated);
+                    } catch (Exception ex) {
+                        genResult = "ERREUR génération section: " + ex.getMessage();
+                    }
+                    Map<String, Object> toolMsg = new LinkedHashMap<>();
+                    toolMsg.put("role", "tool");
+                    toolMsg.put("tool_call_id", callId);
+                    toolMsg.put("name", toolName);
+                    toolMsg.put("content", genResult);
+                    appendMessage(conv, "tool", toolMsg);
+                    continue;
                 }
 
                 String toolResultText;

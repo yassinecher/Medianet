@@ -420,7 +420,7 @@ public class ToolExecutor {
      * <p>The previous {@code source.unsplash.com} endpoint was sunset by Unsplash in 2024
      * and is no longer used — it returned 503/404 for every request.
      */
-    private Map<String, Object> searchPhotos(Map<String, Object> args) {
+    public Map<String, Object> searchPhotos(Map<String, Object> args) {
         String rawQuery  = String.valueOf(args.getOrDefault("query", "incubator")).trim();
         String context   = String.valueOf(args.getOrDefault("context", "generic")).toLowerCase().trim();
         int    count     = Math.min(8, Math.max(1, intArg(args, "count") != null ? intArg(args, "count") : 4));

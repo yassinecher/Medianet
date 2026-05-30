@@ -37,6 +37,7 @@ public class AdminAiController {
     private final OpenRouterClient         llm;
     private final AiSettingsService        aiSettings;
     private final OpenRouterModelsService  models;
+    private final com.medianet.adminai.service.ToolExecutor toolExecutor;
 
     // ── Chat ──────────────────────────────────────────────────────────────────
 
@@ -210,6 +211,20 @@ public class AdminAiController {
         String brief   = body.getOrDefault("brief", "");
         String locale  = body.getOrDefault("locale", "fr");
         return ResponseEntity.ok(service.suggestLandingContent(section, brief, locale));
+    }
+
+    /**
+     * Image search for the editors (landing page, programmes, partners…). Reuses the
+     * exact same provider chain (Pexels → Unsplash → OpenVerse → Picsum) as the AI
+     * agent's {@code search_photos} tool, so the UI gets the same ready-to-use URLs.
+     * Body: {@code { query, context?: hero|feature|partner_logo|team|abstract|generic, count?, width?, height? }}.
+     */
+    @PostMapping("/search-photos")
+    public ResponseEntity<Map<String, Object>> searchPhotos(@RequestBody Map<String, Object> body) {
+        if (body == null || body.get("query") == null || String.valueOf(body.get("query")).isBlank()) {
+            return ResponseEntity.badRequest().body(Map.<String, Object>of("error", "query requis"));
+        }
+        return ResponseEntity.ok(toolExecutor.searchPhotos(body));
     }
 
     /**
