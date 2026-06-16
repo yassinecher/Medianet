@@ -27,7 +27,7 @@ public class FileUploadController {
      * Returns: <code>{ "url": "http://localhost:9000/medianet/logos/2026-05-22/abc.png" }</code>
      */
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Map<String, String>> upload(
             @RequestPart("file") MultipartFile file,
             @RequestParam(defaultValue = "uploads") String folder) {
@@ -37,7 +37,7 @@ public class FileUploadController {
 
     /** Upload a non-image file (PDF, pitch deck, etc.) — ADMIN only. */
     @PostMapping(value = "/upload-any", consumes = "multipart/form-data")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Map<String, String>> uploadAny(
             @RequestPart("file") MultipartFile file,
             @RequestParam(defaultValue = "documents") String folder) {
@@ -47,7 +47,7 @@ public class FileUploadController {
 
     /** Delete an uploaded file by its public URL — ADMIN only. */
     @DeleteMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Void> delete(@RequestParam String url) {
         storage.deleteByUrl(url);
         return ResponseEntity.noContent().build();

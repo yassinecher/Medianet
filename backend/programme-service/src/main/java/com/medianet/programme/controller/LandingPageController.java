@@ -22,14 +22,14 @@ public class LandingPageController {
 
     /** ADMIN — update the landing page. */
     @PutMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<LandingPageDto> update(@RequestBody LandingPageDto req) {
         return ResponseEntity.ok(service.update(req));
     }
 
     /** ADMIN — reset to defaults. */
     @PostMapping("/reset")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<LandingPageDto> reset() {
         return ResponseEntity.ok(service.reset());
     }

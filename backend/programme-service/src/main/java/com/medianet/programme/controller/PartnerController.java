@@ -24,13 +24,13 @@ public class PartnerController {
     }
 
     @PostMapping("/api/partners")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<PartnerDto> createPartner(@Valid @RequestBody CreatePartnerRequest req) {
         return ResponseEntity.status(201).body(programmeService.createPartner(req));
     }
 
     @DeleteMapping("/api/partners/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Void> deletePartner(@PathVariable Long id) {
         programmeService.deletePartner(id);
         return ResponseEntity.noContent().build();
@@ -38,8 +38,13 @@ public class PartnerController {
 
     // ── Programme ↔ partner association ──────────────────────────────────────
 
+    @GetMapping("/api/programmes/{programmeId}/partners")
+    public ResponseEntity<List<PartnerDto>> getProgrammePartners(@PathVariable Long programmeId) {
+        return ResponseEntity.ok(programmeService.getProgrammePartners(programmeId));
+    }
+
     @PostMapping("/api/programmes/{programmeId}/partners/{partnerId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammeDto> addPartner(
             @PathVariable Long programmeId,
             @PathVariable Long partnerId) {
@@ -47,7 +52,7 @@ public class PartnerController {
     }
 
     @DeleteMapping("/api/programmes/{programmeId}/partners/{partnerId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammeDto> removePartner(
             @PathVariable Long programmeId,
             @PathVariable Long partnerId) {

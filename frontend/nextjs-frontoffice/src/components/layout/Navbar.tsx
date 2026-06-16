@@ -1,18 +1,19 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LogOut, Menu, X, ChevronDown, Briefcase, Sparkles, GraduationCap, RefreshCw } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { LogOut, Menu, X, Briefcase, Sparkles, GraduationCap } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
-import { useAuthStore, useUser, useActiveRole, frontofficeRolesOf, type FrontofficeRole } from '@/store/auth.store'
+import { useAuthStore, useUser, frontofficeRolesOf, permsOf, type FrontofficeRole } from '@/store/auth.store'
 import { Button } from '@/components/ui/button'
 import { cn, getInitials } from '@/lib/utils'
 
 const navLinks = [
-  { label: 'Programmes', href: '/programmes' },
+  { label: 'Programmes', href: '/programmes' }, // public — always visible
   { label: 'Tableau de bord', href: '/dashboard', auth: true },
-  { label: 'Mes candidatures', href: '/candidatures', auth: true, roles: ['PORTEUR'] },
-  { label: 'Mes tâches', href: '/tasks', auth: true },
+  { label: 'Mes candidatures', href: '/candidatures', auth: true, perm: 'candidatures:read' },
+  { label: 'Mes organisations', href: '/organizations', auth: true, perm: 'organizations:read' },
+  { label: 'Mes tâches', href: '/tasks', auth: true, perm: 'tasks:read' },
 ] as const
 
 const ROLE_META: Record<FrontofficeRole, { label: string; icon: any; color: string }> = {
@@ -23,14 +24,10 @@ const ROLE_META: Record<FrontofficeRole, { label: string; icon: any; color: stri
 
 export function Navbar() {
   const realUser = useUser()
-  const realRole = useActiveRole()
-  const setActiveRole = useAuthStore((s) => s.setActiveRole)
   const logout = useAuthStore((s) => s.logout)
   const router = useRouter()
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
-  const [roleMenu, setRoleMenu] = useState(false)
-  const roleMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Edit-mode preview: when the navbar is rendered inside the backoffice
   // landing-page editor iframe (?edit=1), force a logged-out view so the
@@ -41,33 +38,20 @@ export function Navbar() {
     setEditMode(new URLSearchParams(window.location.search).get('edit') === '1')
   }, [])
   const user = editMode ? null : realUser
-  const activeRole = editMode ? null : realRole
 
-  const availableRoles = frontofficeRolesOf(user)
-  const ActiveIcon = activeRole ? ROLE_META[activeRole].icon : Briefcase
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (roleMenuRef.current && !roleMenuRef.current.contains(e.target as Node)) setRoleMenu(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
+  // Layout adapts to the user's full role + permission set (no role-picking).
+  const roles = frontofficeRolesOf(user)
+  const perms = permsOf(user)
 
   const handleLogout = () => { logout(); router.push('/') }
-  const switchRole = (role: FrontofficeRole) => {
-    setActiveRole(role)
-    setRoleMenu(false)
-    // Navigate home to refresh role-scoped content
-    router.push('/dashboard')
-  }
 
-  // Filter nav links by active role + auth
+  // Filter nav links by auth + the union of the user's roles and permissions.
   const visibleLinks = navLinks.filter((l: any) => {
     if (l.auth && !user) return false
-    if (l.roles && activeRole && !l.roles.includes(activeRole)) return false
-    return true
+    if (!l.roles && !l.perm) return true
+    if (l.roles?.some((r: FrontofficeRole) => roles.includes(r))) return true
+    if (l.perm && perms.includes(l.perm)) return true
+    return false
   })
 
   return (
@@ -97,36 +81,19 @@ export function Navbar() {
           <AnimatedThemeToggler />
           {user ? (
             <>
-              {/* Role badge + switcher */}
-              {activeRole && (
-                <div className="relative" ref={roleMenuRef}>
-                  <button type="button" onClick={() => setRoleMenu((v) => !v)}
-                    className={cn('flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1.5 text-xs font-bold transition-colors',
-                      'hover:border-brand-400 hover:bg-accent', ROLE_META[activeRole].color)}>
-                    <ActiveIcon className="h-3 w-3" />
-                    <span className="hidden sm:inline">{ROLE_META[activeRole].label}</span>
-                    {availableRoles.length > 1 && <ChevronDown className="h-3 w-3" />}
-                  </button>
-                  {roleMenu && availableRoles.length > 1 && (
-                    <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-border bg-card shadow-xl overflow-hidden z-50">
-                      <p className="border-b border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                        Changer de profil
-                      </p>
-                      {availableRoles.map((r) => {
-                        const Icon = ROLE_META[r].icon
-                        const active = r === activeRole
-                        return (
-                          <button key={r} type="button" onClick={() => switchRole(r)}
-                            className={cn('flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors',
-                              active ? 'bg-brand-500/10 text-brand-700 dark:text-brand-300 font-semibold' : 'hover:bg-accent text-foreground')}>
-                            <Icon className={cn('h-3.5 w-3.5', ROLE_META[r].color)} />
-                            {ROLE_META[r].label}
-                            {active && <span className="ml-auto text-[10px] text-brand-600">●</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
+              {/* Role badges — informational (the layout follows roles + permissions) */}
+              {roles.length > 0 && (
+                <div className="hidden items-center gap-1 sm:flex">
+                  {roles.map((r) => {
+                    const Icon = ROLE_META[r].icon
+                    return (
+                      <span key={r}
+                        className={cn('flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1.5 text-xs font-bold', ROLE_META[r].color)}>
+                        <Icon className="h-3 w-3" />
+                        <span className="hidden sm:inline">{ROLE_META[r].label}</span>
+                      </span>
+                    )
+                  })}
                 </div>
               )}
               <div className="hidden items-center gap-2 sm:flex">

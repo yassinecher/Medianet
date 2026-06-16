@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Eye, Wand2, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Wand2, ChevronRight, Calendar, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { programmesApi, partnersApi } from '@/lib/api'
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -13,15 +13,16 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate, statusColor } from '@/lib/utils'
 import type { Programme, Partner } from '@/types'
-import { FormBuilder } from '@/components/formbuilder/FormBuilder'
-import { FormPreview } from '@/components/formbuilder/FormPreview'
 import { parseSchema, type CustomFormSchema } from '@/components/formbuilder/schema'
 import { ImageUpload } from '@/components/upload/ImageUpload'
-import { SessionsPanel } from './SessionsPanel'
+import { TimelineTab } from '../builder/TimelineTab'
+import { InvitationsPanel } from './InvitationsPanel'
+import { ParcoursFlow } from './ParcoursFlow'
+import { ProgrammeDashboard } from './ProgrammeDashboard'
 
 const statusLabel: Record<string, string> = {
   DRAFT: 'Brouillon', OPEN: 'Ouvert', IN_PROGRESS: 'En cours',
-  EVALUATION: 'Évaluation', CLOSED: 'Fermé', CANCELLED: 'Annulé',
+  EVALUATION: 'Évaluation', CLOSED: 'Fermé', CANCELLED: 'Annulé', ARCHIVED: 'Archivé',
 }
 
 const SECTORS = [
@@ -61,7 +62,7 @@ export default function ProgrammeDetailPage() {
   const [programme, setProgramme] = useState<Programme | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'info' | 'phases' | 'criteria' | 'partners'>('info')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'info' | 'phases' | 'criteria' | 'partners' | 'invitations'>('dashboard')
 
   // Info edit form
   const [editMode, setEditMode] = useState(false)
@@ -75,7 +76,6 @@ export default function ProgrammeDetailPage() {
     expertCount: '', trainingSessionsCount: '', mentoringHoursPerMonth: '', maxStartups: '',
     objectives: [] as string[], benefits: [] as string[],
   })
-  const [previewOpen, setPreviewOpen] = useState(false)
   const [newObjective, setNewObjective] = useState('')
   const [newBenefit, setNewBenefit] = useState('')
 
@@ -152,9 +152,8 @@ export default function ProgrammeDetailPage() {
         startDate: form.startDate || undefined,
         endDate: form.endDate || undefined,
         sectors: form.sectors,
-        formTemplate: form.formTemplate || undefined,
-        // Empty string explicitly clears the custom schema on the backend
-        customFormSchema: form.customFormSchema ? JSON.stringify(form.customFormSchema) : '',
+        // formTemplate / customFormSchema intentionally NOT sent — the form is
+        // edited only in the Parcours candidature-session panel (single source).
         tagline: form.tagline || undefined,
         logoUrl: form.logoUrl || undefined,
         bannerImageUrl: form.bannerImageUrl || undefined,
@@ -246,20 +245,24 @@ export default function ProgrammeDetailPage() {
     finally { setChangingStatus(false) }
   }
 
+  // Workflow transitions per status. OPEN/IN_PROGRESS/CLOSED are normally driven
+  // automatically by the session flow (ProgrammeLifecycle); DRAFT / EVALUATION /
+  // CANCELLED are manual "holds" the auto-flow never overrides.
+  // Simple, session-aligned lifecycle: Ouvrir / Brouillon / Fermer / Archiver.
+  // (The date-driven ProgrammeLifecycle still auto-progresses OPEN↔IN_PROGRESS↔CLOSED.)
+  const OPEN_ACTIONS = [
+    { label: 'Brouillon', next: 'DRAFT',    variant: 'outline', icon: '✏️' },
+    { label: 'Fermer',    next: 'CLOSED',   variant: 'outline', icon: '🔒' },
+    { label: 'Archiver',  next: 'ARCHIVED', variant: 'outline', icon: '📦' },
+  ]
   const statusActions: Record<string, { label: string; next: string; variant: string; icon: string }[]> = {
-    DRAFT:      [{ label: 'Publier', next: 'OPEN', variant: 'brand', icon: '🚀' }],
-    OPEN:       [
-      { label: 'Suspendre', next: 'DRAFT', variant: 'outline', icon: '⏸' },
-      { label: 'Clôturer', next: 'CLOSED', variant: 'outline', icon: '🔒' },
-      { label: "Lancer l'évaluation", next: 'EVALUATION', variant: 'brand', icon: '⚖️' },
-    ],
-    EVALUATION: [
-      { label: 'Rouvrir', next: 'OPEN', variant: 'outline', icon: '🔓' },
-      { label: 'Clôturer', next: 'CLOSED', variant: 'outline', icon: '🔒' },
-    ],
-    CLOSED:     [],
-    CANCELLED:  [],
-    IN_PROGRESS:[{ label: 'Clôturer', next: 'CLOSED', variant: 'outline', icon: '🔒' }],
+    DRAFT:       [{ label: 'Ouvrir', next: 'OPEN', variant: 'brand', icon: '🚀' }, { label: 'Archiver', next: 'ARCHIVED', variant: 'outline', icon: '📦' }],
+    OPEN:        OPEN_ACTIONS,
+    IN_PROGRESS: OPEN_ACTIONS,
+    EVALUATION:  OPEN_ACTIONS,
+    CLOSED:      [{ label: 'Ouvrir', next: 'OPEN', variant: 'brand', icon: '🔓' }, { label: 'Archiver', next: 'ARCHIVED', variant: 'outline', icon: '📦' }],
+    CANCELLED:   [{ label: 'Ouvrir', next: 'OPEN', variant: 'outline', icon: '🔄' }, { label: 'Archiver', next: 'ARCHIVED', variant: 'outline', icon: '📦' }],
+    ARCHIVED:    [{ label: 'Désarchiver', next: 'DRAFT', variant: 'outline', icon: '♻️' }],
   }
 
   const handleCreateAndAddPartner = async () => {
@@ -313,7 +316,7 @@ export default function ProgrammeDetailPage() {
                     <Link href={`/programmes/${programme.id}/timeline`}>
                       <Button variant="outline" size="sm" className="gap-1.5 border-amber-500/40 bg-gradient-to-r from-amber-500/5 to-rose-500/5 hover:from-amber-500/10 hover:to-rose-500/10">
                         <BarChart3 className="h-3.5 w-3.5 text-amber-500" />
-                        Timeline
+                        🗺️ Parcours
                       </Button>
                     </Link>
                     <Link href={`/programmes/${programme.id}/builder`}>
@@ -352,13 +355,15 @@ export default function ProgrammeDetailPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border">
-          {(['info', 'phases', 'criteria', 'partners'] as const).map((tab) => (
+          {(['dashboard', 'info', 'phases', 'criteria', 'partners', 'invitations'] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === tab ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-              {tab === 'info' ? 'Informations'
+              {tab === 'dashboard' ? 'Tableau de bord'
+                : tab === 'info' ? 'Informations'
                 : tab === 'phases' ? `Sessions (${phases.length})`
                 : tab === 'criteria' ? `Critères (${criteria.length})`
-                : `Partenaires (${programmePartners.length})`}
+                : tab === 'partners' ? `Partenaires (${programmePartners.length})`
+                : 'Invitations'}
             </button>
           ))}
         </div>
@@ -367,21 +372,25 @@ export default function ProgrammeDetailPage() {
           <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}</div>
         ) : (
           <>
+            {/* DASHBOARD TAB */}
+            {activeTab === 'dashboard' && programme && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <ProgrammeDashboard programmeId={programme.id} programme={programme}
+                  phases={phases as any} criteria={criteria as any} onOpenTab={setActiveTab} />
+              </motion.div>
+            )}
+
             {/* INFO TAB */}
             {activeTab === 'info' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                {programme && <ParcoursFlow phases={phases as any} />}
                 <MagicCard className="p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="font-semibold text-foreground">Informations générales</h2>
                     {!editMode ? (
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => setPreviewOpen(true)}>
-                          <Eye className="h-4 w-4 mr-1" />Aperçu formulaire
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setEditMode(true)}>
-                          <Edit2 className="h-4 w-4 mr-1" />Modifier
-                        </Button>
-                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => setEditMode(true)}>
+                        <Edit2 className="h-4 w-4 mr-1" />Modifier
+                      </Button>
                     ) : (
                       <div className="flex gap-2">
                         <Button variant="brand" size="sm" onClick={handleSaveInfo} disabled={saving}>
@@ -399,7 +408,7 @@ export default function ProgrammeDetailPage() {
                         { label: 'Statut', value: statusLabel[programme?.status ?? ''] ?? programme?.status },
                         { label: 'Type', value: programme?.type === 'PUBLIC' ? 'Public' : programme?.type === 'PRIVATE' ? 'Privé' : programme?.domain },
                         {
-                          label: 'Formulaire',
+                          label: 'Formulaire (géré dans le Parcours → session Candidature)',
                           value: form.customFormSchema
                             ? `Personnalisé (${form.customFormSchema.sections.length} sections, ${form.customFormSchema.sections.reduce((acc, s) => acc + s.fields.length, 0)} champs)`
                             : FORM_TEMPLATES.find((t) => t.value === ((programme as any)?.formTemplate ?? 'STANDARD'))?.label ?? 'Standard'
@@ -431,33 +440,63 @@ export default function ProgrammeDetailPage() {
                       )}
                     </div>
                   ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Titre *</label>
-                        <Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} required />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Type</label>
-                        <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-                          className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                          <option value="PUBLIC">Public</option>
-                          <option value="PRIVATE">Privé</option>
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Date de début</label>
-                        <Input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Date de fin</label>
-                        <Input type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Clôture candidatures</label>
-                        <Input type="date" value={form.applicationDeadline} onChange={(e) => setForm((f) => ({ ...f, applicationDeadline: e.target.value }))} />
-                      </div>
-                      <div className="space-y-2 sm:col-span-2">
-                        <label className="text-xs font-medium text-muted-foreground">Secteurs <span className="opacity-60">(optionnel)</span></label>
+                    <div className="space-y-5">
+                      {/* ── Essentiel ── */}
+                      <section className="rounded-xl border border-border bg-muted/10 p-4">
+                        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
+                          <FileText className="h-3.5 w-3.5" />Essentiel
+                        </p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Titre *</label>
+                            <Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} required />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Type</label>
+                            <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+                              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                              <option value="PUBLIC">Public</option>
+                              <option value="PRIVATE">Privé</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <label className="text-xs font-medium text-muted-foreground">Description</label>
+                            <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                              rows={3}
+                              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none" />
+                          </div>
+                        </div>
+                      </section>
+
+                      {/* ── Calendrier ── */}
+                      <section className="rounded-xl border border-border bg-muted/10 p-4">
+                        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
+                          <Calendar className="h-3.5 w-3.5" />Calendrier
+                        </p>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Date de début</label>
+                            <Input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Date de fin</label>
+                            <Input type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Clôture candidatures</label>
+                            <Input type="date" value={form.applicationDeadline} onChange={(e) => setForm((f) => ({ ...f, applicationDeadline: e.target.value }))} />
+                            <p className="text-[10px] text-muted-foreground">
+                              ⟳ Synchronisée automatiquement avec la fin de la session « Candidature » du Parcours.
+                            </p>
+                          </div>
+                        </div>
+                      </section>
+
+                      {/* ── Secteurs ── */}
+                      <section className="rounded-xl border border-border bg-muted/10 p-4">
+                        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
+                          <Tag className="h-3.5 w-3.5" />Secteurs <span className="font-normal opacity-60">(optionnel)</span>
+                        </p>
                         <div className="flex flex-wrap gap-2">
                           {SECTORS.map((s) => {
                             const selected = form.sectors.includes(s)
@@ -473,93 +512,10 @@ export default function ProgrammeDetailPage() {
                             )
                           })}
                         </div>
-                      </div>
-                      <div className="space-y-1 sm:col-span-2">
-                        <label className="text-xs font-medium text-muted-foreground">Description</label>
-                        <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                          rows={3}
-                          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none" />
-                      </div>
-
-                      {/* ── Formulaire de candidature (squelette OU custom) ── */}
-                      <div className="sm:col-span-2 pt-2 border-t border-border">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-                            <FileText className="h-3.5 w-3.5" />Formulaire de candidature
-                          </p>
-                          <Button type="button" variant="ghost" size="sm" className="gap-1.5 text-xs"
-                            onClick={() => setPreviewOpen(true)}>
-                            <Eye className="h-3.5 w-3.5" />Aperçu
-                          </Button>
-                        </div>
-
-                        {/* Mode toggle */}
-                        <div className="grid grid-cols-2 gap-1 p-1 rounded-xl border border-border bg-muted/30 mb-3">
-                          <button type="button"
-                            onClick={() => setForm((f) => ({ ...f, customFormSchema: null }))}
-                            className={`rounded-lg px-3 py-2 text-sm font-medium transition-all
-                              ${!form.customFormSchema
-                                ? 'bg-card text-foreground shadow-sm border border-border'
-                                : 'text-muted-foreground hover:text-foreground'}`}>
-                            <div className="flex items-center justify-center gap-1.5">
-                              <FileText className="h-3.5 w-3.5" />Template préconçu
-                            </div>
-                          </button>
-                          <button type="button"
-                            onClick={() => setForm((f) => ({ ...f, customFormSchema: f.customFormSchema ?? { sections: [{ key: 'section_1', title: 'Présentation du projet', description: '', fields: [{ key: 'project_name', label: 'Nom du projet', type: 'text', required: true }] }] } }))}
-                            className={`rounded-lg px-3 py-2 text-sm font-medium transition-all
-                              ${form.customFormSchema
-                                ? 'bg-card text-foreground shadow-sm border border-border'
-                                : 'text-muted-foreground hover:text-foreground'}`}>
-                            <div className="flex items-center justify-center gap-1.5">
-                              <Wand2 className="h-3.5 w-3.5" />Personnalisé
-                            </div>
-                          </button>
-                        </div>
-
-                        {!form.customFormSchema ? (
-                          <>
-                            <p className="text-xs text-muted-foreground mb-3 opacity-80">
-                              Choisissez un squelette préconçu. Les porteurs verront ce formulaire sur la page <em>Rejoindre le programme</em>.
-                            </p>
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              {FORM_TEMPLATES.map((tmpl) => {
-                                const selected = form.formTemplate === tmpl.value
-                                return (
-                                  <button key={tmpl.value} type="button"
-                                    onClick={() => setForm((f) => ({ ...f, formTemplate: tmpl.value }))}
-                                    className={`text-left rounded-xl border-2 p-3.5 transition-all
-                                      ${selected
-                                        ? 'border-brand-500 bg-brand-500/10 shadow-sm'
-                                        : 'border-border bg-card hover:border-brand-400 hover:bg-accent/30'}`}>
-                                    <div className="flex items-center justify-between gap-2 mb-1">
-                                      <span className={`text-sm font-bold ${selected ? 'text-brand-700 dark:text-brand-300' : 'text-foreground'}`}>
-                                        {tmpl.label}
-                                      </span>
-                                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                                        {tmpl.steps} sections
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground leading-snug">{tmpl.description}</p>
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-xs text-muted-foreground mb-3 opacity-80">
-                              Créez votre propre formulaire : ajoutez des sections, glissez des champs, et utilisez <em>Aperçu</em> pour voir le rendu côté porteur.
-                            </p>
-                            <FormBuilder
-                              value={form.customFormSchema}
-                              onChange={(next) => setForm((f) => ({ ...f, customFormSchema: next }))} />
-                          </>
-                        )}
-                      </div>
+                      </section>
 
                       {/* ── Présentation ── */}
-                      <div className="sm:col-span-2 pt-2 border-t border-border">
+                      <section className="rounded-xl border border-border bg-muted/10 p-4">
                         <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
                           <Image className="h-3.5 w-3.5" />Présentation visuelle
                         </p>
@@ -598,10 +554,10 @@ export default function ProgrammeDetailPage() {
                               onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} />
                           </div>
                         </div>
-                      </div>
+                      </section>
 
                       {/* ── Statistiques clés ── */}
-                      <div className="sm:col-span-2 pt-2 border-t border-border">
+                      <section className="rounded-xl border border-border bg-muted/10 p-4">
                         <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
                           <BarChart3 className="h-3.5 w-3.5" />Chiffres clés <span className="font-normal opacity-60">(affichés sur la page du programme)</span>
                         </p>
@@ -627,10 +583,11 @@ export default function ProgrammeDetailPage() {
                               onChange={(e) => setForm((f) => ({ ...f, mentoringHoursPerMonth: e.target.value }))} />
                           </div>
                         </div>
-                      </div>
+                      </section>
 
+                      <div className="grid gap-5 lg:grid-cols-2 items-start">
                       {/* ── Objectifs ── */}
-                      <div className="sm:col-span-2 pt-2 border-t border-border">
+                      <section className="rounded-xl border border-border bg-muted/10 p-4">
                         <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
                           <Target className="h-3.5 w-3.5" />Objectifs du programme
                         </p>
@@ -661,10 +618,10 @@ export default function ProgrammeDetailPage() {
                           </div>
                           <p className="text-xs text-muted-foreground">Appuyez sur Entrée ou ✚ pour ajouter</p>
                         </div>
-                      </div>
+                      </section>
 
                       {/* ── Bénéfices ── */}
-                      <div className="sm:col-span-2 pt-2 border-t border-border">
+                      <section className="rounded-xl border border-border bg-muted/10 p-4">
                         <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
                           <Star className="h-3.5 w-3.5" />Ce que les participants gagnent
                         </p>
@@ -695,6 +652,7 @@ export default function ProgrammeDetailPage() {
                           </div>
                           <p className="text-xs text-muted-foreground">Appuyez sur Entrée ou ✚ pour ajouter</p>
                         </div>
+                      </section>
                       </div>
                     </div>
                   )}
@@ -702,29 +660,18 @@ export default function ProgrammeDetailPage() {
               </motion.div>
             )}
 
-            {/* SESSIONS TAB — unified session model (type + days + activities) */}
+            {/* SESSIONS TAB — the unified Parcours editor (same as /timeline) */}
             {activeTab === 'phases' && programme && (
-              <div className="space-y-3">
-                {/* Hot-link to the planning-game Parcours view */}
-                <Link href={`/programmes/${programme.id}/timeline`}
-                  className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-amber-500/40 bg-gradient-to-r from-amber-500/5 via-rose-500/5 to-purple-500/5 hover:from-amber-500/10 hover:via-rose-500/10 hover:to-purple-500/10 p-4 transition-colors">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-rose-500 text-white shadow-md text-lg">
-                    🗺️
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-foreground">Ouvrir le Parcours (mode timeline)</p>
-                    <p className="text-xs text-muted-foreground">
-                      Glissez les sessions sur une rivière interactive · drag-and-drop · zoom · drag pour étendre la durée
-                    </p>
-                  </div>
-                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                </Link>
-
-                <SessionsPanel
-                  programmeId={programme.id}
-                  criteria={criteria as any}
-                  onCountChange={(n) => setPhases((prev) => prev.length === n ? prev : Array(n).fill({ title: '' } as Phase))}
-                />
+              <div className="space-y-2">
+                <div className="flex justify-end">
+                  <Link href={`/programmes/${programme.id}/timeline`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+                    <ChevronRight className="h-3.5 w-3.5" />Plein écran
+                  </Link>
+                </div>
+                <div className="h-[calc(100vh-17rem)] min-h-[520px] rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
+                  <TimelineTab programmeId={programme.id} programme={programme as any} />
+                </div>
               </div>
             )}
 
@@ -776,7 +723,14 @@ export default function ProgrammeDetailPage() {
                 )}
 
                 {criteria.length === 0 ? (
-                  <div className="py-12 text-center text-muted-foreground">Aucun critère défini</div>
+                  <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-12 text-center">
+                    <Target className="h-10 w-10 text-muted-foreground opacity-30" />
+                    <p className="text-sm font-medium text-foreground">Aucun critère défini</p>
+                    <p className="text-xs text-muted-foreground max-w-sm">
+                      Les jurés noteront les candidatures selon ces critères pondérés.
+                      Ajoutez-en via le formulaire ci-dessus — ex : Innovation (3), Faisabilité (3), Équipe (2), Impact (2).
+                    </p>
+                  </div>
                 ) : (
                   <div className="space-y-2">
                     {criteria.map((c, i) => (
@@ -908,16 +862,16 @@ export default function ProgrammeDetailPage() {
                 </MagicCard>
               </motion.div>
             )}
+
+            {activeTab === 'invitations' && programme && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <InvitationsPanel programmeId={programme.id} />
+              </motion.div>
+            )}
           </>
         )}
       </div>
 
-      <FormPreview
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        schema={form.customFormSchema}
-        templateName={form.formTemplate}
-        templateLabel={FORM_TEMPLATES.find((t) => t.value === form.formTemplate)?.label} />
     </AdminLayout>
   )
 }

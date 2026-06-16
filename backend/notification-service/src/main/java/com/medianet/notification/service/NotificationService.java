@@ -33,6 +33,8 @@ public class NotificationService {
                 .programmeName(req.getProgrammeName())
                 .phaseId(req.getPhaseId())
                 .phaseName(req.getPhaseName())
+                .activityId(req.getActivityId())
+                .activityName(req.getActivityName())
                 .recipientEmail(req.getRecipientEmail().toLowerCase())
                 .recipientName(req.getRecipientName())
                 .subject(req.getSubject())
@@ -58,6 +60,8 @@ public class NotificationService {
                     .programmeName(req.getProgrammeName())
                     .phaseId(req.getPhaseId())
                     .phaseName(req.getPhaseName())
+                    .activityId(req.getActivityId())
+                    .activityName(req.getActivityName())
                     .recipientEmail(r.getEmail().toLowerCase())
                     .recipientName(r.getName())
                     .subject(req.getSubject())
@@ -141,6 +145,12 @@ public class NotificationService {
     @Transactional(readOnly = true)
     public List<InvitationDto> getByPhase(Long phaseId) {
         return invitationRepository.findByPhaseIdOrderByCreatedAtDesc(phaseId)
+                .stream().map(this::toDto).collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<InvitationDto> getByActivity(Long activityId) {
+        return invitationRepository.findByActivityIdOrderByCreatedAtDesc(activityId)
                 .stream().map(this::toDto).collect(Collectors.toList());
     }
 
@@ -234,6 +244,8 @@ public class NotificationService {
                 .programmeName(inv.getProgrammeName())
                 .phaseId(inv.getPhaseId())
                 .phaseName(inv.getPhaseName())
+                .activityId(inv.getActivityId())
+                .activityName(inv.getActivityName())
                 .recipientEmail(inv.getRecipientEmail())
                 .recipientName(inv.getRecipientName())
                 .subject(inv.getSubject())

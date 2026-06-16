@@ -10,6 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @SpringBootApplication
 public class AuthServiceApplication {
@@ -28,47 +29,54 @@ public class AuthServiceApplication {
 
         return args -> {
 
-            // ── 1. Seed Permissions ───────────────────────────────────────────
-            seedPermission(permissionRepository, "users:read",               "Voir les utilisateurs",              "users");
-            seedPermission(permissionRepository, "users:write",              "Gérer les utilisateurs",             "users");
-            seedPermission(permissionRepository, "users:assign-roles",       "Assigner des rôles",                 "users");
-            seedPermission(permissionRepository, "users:assign-permissions", "Assigner des permissions",           "users");
-            seedPermission(permissionRepository, "sessions:read",            "Voir les sessions",                  "sessions");
-            seedPermission(permissionRepository, "sessions:write",           "Gérer les sessions",                 "sessions");
-            seedPermission(permissionRepository, "candidatures:read",        "Voir les candidatures",              "candidatures");
-            seedPermission(permissionRepository, "candidatures:write",       "Gérer les candidatures",             "candidatures");
-            seedPermission(permissionRepository, "candidatures:evaluate",    "Évaluer les candidatures",           "candidatures");
-            seedPermission(permissionRepository, "candidatures:decide",      "Accepter / rejeter les candidatures","candidatures");
-            seedPermission(permissionRepository, "reports:read",             "Voir les rapports",                  "reports");
+            // ── 1. Seed Permissions — CRUD per back-office module ─────────────
+            String[] modules = { "dashboard", "programmes", "candidatures", "tasks",
+                    "notifications", "users", "organizations", "landing", "ai",
+                    "reports", "settings", "sessions" };
+            String[][] actions = {
+                { "read", "Voir" }, { "create", "Créer" }, { "update", "Modifier" }, { "delete", "Supprimer" }
+            };
+            for (String m : modules) {
+                for (String[] a : actions) {
+                    seedPermission(permissionRepository, m + ":" + a[0], a[1] + " — " + m, m);
+                }
+            }
+            // Special candidature actions (jury evaluation / admin decision).
+            seedPermission(permissionRepository, "candidatures:evaluate", "Évaluer les candidatures", "candidatures");
+            seedPermission(permissionRepository, "candidatures:decide",   "Accepter / rejeter les candidatures", "candidatures");
 
             // ── 2. Seed Roles with default permissions ────────────────────────
-            Set<Permission> adminPerms = new HashSet<>(permissionRepository.findAll());
+            // Front-office (non-admin) modules — the ONLY ones a non-admin may hold.
+            // Each non-admin role gets read access to these; the back-office modules
+            // (dashboard, users, organizations, landing, ai, reports, settings,
+            // notifications) are reserved for ADMIN.
+            String[] frontofficeReadModules = { "programmes", "candidatures", "sessions", "tasks", "organizations" };
+            Set<Permission> frontofficeReads = new HashSet<>();
+            for (String m : frontofficeReadModules) {
+                frontofficeReads.add(perm(permissionRepository, m + ":read"));
+            }
 
-            Set<Permission> juryPerms = Set.of(
-                perm(permissionRepository, "candidatures:read"),
-                perm(permissionRepository, "candidatures:evaluate"),
+            Set<Permission> porteurPerms = new HashSet<>(frontofficeReads);
+            Set<Permission> mentorPerms  = new HashSet<>(frontofficeReads);
+            Set<Permission> juryPerms    = new HashSet<>(frontofficeReads);
+            juryPerms.add(perm(permissionRepository, "candidatures:evaluate"));
+            Set<Permission> candidatPerms = new HashSet<>(Arrays.asList(
                 perm(permissionRepository, "sessions:read")
-            );
+            ));
 
-            Set<Permission> mentorPerms = Set.of(
-                perm(permissionRepository, "candidatures:read"),
-                perm(permissionRepository, "sessions:read")
-            );
-
-            Set<Permission> porteurPerms = Set.of(
-                perm(permissionRepository, "sessions:read"),
-                perm(permissionRepository, "candidatures:read")
-            );
-
-            Set<Permission> candidatPerms = Set.of(
-                perm(permissionRepository, "sessions:read")
-            );
-
-            seedRole(roleRepository, "ADMIN",   "Administrateur",       "Accès complet au système",                      adminPerms);
+            seedRole(roleRepository, "ADMIN",   "Administrateur",       "Accès complet au système",                      new HashSet<>(permissionRepository.findAll()));
             seedRole(roleRepository, "PORTEUR",  "Porteur de projet",    "Porteur de projet candidatant à une session",   porteurPerms);
             seedRole(roleRepository, "JURY",     "Membre du jury",       "Évalue les candidatures lors d'une session",    juryPerms);
             seedRole(roleRepository, "MENTOR",   "Mentor",               "Accompagne les startups incubées",              mentorPerms);
             seedRole(roleRepository, "CANDIDAT", "Candidat",             "Utilisateur enregistré sans rôle attribué",     candidatPerms);
+
+            // Re-sync role → permissions every boot so existing rows pick up changes.
+            // ADMIN holds ALL permissions; non-admin roles hold only their FO set.
+            syncRolePerms(roleRepository, "ADMIN",    new HashSet<>(permissionRepository.findAll()));
+            syncRolePerms(roleRepository, "PORTEUR",  porteurPerms);
+            syncRolePerms(roleRepository, "JURY",     juryPerms);
+            syncRolePerms(roleRepository, "MENTOR",   mentorPerms);
+            syncRolePerms(roleRepository, "CANDIDAT", candidatPerms);
 
             // ── 3. Seed admin user ────────────────────────────────────────────
             if (userRepository.findByEmail("admin@medianet.dz").isEmpty()) {
@@ -92,6 +100,20 @@ public class AuthServiceApplication {
                         .department("Direction Générale")
                         .adminLevel("SUPER_ADMIN")
                         .build());
+            }
+
+            // ── 4. Enforce: non-admin users may hold only FRONT-OFFICE direct
+            //       permissions. Strip any admin-module direct perms left over.
+            Set<String> foModules = new HashSet<>(Arrays.asList(frontofficeReadModules));
+            for (User u : userRepository.findAll()) {
+                if (u.hasRole("ADMIN")) continue;
+                Set<Permission> kept = u.getDirectPermissions().stream()
+                        .filter(p -> foModules.contains(p.getSlug().split(":")[0]))
+                        .collect(Collectors.toCollection(HashSet::new));
+                if (kept.size() != u.getDirectPermissions().size()) {
+                    u.setDirectPermissions(kept);
+                    userRepository.save(u);
+                }
             }
         };
     }
@@ -122,5 +144,13 @@ public class AuthServiceApplication {
                     .permissions(permissions)
                     .build());
         }
+    }
+
+    /** Overwrite a role's permission set (idempotent re-sync on every boot). */
+    private void syncRolePerms(RoleRepository repo, String name, Set<Permission> permissions) {
+        repo.findByName(name).ifPresent(role -> {
+            role.setPermissions(new HashSet<>(permissions));
+            repo.save(role);
+        });
     }
 }

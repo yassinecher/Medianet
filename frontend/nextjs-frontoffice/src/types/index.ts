@@ -9,6 +9,10 @@ export interface User {
   role: UserRole
   /** Full set of roles the user has been granted */
   roles?: string[]
+  /** Effective permission slugs from the login payload (e.g. "candidatures:read") */
+  permissions?: string[]
+  /** Effective permission slugs from a refreshed UserDto */
+  allPermissions?: string[]
   phone?: string
 }
 
@@ -41,6 +45,10 @@ export interface Programme {
   startDate?: string
   endDate?: string
   applicationDeadline?: string
+  /** Computed by programme-service — accepting candidatures now (candidature-session window). */
+  acceptingApplications?: boolean
+  candidatureSessionId?: number
+  candidatureDeadline?: string
   phases?: Phase[]
   criteria?: Criteria[]
   partners?: Partner[]

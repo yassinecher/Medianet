@@ -6,5 +6,6 @@ public enum ProgrammeStatus {
     IN_PROGRESS,
     EVALUATION,
     CLOSED,
-    CANCELLED
+    CANCELLED,
+    ARCHIVED
 }

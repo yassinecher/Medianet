@@ -65,54 +65,74 @@ public class AuthController {
     // ── User queries ──────────────────────────────────────────────────────────
 
     @GetMapping("/users")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:read')")
     public ResponseEntity<List<UserDto>> getAllUsers() {
         return ResponseEntity.ok(authService.getAllUsers());
     }
 
     @GetMapping("/users/role/{role}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:read')")
     public ResponseEntity<List<UserDto>> getUsersByRole(@PathVariable String role) {
         return ResponseEntity.ok(authService.getUsersByRole(role));
     }
 
     @GetMapping("/users/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:read')")
     public ResponseEntity<UserDto> getUserById(@PathVariable Long id) {
         return ResponseEntity.ok(authService.getUserById(id));
     }
 
+    /** Look up a user by email — used to detect an existing account before
+     *  granting the JURY role. Returns 404 (not 500) when no account exists. */
+    @GetMapping("/users/by-email")
+    @PreAuthorize("hasAuthority('users:read')")
+    public ResponseEntity<UserDto> getUserByEmail(@RequestParam String email) {
+        try {
+            return ResponseEntity.ok(authService.getUserByEmail(email));
+        } catch (RuntimeException ex) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
     @PatchMapping("/users/{id}/toggle-active")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<UserDto> toggleActive(@PathVariable Long id) {
         return ResponseEntity.ok(authService.toggleActive(id));
+    }
+
+    /** Admin edit of a user's basic data (name + email). */
+    @PutMapping("/users/{id}")
+    @PreAuthorize("hasAuthority('users:update')")
+    public ResponseEntity<UserDto> adminUpdateUser(@PathVariable Long id,
+                                                   @Valid @RequestBody AdminUpdateUserRequest request) {
+        return ResponseEntity.ok(authService.adminUpdateUser(id, request));
     }
 
     // ── Role management ───────────────────────────────────────────────────────
 
     @PatchMapping("/users/{id}/role")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<UserDto> updateRole(@PathVariable Long id,
                                                @Valid @RequestBody UpdateRoleRequest request) {
         return ResponseEntity.ok(authService.updateRole(id, request.getRole()));
     }
 
     @PutMapping("/users/{id}/roles")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<UserDto> syncRoles(@PathVariable Long id,
                                               @Valid @RequestBody AssignRolesRequest request) {
         return ResponseEntity.ok(authService.syncRoles(id, request.getRoles()));
     }
 
     @PostMapping("/users/{id}/roles/assign")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<UserDto> assignRoles(@PathVariable Long id,
                                                 @Valid @RequestBody AssignRolesRequest request) {
         return ResponseEntity.ok(authService.assignRoles(id, request.getRoles()));
     }
 
     @PostMapping("/users/{id}/roles/remove")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<UserDto> removeRoles(@PathVariable Long id,
                                                 @Valid @RequestBody AssignRolesRequest request) {
         return ResponseEntity.ok(authService.removeRoles(id, request.getRoles()));
@@ -121,33 +141,33 @@ public class AuthController {
     // ── Permission management ─────────────────────────────────────────────────
 
     @GetMapping("/permissions")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:read')")
     public ResponseEntity<Map<String, String>> getPermissionCatalog() {
         return ResponseEntity.ok(authService.getPermissionCatalog());
     }
 
     @GetMapping("/roles")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:read')")
     public ResponseEntity<Map<String, String>> getRoleCatalog() {
         return ResponseEntity.ok(authService.getRoleCatalog());
     }
 
     @PostMapping("/users/{id}/permissions/grant")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<UserDto> grantPermissions(@PathVariable Long id,
                                                      @Valid @RequestBody GrantPermissionRequest request) {
         return ResponseEntity.ok(authService.grantPermissions(id, request.getPermissions()));
     }
 
     @PostMapping("/users/{id}/permissions/revoke")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<UserDto> revokePermissions(@PathVariable Long id,
                                                       @Valid @RequestBody GrantPermissionRequest request) {
         return ResponseEntity.ok(authService.revokePermissions(id, request.getPermissions()));
     }
 
     @PutMapping("/users/{id}/permissions")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<UserDto> syncPermissions(@PathVariable Long id,
                                                     @Valid @RequestBody GrantPermissionRequest request) {
         return ResponseEntity.ok(authService.syncPermissions(id, request.getPermissions()));
@@ -156,28 +176,28 @@ public class AuthController {
     // ── Role-specific profile endpoints ──────────────────────────────────────
 
     @PutMapping("/users/{id}/profile/admin")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<AdminProfileDto> updateAdminProfile(@PathVariable Long id,
                                                                @RequestBody UpdateAdminProfileRequest req) {
         return ResponseEntity.ok(authService.updateAdminProfile(id, req));
     }
 
     @PutMapping("/users/{id}/profile/mentor")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<MentorProfileDto> updateMentorProfile(@PathVariable Long id,
                                                                   @RequestBody UpdateMentorProfileRequest req) {
         return ResponseEntity.ok(authService.updateMentorProfile(id, req));
     }
 
     @PutMapping("/users/{id}/profile/porteur")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<PorteurProfileDto> updatePorteurProfile(@PathVariable Long id,
                                                                     @RequestBody UpdatePorteurProfileRequest req) {
         return ResponseEntity.ok(authService.updatePorteurProfile(id, req));
     }
 
     @PutMapping("/users/{id}/profile/jury")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:update')")
     public ResponseEntity<JuryProfileDto> updateJuryProfile(@PathVariable Long id,
                                                               @RequestBody UpdateJuryProfileRequest req) {
         return ResponseEntity.ok(authService.updateJuryProfile(id, req));

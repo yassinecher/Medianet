@@ -11,8 +11,10 @@ public class CreateSessionActivityRequest {
     private Integer activityOrder;
     @NotBlank private String title;
     private String       description;
-    /** ACTIVITY | TRAINING_STEP | KEYNOTE | WORKSHOP | PANEL | PITCH | BREAK | NETWORKING | OTHER */
+    /** Legacy type (optional — activities are free-form now). */
     private String       type;
+    /** Hex color of the activity block (optional; defaults to session color). */
+    private String       color;
     private LocalTime    startTime;
     private LocalTime    endTime;
     private String       location;

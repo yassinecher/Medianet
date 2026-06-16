@@ -195,9 +195,16 @@ public class ProgrammeService {
                 .startupIds(req.getStartupIds()     != null ? req.getStartupIds()   : new ArrayList<>())
                 .tasks(req.getTasks()               != null ? req.getTasks()        : new ArrayList<>())
                 .criterionWeightsJson(req.getCriterionWeightsJson())
+                .evaluationSelectionId(req.getEvaluationSelectionId())
                 .sessionType(parseSessionType(req.getSessionType()))
                 .lane(parseLane(req.getLane()))
+                .color(req.getColor())
+                .parentSessionId(validateParent(programmeId, req.getParentSessionId(),
+                        normalizeDuration(req.getDurationKind()), req.getStartDate()))
                 .build();
+        phase.setDurationKind(normalizeDuration(req.getDurationKind()));
+        // Enforce the date rules of the three session shapes (day / range / nested).
+        validateAndNormalizeDates(phase);
         phase = phaseRepository.save(phase);
 
         // Optional initial days
@@ -206,8 +213,14 @@ public class ProgrammeService {
                 sessionDayService.addDay(programmeId, phase.getId(), d);
             }
         }
+        // Make the fresh phase visible to recompute/sync (collection may be stale).
+        final ProgrammePhase saved = phase;
+        if (p.getPhases() != null && p.getPhases().stream().noneMatch(ph -> saved.getId().equals(ph.getId())))
+            p.getPhases().add(saved);
         // A new session could already imply a programme status change
-        if (programmeLifecycle.recompute(p)) programmeRepository.save(p);
+        boolean changed = programmeLifecycle.recompute(p);
+        if (syncApplicationDeadline(p)) changed = true;
+        if (changed) programmeRepository.save(p);
         return toPhaseDto(phaseRepository.save(phase));
     }
 
@@ -223,19 +236,36 @@ public class ProgrammeService {
         if (req.getStatus()          != null) phase.setStatus(parsePhaseStatus(req.getStatus()));
         if (req.getFocusCriteriaIds()!= null) phase.setFocusCriteriaIds(req.getFocusCriteriaIds());
         if (req.getLocation()        != null) phase.setLocation(req.getLocation());
-        if (req.getDurationKind()    != null) phase.setDurationKind(req.getDurationKind());
+        if (req.getDurationKind()    != null) phase.setDurationKind(normalizeDuration(req.getDurationKind()));
         if (req.getResponsibles()    != null) phase.setResponsibles(req.getResponsibles());
         if (req.getGuests()          != null) phase.setGuests(req.getGuests());
         if (req.getStartupIds()      != null) phase.setStartupIds(req.getStartupIds());
         if (req.getTasks()           != null) phase.setTasks(req.getTasks());
         if (req.getCriterionWeightsJson() != null) phase.setCriterionWeightsJson(req.getCriterionWeightsJson());
+        // -1 = explicit clear (back to « toutes les candidatures »)
+        if (req.getEvaluationSelectionId() != null)
+            phase.setEvaluationSelectionId(req.getEvaluationSelectionId() < 0 ? null : req.getEvaluationSelectionId());
         if (req.getSessionType()     != null) phase.setSessionType(parseSessionType(req.getSessionType()));
         if (req.getLane()            != null) phase.setLane(parseLane(req.getLane()));
+        if (req.getColor()           != null) phase.setColor(req.getColor());
+        if (req.getParentSessionId() != null) {
+            // -1 is the explicit "detach" sentinel from the UI/AI
+            if (req.getParentSessionId() < 0) {
+                phase.setParentSessionId(null);
+            } else {
+                phase.setParentSessionId(validateParent(programmeId, req.getParentSessionId(),
+                        phase.getDurationKind(), phase.getStartDate()));
+            }
+        }
+        // Enforce the date rules of the three session shapes (day / range / nested).
+        validateAndNormalizeDates(phase);
         phase = phaseRepository.save(phase);
 
         // Status of a session may imply a programme transition
         Programme p = phase.getProgramme();
-        if (programmeLifecycle.recompute(p)) programmeRepository.save(p);
+        boolean changed = programmeLifecycle.recompute(p);
+        if (syncApplicationDeadline(p)) changed = true;
+        if (changed) programmeRepository.save(p);
         return toPhaseDto(phase);
     }
 
@@ -243,12 +273,25 @@ public class ProgrammeService {
         ProgrammePhase phase = phaseRepository.findById(phaseId)
                 .filter(ph -> ph.getProgramme().getId().equals(programmeId))
                 .orElseThrow(() -> new IllegalArgumentException("Phase not found: " + phaseId));
+        // Cascade: a range session owns its nested day-sessions — remove them too.
+        List<ProgrammePhase> children = phaseRepository.findByParentSessionId(phaseId);
+        if (!children.isEmpty()) phaseRepository.deleteAll(children);
+        Programme p = phase.getProgramme();
         phaseRepository.delete(phase);
+        // Removing a session may imply a programme status transition.
+        if (p != null) {
+            p.getPhases().removeIf(ph -> ph.getId().equals(phaseId)
+                    || children.stream().anyMatch(c -> c.getId().equals(ph.getId())));
+            boolean changed = programmeLifecycle.recompute(p);
+            if (syncApplicationDeadline(p)) changed = true;
+            if (changed) programmeRepository.save(p);
+        }
     }
 
     // ── Mappers ───────────────────────────────────────────────────────────────
 
     private ProgrammeDto toDto(Programme p) {
+        ProgrammePhase cs = candidatureSession(p);
         return ProgrammeDto.builder()
                 .id(p.getId())
                 .title(p.getTitle())
@@ -280,7 +323,49 @@ public class ProgrammeService {
                 .maxStartups(p.getMaxStartups())
                 .objectives(p.getObjectives() != null ? new ArrayList<>(p.getObjectives()) : new ArrayList<>())
                 .benefits(p.getBenefits() != null ? new ArrayList<>(p.getBenefits()) : new ArrayList<>())
+                .acceptingApplications(isAccepting(p))
+                .candidatureSessionId(cs != null ? cs.getId() : null)
+                .candidatureDeadline(cs != null ? (cs.getEndDate() != null ? cs.getEndDate() : cs.getStartDate()) : null)
                 .build();
+    }
+
+    /**
+     * Keep the programme's « clôture candidatures » in lockstep with its
+     * candidature session: the deadline IS the end of that session's window.
+     * No-op when the programme has no candidature session (manual deadline kept).
+     */
+    private boolean syncApplicationDeadline(Programme p) {
+        ProgrammePhase cs = candidatureSession(p);
+        if (cs == null) return false;
+        java.time.LocalDate deadline = cs.getEndDate() != null ? cs.getEndDate() : cs.getStartDate();
+        if (deadline == null || deadline.equals(p.getApplicationDeadline())) return false;
+        p.setApplicationDeadline(deadline);
+        return true;
+    }
+
+    /** The candidature session (CANDIDATURE_SUBMISSION), earliest if several; null if none. */
+    private ProgrammePhase candidatureSession(Programme p) {
+        if (p.getPhases() == null) return null;
+        return p.getPhases().stream()
+                .filter(ph -> ph.getParentSessionId() == null)
+                .filter(ph -> ph.getSessionType() == SessionType.CANDIDATURE_SUBMISSION)
+                .filter(ph -> ph.getStartDate() != null)
+                .min(java.util.Comparator.comparing(ProgrammePhase::getStartDate))
+                .orElse(null);
+    }
+
+    /** Accepting candidatures = status not held/closed AND (candidature session active, or
+     *  legacy programmes without a candidature session simply OPEN). */
+    private boolean isAccepting(Programme p) {
+        ProgrammeStatus st = p.getStatus();
+        if (st == ProgrammeStatus.DRAFT || st == ProgrammeStatus.CLOSED
+                || st == ProgrammeStatus.ARCHIVED || st == ProgrammeStatus.CANCELLED) return false;
+        ProgrammePhase cs = candidatureSession(p);
+        if (cs == null) return st == ProgrammeStatus.OPEN;
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.LocalDate start = cs.getStartDate();
+        java.time.LocalDate end = cs.getEndDate() != null ? cs.getEndDate() : start;
+        return start != null && !today.isBefore(start) && !today.isAfter(end);
     }
 
     private ProgrammeCriteriaDto toCriteriaDto(ProgrammeCriteria c) {
@@ -306,14 +391,17 @@ public class ProgrammeService {
                 .status(ph.getStatus() != null ? ph.getStatus().name() : null)
                 .focusCriteriaIds(ph.getFocusCriteriaIds())
                 .location(ph.getLocation())
-                .durationKind(ph.getDurationKind())
+                .durationKind(normalizeDuration(ph.getDurationKind()))
                 .responsibles(ph.getResponsibles())
                 .guests(ph.getGuests())
                 .startupIds(ph.getStartupIds())
                 .tasks(ph.getTasks())
                 .criterionWeightsJson(ph.getCriterionWeightsJson())
+                .evaluationSelectionId(ph.getEvaluationSelectionId())
                 .sessionType(ph.getSessionType() != null ? ph.getSessionType().name() : SessionType.INCUBATION.name())
                 .lane(ph.getLane() != null && !ph.getLane().isBlank() ? ph.getLane() : "Principal")
+                .color(ph.getColor())
+                .parentSessionId(ph.getParentSessionId())
                 .days(ph.getDays() == null
                         ? new ArrayList<>()
                         : ph.getDays().stream().map(sessionDayService::toDayDto).collect(Collectors.toList()))
@@ -325,6 +413,12 @@ public class ProgrammeService {
     @Transactional(readOnly = true)
     public List<PartnerDto> getAllPartners() {
         return partnerRepository.findAll().stream().map(this::toPartnerDto).collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<PartnerDto> getProgrammePartners(Long programmeId) {
+        Programme p = findOrThrow(programmeId);
+        return p.getPartners().stream().map(this::toPartnerDto).collect(Collectors.toList());
     }
 
     public PartnerDto createPartner(CreatePartnerRequest req) {
@@ -408,5 +502,119 @@ public class ProgrammeService {
         if (s == null) return "Principal";
         String trimmed = s.trim();
         return trimmed.isEmpty() ? "Principal" : trimmed;
+    }
+
+    /**
+     * Collapse the loose legacy duration values to the two-kind model.
+     * "day" stays "day"; anything else ("range", "week", "custom", null) → "range".
+     */
+    private String normalizeDuration(String s) {
+        return "day".equalsIgnoreCase(s == null ? "" : s.trim()) ? "day" : "range";
+    }
+
+    /**
+     * Validate + normalize a session's effective dates against the rules of the
+     * three session shapes. Mutates {@code startDate}/{@code endDate} to the
+     * normalized values; throws {@link IllegalArgumentException} on a violation
+     * (caught by the global handler → 400 with the message).
+     *
+     * <ul>
+     *   <li><b>Day session</b> — a single calendar day: {@code endDate} forced to
+     *       {@code startDate}.</li>
+     *   <li><b>Range session</b> — {@code startDate} must not be after
+     *       {@code endDate} (missing end defaults to start).</li>
+     *   <li><b>Nested session</b> (has a parent range) — its whole window must
+     *       stay inside the parent's {@code [start, end]}.</li>
+     *   <li><b>Range with nested journées</b> — the (possibly shrunk/moved) window
+     *       must still contain every child's date; otherwise it would orphan a
+     *       journée, which is rejected with a clear message.</li>
+     * </ul>
+     */
+    private void validateAndNormalizeDates(ProgrammePhase phase) {
+        String kind = normalizeDuration(phase.getDurationKind());
+        java.time.LocalDate start = phase.getStartDate();
+        java.time.LocalDate end   = phase.getEndDate();
+
+        if (start == null) {
+            // No start date yet (draft) — nothing date-wise to validate.
+            if ("day".equals(kind)) phase.setEndDate(null);
+            return;
+        }
+
+        if ("day".equals(kind)) {
+            // A journée spans exactly one day.
+            end = start;
+            phase.setEndDate(start);
+        } else {
+            if (end == null) { end = start; phase.setEndDate(start); }
+            if (start.isAfter(end)) {
+                throw new IllegalArgumentException(
+                        "La date de début (" + start + ") doit précéder la date de fin (" + end + ") de la plage.");
+            }
+        }
+
+        // Nested session → must remain entirely within the parent range window.
+        if (phase.getParentSessionId() != null) {
+            ProgrammePhase parent = phaseRepository.findById(phase.getParentSessionId()).orElse(null);
+            if (parent != null && parent.getStartDate() != null && parent.getEndDate() != null) {
+                java.time.LocalDate ps = parent.getStartDate();
+                java.time.LocalDate pe = parent.getEndDate();
+                boolean outOfWindow = start.isBefore(ps) || start.isAfter(pe)
+                        || (end != null && (end.isBefore(ps) || end.isAfter(pe)));
+                if (outOfWindow) {
+                    throw new IllegalArgumentException(
+                            "La session imbriquée « " + safeTitle(phase) + " » doit rester dans la plage parente ("
+                            + ps + " → " + pe + ").");
+                }
+            }
+        }
+
+        // Range with nested journées → the new window must still contain them all.
+        if ("range".equals(kind) && phase.getId() != null) {
+            for (ProgrammePhase ch : phaseRepository.findByParentSessionId(phase.getId())) {
+                java.time.LocalDate cs = ch.getStartDate();
+                java.time.LocalDate ce = ch.getEndDate() != null ? ch.getEndDate() : cs;
+                if (cs != null && (cs.isBefore(start) || cs.isAfter(end)
+                        || (ce != null && ce.isAfter(end)))) {
+                    throw new IllegalArgumentException(
+                            "Impossible de déplacer/réduire la plage : la journée « " + safeTitle(ch) + " » ("
+                            + cs + ") en sortirait. Déplacez-la d'abord ou élargissez la plage.");
+                }
+            }
+        }
+    }
+
+    private static String safeTitle(ProgrammePhase p) {
+        String t = p.getTitle();
+        return (t == null || t.isBlank()) ? "Sans titre" : t;
+    }
+
+    /**
+     * Validate a requested parent (range) session for a child day-session.
+     * Rules: parent must exist in the same programme, must itself be a range
+     * (not a day), the child must be a day kind, and the child's start date must
+     * fall within the parent's [startDate, endDate] window. Returns the parent id
+     * to store, or null when no parent requested.
+     */
+    private Long validateParent(Long programmeId, Long parentId, String childDuration, java.time.LocalDate childStart) {
+        if (parentId == null) return null;
+        ProgrammePhase parent = phaseRepository.findById(parentId)
+                .filter(ph -> ph.getProgramme().getId().equals(programmeId))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Session parente introuvable dans ce programme : " + parentId));
+        // Only a "range" session can contain others — a "day" has no window.
+        if ("day".equalsIgnoreCase(normalizeDuration(parent.getDurationKind()))) {
+            throw new IllegalArgumentException(
+                    "Une session « Journée » ne peut pas contenir d'autres sessions — choisissez une session « Plage ».");
+        }
+        // A day OR a range may nest, as long as its start date falls within the
+        // parent's window (the child's dates "belong to" the parent range).
+        if (childStart != null && parent.getStartDate() != null && parent.getEndDate() != null
+                && (childStart.isBefore(parent.getStartDate()) || childStart.isAfter(parent.getEndDate()))) {
+            throw new IllegalArgumentException(
+                    "La date doit être comprise dans la plage de la session parente ("
+                    + parent.getStartDate() + " → " + parent.getEndDate() + ").");
+        }
+        return parentId;
     }
 }

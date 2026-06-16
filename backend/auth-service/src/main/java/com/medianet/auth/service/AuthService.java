@@ -170,6 +170,24 @@ public class AuthService {
                 .stream().map(this::toDto).collect(Collectors.toList());
     }
 
+    /** Admin edit of another user's basic data (name + email). */
+    public UserDto adminUpdateUser(Long id, AdminUpdateUserRequest req) {
+        User user = findUser(id);
+        if (req.getFirstName() != null) user.setFirstName(req.getFirstName().trim());
+        if (req.getLastName() != null)  user.setLastName(req.getLastName().trim());
+        if (req.getEmail() != null && !req.getEmail().isBlank()) {
+            String email = req.getEmail().trim().toLowerCase();
+            if (!email.equalsIgnoreCase(user.getEmail())) {
+                userRepository.findByEmail(email).ifPresent(other -> {
+                    if (!other.getId().equals(id)) throw new IllegalArgumentException("Cet email est déjà utilisé");
+                });
+                user.setEmail(email);
+            }
+        }
+        userRepository.save(user);
+        return toDto(user);
+    }
+
     // ── Role management ───────────────────────────────────────────────────────
 
     /** Legacy: set exactly one role */
@@ -217,7 +235,7 @@ public class AuthService {
 
     public UserDto grantPermissions(Long id, Set<String> slugs) {
         User user = findUser(id);
-        Set<Permission> toGrant = resolvePermissions(slugs);
+        Set<Permission> toGrant = resolvePermissions(expandWithRead(slugs));
         user.getDirectPermissions().addAll(toGrant);
         userRepository.save(user);
         return toDto(user);
@@ -233,11 +251,30 @@ public class AuthService {
     public UserDto syncPermissions(Long id, Set<String> slugs) {
         User user = findUser(id);
         user.getDirectPermissions().clear();
-        if (slugs != null && !slugs.isEmpty()) {
-            user.getDirectPermissions().addAll(resolvePermissions(slugs));
+        Set<String> expanded = expandWithRead(slugs);
+        if (!expanded.isEmpty()) {
+            user.getDirectPermissions().addAll(resolvePermissions(expanded));
         }
         userRepository.save(user);
         return toDto(user);
+    }
+
+    /** Auto-read rule: any "module:create|update|delete" also implies "module:read". */
+    private Set<String> expandWithRead(Set<String> slugs) {
+        Set<String> out = new HashSet<>();
+        if (slugs == null) return out;
+        for (String s : slugs) {
+            if (s == null || s.isBlank()) continue;
+            out.add(s);
+            int i = s.indexOf(':');
+            if (i > 0) {
+                String action = s.substring(i + 1);
+                if (action.equals("create") || action.equals("update") || action.equals("delete")) {
+                    out.add(s.substring(0, i) + ":read");
+                }
+            }
+        }
+        return out;
     }
 
     // ── Role-profile management ───────────────────────────────────────────────

@@ -39,7 +39,7 @@ public class ProgrammeController {
 
     /** Create a new programme — ADMIN only. */
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:create')")
     public ResponseEntity<ProgrammeDto> create(
             @Valid @RequestBody CreateProgrammeRequest req,
             @RequestAttribute("userId") Long adminId,
@@ -50,7 +50,7 @@ public class ProgrammeController {
 
     /** Full update of a programme — ADMIN only. */
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammeDto> update(
             @PathVariable Long id,
             @RequestBody UpdateProgrammeRequest req) {
@@ -59,7 +59,7 @@ public class ProgrammeController {
 
     /** Delete a programme + all its phases / criteria / partner links — ADMIN only. */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:delete')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         programmeService.deleteProgramme(id);
         return ResponseEntity.noContent().build();
@@ -67,7 +67,7 @@ public class ProgrammeController {
 
     /** Change programme status — ADMIN only. */
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammeDto> updateStatus(
             @PathVariable Long id,
             @Valid @RequestBody ProgrammeStatusRequest req) {
@@ -76,7 +76,7 @@ public class ProgrammeController {
 
     /** Count programmes by status — ADMIN only. */
     @GetMapping("/stats")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:read')")
     public ResponseEntity<Map<String, Long>> getStats() {
         return ResponseEntity.ok(programmeService.getStats());
     }
@@ -91,7 +91,7 @@ public class ProgrammeController {
 
     /** Add a criterion to a programme — ADMIN only. */
     @PostMapping("/{id}/criteria")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammeCriteriaDto> addCriterion(
             @PathVariable Long id,
             @Valid @RequestBody CreateCriteriaRequest req) {
@@ -100,7 +100,7 @@ public class ProgrammeController {
 
     /** Update a criterion — ADMIN only. */
     @PutMapping("/{id}/criteria/{criterionId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammeCriteriaDto> updateCriterion(
             @PathVariable Long id,
             @PathVariable Long criterionId,
@@ -110,7 +110,7 @@ public class ProgrammeController {
 
     /** Remove a criterion — ADMIN only. */
     @DeleteMapping("/{id}/criteria/{criterionId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Void> deleteCriterion(
             @PathVariable Long id,
             @PathVariable Long criterionId) {
@@ -128,7 +128,7 @@ public class ProgrammeController {
 
     /** Add a phase to a programme — ADMIN only. */
     @PostMapping("/{id}/phases")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammePhaseDto> addPhase(
             @PathVariable Long id,
             @Valid @RequestBody CreatePhaseRequest req) {
@@ -137,7 +137,7 @@ public class ProgrammeController {
 
     /** Update a phase — ADMIN only. */
     @PutMapping("/{id}/phases/{phaseId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammePhaseDto> updatePhase(
             @PathVariable Long id,
             @PathVariable Long phaseId,
@@ -147,7 +147,7 @@ public class ProgrammeController {
 
     /** Delete a phase — ADMIN only. */
     @DeleteMapping("/{id}/phases/{phaseId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Void> deletePhase(
             @PathVariable Long id,
             @PathVariable Long phaseId) {

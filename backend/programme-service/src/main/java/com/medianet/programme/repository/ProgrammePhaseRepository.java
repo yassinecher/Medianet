@@ -10,4 +10,7 @@ import java.util.List;
 public interface ProgrammePhaseRepository extends JpaRepository<ProgrammePhase, Long> {
 
     List<ProgrammePhase> findByProgrammeIdOrderByPhaseOrderAsc(Long programmeId);
+
+    /** Child day-sessions nested under a given range session. */
+    List<ProgrammePhase> findByParentSessionId(Long parentSessionId);
 }

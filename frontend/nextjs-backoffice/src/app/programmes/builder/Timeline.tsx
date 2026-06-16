@@ -19,6 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Handle, Position, useReactFlow, type Node } from '@xyflow/react'
 import { Calendar, Maximize2, Minimize2, X, MapPin, Users, CheckSquare, Clock, Plus, Trash2, Layers, Save } from 'lucide-react'
+import { usePresets } from './usePresets'
 
 interface SessionData extends Record<string, unknown> {
   kind: 'session'
@@ -40,22 +41,7 @@ interface SessionData extends Record<string, unknown> {
 }
 type SessionNode = Node<SessionData, 'session'>
 
-// ── Session presets shown in the modal's library ─────────────────────────────
-
-const SESSION_PRESETS: ReadonlyArray<{
-  type: NonNullable<SessionData['sessionType']>
-  title: string
-  durationKind: 'day' | 'week' | 'custom'
-  color: { bar: string; text: string }
-}> = [
-  { type: 'CANDIDATURE_SUBMISSION', title: 'Candidature',  durationKind: 'custom', color: { bar: '#0EA5E9', text: 'text-white'    } },
-  { type: 'PRESELECTION',           title: 'Présélection', durationKind: 'week',   color: { bar: '#F59E0B', text: 'text-white'    } },
-  { type: 'PITCH_DAY',              title: 'Pitch Day',    durationKind: 'day',    color: { bar: '#EF4444', text: 'text-white'    } },
-  { type: 'ONBOARDING',             title: 'Onboarding',   durationKind: 'day',    color: { bar: '#10B981', text: 'text-white'    } },
-  { type: 'INCUBATION',             title: 'Incubation',   durationKind: 'custom', color: { bar: '#A855F7', text: 'text-white'    } },
-  { type: 'DEMO_DAY',               title: 'Demo Day',     durationKind: 'day',    color: { bar: '#F97316', text: 'text-white'    } },
-  { type: 'TRAINING_DAY',           title: 'Formation',    durationKind: 'day',    color: { bar: '#6366F1', text: 'text-white'    } },
-]
+// ── Session presets are DB-backed; loaded via usePresets (single source) ─────
 
 const SESSION_TYPE_LABEL: Record<string, string> = {
   CANDIDATURE_SUBMISSION: 'Candidature', PRESELECTION: 'Présélection',
@@ -306,7 +292,7 @@ function GanttDays({ sessions, win, onPickSession, pickedId, onDropPreset, onUpd
   win: { start: Date; end: Date }
   onPickSession: (id: string) => void
   pickedId: string | null
-  onDropPreset?: (type: string, atDate: string) => void
+  onDropPreset?: (presetId: string, atDate: string) => void
   onUpdateSession?: (id: string, patch: Partial<SessionData>) => void
   /** Called when the user clicks the "default empty session" placeholder
    *  shown when the timeline has 0 sessions. */
@@ -612,10 +598,12 @@ function TimelineModal({ sessions, win, pickedId, setPickedId, onClose, onEdit }
   onEdit: (id: string) => void
 }) {
   const pickedSession = pickedId ? sessions.find((s) => s.id === pickedId) ?? null : null
+  const presets = usePresets()
 
   // ── Live editing via builder-exposed window callbacks ────────────────────
-  const addPreset = (type: NonNullable<SessionData['sessionType']>, atDate?: string) => {
-    const newId: string | undefined = (window as any).__builder_addSessionPreset?.(type, atDate)
+  const addPreset = (presetId?: number, atDate?: string) => {
+    if (presetId == null) return
+    const newId: string | undefined = (window as any).__builder_addSessionPreset?.(presetId, atDate)
     if (newId) setPickedId(newId)
   }
   const updateSession = (id: string, patch: Partial<SessionData>) => {
@@ -654,21 +642,21 @@ function TimelineModal({ sessions, win, pickedId, setPickedId, onClose, onEdit }
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1">
             Bibliothèque
           </span>
-          {SESSION_PRESETS.map((p) => (
-            <button key={p.type} type="button"
+          {presets.map((p, i) => (
+            <button key={p.id ?? i} type="button"
               draggable
               onDragStart={(e) => {
-                e.dataTransfer.setData('application/timeline-preset', p.type)
+                if (p.id != null) e.dataTransfer.setData('application/timeline-preset', String(p.id))
                 e.dataTransfer.effectAllowed = 'copy'
               }}
-              onClick={() => addPreset(p.type)}
+              onClick={() => addPreset(p.id)}
               title={`Clic → ajouter à la fin · Glisser → poser sur un jour précis`}
               className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-all hover:scale-[1.03] active:scale-[0.98] cursor-grab active:cursor-grabbing"
-              style={{ borderColor: p.color.bar, color: p.color.bar }}>
-              <span className="h-2 w-2 rounded-full" style={{ background: p.color.bar }} />
+              style={{ borderColor: p.color, color: p.color }}>
+              <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
               {p.title}
               <span className="text-[9px] opacity-70">
-                {p.durationKind === 'day' ? '1j' : p.durationKind === 'week' ? '7j' : '…'}
+                {p.durationKind === 'day' ? '1j' : '…'}
               </span>
               <Plus className="h-3 w-3" />
             </button>
@@ -695,7 +683,7 @@ function TimelineModal({ sessions, win, pickedId, setPickedId, onClose, onEdit }
             const t = e.dataTransfer.getData('application/timeline-preset')
             if (!t) return
             e.preventDefault()
-            addPreset(t as any, win.end.toISOString().slice(0, 10))
+            addPreset(Number(t), win.end.toISOString().slice(0, 10))
           }}>
           {/* Month overview — visual context only (clickable) */}
           {sessions.length > 0 && (
@@ -722,9 +710,9 @@ function TimelineModal({ sessions, win, pickedId, setPickedId, onClose, onEdit }
               <GanttDays sessions={sessions} win={win}
                 onPickSession={(id) => setPickedId(id === pickedId ? null : id)}
                 pickedId={pickedId}
-                onDropPreset={(type, atDate) => addPreset(type as any, atDate)}
+                onDropPreset={(presetId, atDate) => addPreset(Number(presetId), atDate)}
                 onUpdateSession={(id, patch) => updateSession(id, patch)}
-                onAddDefault={() => addPreset('INCUBATION')}
+                onAddDefault={() => addPreset(presets[0]?.id)}
               />
             </div>
           </div>
@@ -759,8 +747,7 @@ function SessionInlineEditor({ session, onUpdate, onRemove, onOpenFullEditor, on
   onClose?: () => void
 }) {
   const d = session.data
-  const preset = SESSION_PRESETS.find((p) => p.type === d.sessionType)
-  const palBar = preset?.color.bar ?? '#10B981'
+  const palBar = (d as any).color ?? '#10B981'
 
   // Local drafts so we don't fire updates on every keystroke
   const [title, setTitle] = useState(d.title ?? '')
@@ -791,18 +778,9 @@ function SessionInlineEditor({ session, onUpdate, onRemove, onOpenFullEditor, on
         )}
       </div>
 
-      {/* Colored header strip with type + status */}
+      {/* Colored header strip with status */}
       <div className="rounded-xl p-3" style={{ background: palBar + '15', borderLeft: `4px solid ${palBar}` }}>
         <div className="flex items-center gap-1.5 mb-1.5">
-          <select
-            value={d.sessionType ?? 'INCUBATION'}
-            onChange={(e) => onUpdate({ sessionType: e.target.value as any })}
-            className="rounded-full border-2 px-2 py-0.5 text-[10px] font-bold bg-background"
-            style={{ borderColor: palBar, color: palBar }}>
-            {SESSION_PRESETS.map((p) => (
-              <option key={p.type} value={p.type}>{p.title}</option>
-            ))}
-          </select>
           <select
             value={d.status ?? 'UPCOMING'}
             onChange={(e) => onUpdate({ status: e.target.value as any })}

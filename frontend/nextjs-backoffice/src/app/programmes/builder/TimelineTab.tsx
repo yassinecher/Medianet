@@ -1,80 +1,56 @@
 'use client'
 /**
- * TimelineTab — the "🗺️ Parcours" tab of the visual editor.
+ * TimelineTab — the "🗺️ Parcours" tab of the visual editor (clean rebuild).
  *
- * Three vertical zones (top → bottom):
+ * Model:
+ *   • A Session has a KIND: "range" (date span) or "day" (single day).
+ *   • A "day" session may NEST inside a "range" session (parentSessionId).
+ *   • The hour-by-hour agenda (activities) is editable ONLY on day sessions.
+ *   • Presets are data-driven (sessionPresetsApi) — global or per-programme,
+ *     editable, and creatable from the library strip.
  *
- *   ┌──────────────────────────────────────────────────────────┐
- *   │ HEADER          title · dates · count · plein écran      │
- *   ├──────────────────────────────────────────────────────────┤
- *   │ LIBRARY STRIP   7 colored preset pills (click / drag)    │
- *   ├──────────────────────────────────────────────────────────┤
- *   │ TIMELINE BOARD                                           │
- *   │  Month strip · Today marker                              │
- *   │  Swimlanes (one row per `lane`) with session bars        │
- *   │  Each bar: solid pill with day-tick marks · warnings     │
- *   │  Drag bar to move · left/right edges to resize           │
- *   │  Drag onto a different lane row to switch swimlane       │
- *   ├──────────────────────────────────────────────────────────┤
- *   │ BOTTOM DRAWER   (slides up when a session is picked)     │
- *   │  ┌──────────────┬───────────────────────────────────────┐│
- *   │  │ EDITOR (290) │ DAY CANVAS — agenda per day with      ││
- *   │  │              │ activities placed on an hour grid     ││
- *   │  └──────────────┴───────────────────────────────────────┘│
- *   └──────────────────────────────────────────────────────────┘
- *
- * All CRUD goes through {@link sessionsApi} directly. The Atelier canvas
- * doesn't touch sessions at all.
+ * Layout (top → bottom):
+ *   HEADER · LIBRARY STRIP (preset pills + ＋Préset + ＋Voie) · BOARD (swimlanes)
+ *   · BOTTOM DRAWER (EditorPanel | kind-aware right pane), height-capped, no overlap.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Plus, X, Trash2, Calendar, MapPin, Users, ChevronDown, ChevronUp,
-  Loader2, ArrowUpRight, Sparkles, AlertTriangle, Info, GripVertical,
-  Layers, Clock, Tag, FileText, Pencil, UserPlus,
+  Plus, X, Trash2, Calendar, MapPin, Users, Loader2,
+  AlertTriangle, Info, GripVertical, Layers, Clock, Palette, FileText,
+  Pencil, UserPlus, CalendarDays, CalendarRange, ChevronRight, Sparkles, Copy,
+  Eye, ArrowLeft, Send, Mail, ClipboardList, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { sessionsApi, SESSION_TYPES, ACTIVITY_TYPES, type SessionType, type ActivityType } from '@/lib/api'
+import { sessionsApi, sessionPresetsApi, notificationsApi, contactsApi, contactGroupsApi, programmesApi, parcoursTemplatesApi } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { CandidaturePhasePanel, PreselectionPhasePanel } from './PhasePanels'
 
-// ── Display palette ─────────────────────────────────────────────────────────
+// ── Color palette ───────────────────────────────────────────────────────────
+// Sessions / presets / activities are type-free — color is their only marker.
 
-const TYPE_LABEL: Record<string, string> = {
-  CANDIDATURE_SUBMISSION: 'Candidature', PRESELECTION: 'Présélection',
-  PITCH_DAY: 'Pitch Day', ONBOARDING: 'Onboarding', INCUBATION: 'Incubation',
-  DEMO_DAY: 'Demo Day', TRAINING_DAY: 'Formation',
-}
-const TYPE_COLOR: Record<string, string> = {
-  CANDIDATURE_SUBMISSION: '#0EA5E9',  PRESELECTION: '#F59E0B',
-  PITCH_DAY: '#EF4444',               ONBOARDING:   '#10B981',
-  INCUBATION: '#A855F7',              DEMO_DAY:     '#F97316',
-  TRAINING_DAY: '#6366F1',
-}
-const PRESET_DURATIONS: Record<SessionType, 'day' | 'week' | 'custom'> = {
-  CANDIDATURE_SUBMISSION: 'custom', PRESELECTION: 'week',
-  PITCH_DAY: 'day', ONBOARDING: 'day', INCUBATION: 'custom',
-  DEMO_DAY: 'day', TRAINING_DAY: 'day',
-}
-const ACTIVITY_TYPE_LABEL: Record<string, string> = {
-  ACTIVITY: 'Activité', TRAINING_STEP: 'Formation', KEYNOTE: 'Keynote',
-  WORKSHOP: 'Atelier', PANEL: 'Panel', PITCH: 'Pitch',
-  BREAK: 'Pause', NETWORKING: 'Networking', OTHER: 'Autre',
-}
-const ACTIVITY_TYPE_COLOR: Record<string, string> = {
-  ACTIVITY: '#10B981', TRAINING_STEP: '#6366F1', KEYNOTE: '#A855F7',
-  WORKSHOP: '#F59E0B', PANEL: '#0EA5E9', PITCH: '#EF4444',
-  BREAK: '#94A3B8', NETWORKING: '#F97316', OTHER: '#64748B',
-}
+const DEFAULT_COLOR = '#10B981'
+
+/** Curated swatches offered in the color pickers (sessions + activities). */
+const SWATCHES = [
+  '#0EA5E9', '#6366F1', '#A855F7', '#EC4899',
+  '#EF4444', '#F97316', '#F59E0B', '#10B981',
+  '#14B8A6', '#64748B',
+]
 
 // ── Domain types ────────────────────────────────────────────────────────────
+
+type DurationKind = 'day' | 'range'
 
 interface Activity {
   id?: number
   activityOrder?: number
   title: string
   description?: string
-  type?: ActivityType | string
+  /** Free-form color of the block (defaults to the session color). */
+  color?: string
   startTime?: string
   endTime?: string
   location?: string
@@ -96,13 +72,54 @@ interface Session {
   description?: string
   startDate?: string
   endDate?: string
-  durationKind?: 'day' | 'week' | 'custom'
+  durationKind?: DurationKind | string
   location?: string
-  sessionType?: SessionType | string
+  /** Hex color of the session bar (first-class — sessions are type-free). */
+  color?: string
+  /** Legacy discriminator — ignored by the UI, kept only for read compat. */
+  sessionType?: string
   status?: 'UPCOMING' | 'ACTIVE' | 'COMPLETED'
   lane?: string
   phaseOrder?: number
+  parentSessionId?: number | null
+  responsibles?: string[]
+  guests?: string[]
+  focusCriteriaIds?: number[]
+  /** JSON map {criterionId: weight 0..1} — per-session criterion weights. */
+  criterionWeightsJson?: string
+  /** Évaluation sessions: saved candidature-selection the jury evaluates. */
+  evaluationSelectionId?: number | null
   days?: SessionDay[]
+}
+
+/** A programme evaluation criterion (subset selectable per session). */
+interface Criterion { id: number; name: string; weight?: number; description?: string }
+interface Preset {
+  id: number
+  programmeId?: number | null
+  title: string
+  color?: string
+  durationKind: DurationKind | string
+  builtIn?: boolean
+  sortOrder?: number
+}
+
+const kindOf = (s: { durationKind?: string }): DurationKind =>
+  (s.durationKind === 'day' ? 'day' : 'range')
+const colorOf = (s: { color?: string }, fallback = DEFAULT_COLOR) =>
+  s.color || fallback
+
+// ── Session « Fonction » — exactly three types ──────────────────────────────
+//   STANDARD (défaut) · CANDIDATURE_SUBMISSION (accepter les candidatures)
+//   · PRESELECTION (évaluation par jury)
+type SessionFunction = 'STANDARD' | 'CANDIDATURE_SUBMISSION' | 'PRESELECTION'
+const fonctionOf = (s: { sessionType?: string }): SessionFunction =>
+  s.sessionType === 'CANDIDATURE_SUBMISSION' || s.sessionType === 'PRESELECTION'
+    ? s.sessionType : 'STANDARD'
+const FONCTION_META: Record<SessionFunction, { label: string; hint: string }> = {
+  STANDARD:               { label: 'Standard',    hint: 'Session classique : ateliers, mentoring, incubation…' },
+  CANDIDATURE_SUBMISSION: { label: 'Candidature', hint: 'Accepte les candidatures — le formulaire est ouvert pendant cette session et la clôture suit sa date de fin.' },
+  PRESELECTION:           { label: 'Évaluation',  hint: 'Évaluation des candidatures par le jury (notes par critère).' },
 }
 
 // ── Date helpers ────────────────────────────────────────────────────────────
@@ -117,6 +134,12 @@ const fmtISO   = (d: Date) => d.toISOString().slice(0, 10)
 const addDays  = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r }
 const fmtShort = (d: Date) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 const fmtMonthShort = (d: Date) => d.toLocaleDateString('fr-FR', { month: 'short' })
+const clampDate = (d: Date, lo?: Date | null, hi?: Date | null) => {
+  let t = d.getTime()
+  if (lo) t = Math.max(t, lo.getTime())
+  if (hi) t = Math.min(t, hi.getTime())
+  return new Date(t)
+}
 
 interface Window { start: Date; end: Date }
 
@@ -142,19 +165,41 @@ function computeWindow(
 function detectMissing(s: Session): { critical: string[]; warnings: string[] } {
   const critical: string[] = []
   const warnings:  string[] = []
-  if (!s.title?.trim() || s.title.trim() === (TYPE_LABEL[s.sessionType ?? ''] ?? '')) {
-    // Title is missing or still the default preset name → critical
-    if (!s.title?.trim()) critical.push('titre')
-  }
+  if (!s.title?.trim()) critical.push('titre')
   if (!s.startDate) critical.push('date de début')
-  if (!s.endDate)   critical.push('date de fin')
+  if (kindOf(s) === 'range' && !s.endDate) critical.push('date de fin')
   if (!s.location?.trim())    warnings.push('lieu')
   if (!s.description?.trim()) warnings.push('description')
-  // Multi-day session without any days set up
-  const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
-  const isMultiDay = sd && ed && (ed.getTime() - sd.getTime()) >= DAY_MS
-  if (isMultiDay && (!s.days || s.days.length === 0)) warnings.push('jours non détaillés')
   return { critical, warnings }
+}
+
+// ── Reusable color picker (swatches + custom) ────────────────────────────────
+
+function ColorPicker({ value, onChange, label = 'Couleur', compact = false }: {
+  value?: string
+  onChange: (hex: string) => void
+  label?: string
+  compact?: boolean
+}) {
+  const cur = (value || '').toLowerCase()
+  return (
+    <div>
+      <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
+        <Palette className="h-3 w-3" />{label}
+      </label>
+      <div className="mt-0.5 flex items-center gap-1 flex-wrap">
+        {SWATCHES.map(s => (
+          <button key={s} type="button" onClick={() => onChange(s)} title={s}
+            className={`rounded-full transition-transform hover:scale-110 ${compact ? 'h-4 w-4' : 'h-5 w-5'} ${
+              cur === s.toLowerCase() ? 'ring-2 ring-offset-1 ring-offset-card ring-foreground/50' : 'border border-black/10'}`}
+            style={{ background: s }} />
+        ))}
+        <input type="color" value={value || DEFAULT_COLOR} onChange={(e) => onChange(e.target.value)}
+          title="Couleur personnalisée"
+          className={`rounded-md border border-input cursor-pointer p-0 bg-transparent ${compact ? 'h-5 w-6' : 'h-6 w-7'}`} />
+      </div>
+    </div>
+  )
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -174,8 +219,8 @@ export function TimelineTab({ programmeId, programme }: {
           </div>
           <h3 className="text-base font-bold text-foreground">Le Parcours est verrouillé</h3>
           <p className="text-sm text-muted-foreground">
-            Construisez d&apos;abord la structure dans l&apos;onglet <strong>🛠️ Atelier</strong>,
-            puis revenez ici pour planifier les sessions.
+            Ce programme n&apos;est pas encore enregistré. Créez-le dans le
+            <strong> Constructeur</strong>, puis revenez ici pour planifier les sessions.
           </p>
         </div>
       </div>
@@ -193,17 +238,28 @@ function TimelineBoard({ programmeId, programme }: {
   programme: { title?: string; startDate?: string | null; endDate?: string | null } | null
 }) {
   const [sessions, setSessions] = useState<Session[]>([])
+  const [presets, setPresets]   = useState<Preset[]>([])
   const [loading,  setLoading]  = useState(true)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [presetModal, setPresetModal] = useState<{ mode: 'create' | 'edit'; preset?: Preset } | null>(null)
+  /** Édition (editable board) vs Aperçu (read-only preview). */
+  const [view, setView] = useState<'edit' | 'preview'>('edit')
 
   const reload = useCallback(async () => {
-    setLoading(true)
     try {
       const r = await sessionsApi.list(programmeId)
       setSessions(r.data ?? [])
     } finally { setLoading(false) }
   }, [programmeId])
-  useEffect(() => { reload() }, [reload])
+
+  const reloadPresets = useCallback(async () => {
+    try {
+      const r = await sessionPresetsApi.list(programmeId)
+      setPresets(r.data ?? [])
+    } catch { /* presets are non-critical */ }
+  }, [programmeId])
+
+  useEffect(() => { reload(); reloadPresets() }, [reload, reloadPresets])
 
   const win = useMemo(() => computeWindow(programme, sessions), [programme, sessions])
   const days = useMemo(() => {
@@ -214,117 +270,330 @@ function TimelineBoard({ programmeId, programme }: {
   }, [win])
   const totalMs = win.end.getTime() - win.start.getTime()
 
-  // ── Lanes ────────────────────────────────────────────────────────────
-  const lanes = useMemo(() => {
-    const set = new Set<string>(['Principal'])
-    for (const s of sessions) set.add(s.lane?.trim() || 'Principal')
-    return Array.from(set)
-  }, [sessions])
+  // Top-level sessions only render as bars; nested day-sessions render inside their parent.
+  const topLevel = useMemo(() => sessions.filter(s => s.parentSessionId == null), [sessions])
+  const childrenOf = useCallback(
+    (parentId: number) => sessions.filter(s => s.parentSessionId === parentId),
+    [sessions])
 
-  const sessionsByLane = useMemo(() => {
-    const m: Record<string, Session[]> = {}
-    for (const lane of lanes) m[lane] = []
-    for (const s of sessions) m[(s.lane?.trim() || 'Principal')]?.push(s)
-    return m
-  }, [sessions, lanes])
-
-  const addLane = () => {
-    const name = prompt('Nom de la nouvelle voie (ex. "Cohorte A") :')
-    if (!name?.trim()) return
-    const lane = name.trim()
-    if (lanes.includes(lane)) { toast.error('Cette voie existe déjà'); return }
-    // Lanes are derived from sessions — create an empty session in this lane
-    // to make it appear. Use a "Présélection" by default (custom duration).
-    // Simpler UX: just show the empty lane visually until a session is added.
-    setSessions(arr => [...arr]) // no-op to trigger re-render
-    toast.success(`Voie "${lane}" prête — glissez un préset dedans pour la peupler`)
-    // Track the new lane locally
-    setExtraLanes(prev => prev.includes(lane) ? prev : [...prev, lane])
-  }
-  const [extraLanes, setExtraLanes] = useState<string[]>([])
-  const allLanes = useMemo(() => {
-    const set = new Set([...lanes, ...extraLanes])
-    return Array.from(set)
-  }, [lanes, extraLanes])
+  // ── Single band: ALL top-level sessions (plages + journées autonomes). ──
+  // A journée may live standalone on the board, or nest inside a plage when
+  // dropped on its dates / added from the plage overlay.
+  const ranges  = useMemo(() => topLevel.filter(s => kindOf(s) === 'range'), [topLevel])
+  const dayCount = useMemo(() => sessions.filter(s => kindOf(s) === 'day').length, [sessions])
+  /** Existing lane values — kept only to power the Voie datalist in the editor. */
+  const laneOptions = useMemo(
+    () => Array.from(new Set(['Principal', ...topLevel.map(s => s.lane?.trim() || 'Principal')])),
+    [topLevel])
 
   // ── CRUD ─────────────────────────────────────────────────────────────
 
-  const addPreset = async (type: SessionType, atDate?: Date, lane?: string) => {
-    const durationKind = PRESET_DURATIONS[type] ?? 'custom'
-    const last = sessions.map(s => parseDate(s.endDate ?? s.startDate)).filter(Boolean)
-                         .sort((a, b) => (a!.getTime() - b!.getTime())).pop() as Date | undefined
-    const start = atDate ?? (last ? addDays(last, 1) : new Date())
-    const end = durationKind === 'day' ? start
-              : durationKind === 'week' ? addDays(start, 6)
-              : addDays(start, 13)
+  /** Create a session from a preset, optionally at a date / lane / parent.
+   *  openAfter=false (drag & drop) places the bar without opening the editor. */
+  const addFromPreset = async (preset: Preset, atDate?: Date, lane?: string, parent?: Session, openAfter = true) => {
+    const kind = kindOf(preset)
+    let start = atDate ?? (() => {
+      const last = topLevel.map(s => parseDate(s.endDate ?? s.startDate)).filter(Boolean)
+        .sort((a, b) => a!.getTime() - b!.getTime()).pop() as Date | undefined
+      return last ? addDays(last, 1) : new Date()
+    })()
+    // Nesting: a day inside a range must fall within the parent window.
+    if (parent) {
+      const ps = parseDate(parent.startDate); const pe = parseDate(parent.endDate ?? parent.startDate)
+      start = clampDate(start, ps, pe)
+    }
+    const end = kind === 'day' ? start : addDays(start, 13)
     try {
       const r = await sessionsApi.create(programmeId, {
-        title: TYPE_LABEL[type] ?? type,
-        sessionType: type, durationKind,
+        title: preset.title, color: preset.color || DEFAULT_COLOR, durationKind: kind,
         startDate: fmtISO(start), endDate: fmtISO(end),
         phaseOrder: sessions.length,
-        lane: lane?.trim() || 'Principal',
+        lane: parent ? (parent.lane || 'Principal') : (lane?.trim() || 'Principal'),
+        parentSessionId: parent?.id ?? null,
       })
-      toast.success(`${TYPE_LABEL[type]} ajoutée`)
+      toast.success(`${preset.title} ajoutée`)
+      await reload()
+      if (openAfter && r?.data?.id) setSelectedId(r.data.id)
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+  }
+
+  /** Create an empty day-session (no preset) — optionally nested in a range. */
+  const addBlankDay = async (atDate?: Date, lane?: string, parent?: Session) => {
+    let start = atDate ?? (() => {
+      const last = topLevel.map(s => parseDate(s.endDate ?? s.startDate)).filter(Boolean)
+        .sort((a, b) => a!.getTime() - b!.getTime()).pop() as Date | undefined
+      return last ? addDays(last, 1) : new Date()
+    })()
+    if (parent) {
+      const ps = parseDate(parent.startDate); const pe = parseDate(parent.endDate ?? parent.startDate)
+      start = clampDate(start, ps, pe)
+    }
+    try {
+      const r = await sessionsApi.create(programmeId, {
+        title: 'Journée', color: DEFAULT_COLOR, durationKind: 'day',
+        startDate: fmtISO(start), endDate: fmtISO(start),
+        phaseOrder: sessions.length,
+        lane: parent ? (parent.lane || 'Principal') : (lane?.trim() || 'Principal'),
+        parentSessionId: parent?.id ?? null,
+      })
+      toast.success('Journée vierge ajoutée')
       await reload()
       if (r?.data?.id) setSelectedId(r.data.id)
-    } catch { toast.error('Erreur') }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+  }
+
+  /** Deep-duplicate a session: fields + journées + activités ("(copie)"). */
+  const duplicateSession = async (s: Session) => {
+    try {
+      const r = await sessionsApi.create(programmeId, {
+        title: `${s.title || 'Session'} (copie)`,
+        durationKind: kindOf(s), startDate: s.startDate, endDate: s.endDate,
+        color: colorOf(s), lane: s.lane || 'Principal',
+        sessionType: s.sessionType, parentSessionId: s.parentSessionId ?? null,
+        focusCriteriaIds: s.focusCriteriaIds, criterionWeightsJson: s.criterionWeightsJson,
+        location: s.location, description: s.description,
+        phaseOrder: sessions.length,
+        days: (s.days ?? []).map(d => ({
+          dayOrder: d.dayOrder, title: d.title, description: d.description,
+          date: d.date, location: d.location,
+          activities: (d.activities ?? []).map(a => ({
+            activityOrder: a.activityOrder, title: a.title, description: a.description,
+            color: a.color, startTime: a.startTime, endTime: a.endTime,
+            location: a.location, responsibles: a.responsibles, guests: a.guests,
+          })),
+        })),
+      })
+      toast.success('Session dupliquée (journées + activités)')
+      await reload()
+      if (r?.data?.id) setSelectedId(r.data.id)
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+  }
+
+  // ── Keyboard: Suppr = delete selected · Ctrl+Z = undo ──
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      if (view !== 'edit') return
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return }
+      if (e.key === 'Delete' && selectedId != null) { e.preventDefault(); remove(selectedId) }
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  })
+
+  /** Save a session's look (title + color + kind) as a reusable preset. */
+  const saveAsPreset = async (session: Session) => {
+    const title = (session.title ?? '').trim() || 'Préset'
+    if (!confirm(`Enregistrer « ${title} » comme préset réutilisable (couleur + durée) ?`)) return
+    try {
+      await sessionPresetsApi.create({
+        programmeId,
+        title,
+        color: colorOf(session),
+        durationKind: kindOf(session),
+      })
+      toast.success(`Préset « ${title} » enregistré`)
+      reloadPresets()
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+  }
+
+  // ── Undo (Ctrl+Z): inverse patches of session updates (moves, edits…) ──
+  const undoRef = useRef<{ id: number; inverse: Partial<Session> }[]>([])
+  const recordUndo = (id: number, patch: Partial<Session>) => {
+    const cur = sessions.find(s => s.id === id)
+    if (!cur) return
+    const inverse: any = {}
+    for (const k of Object.keys(patch)) inverse[k] = (cur as any)[k] ?? null
+    undoRef.current.push({ id, inverse })
+    if (undoRef.current.length > 30) undoRef.current.shift()
+  }
+  const undo = async () => {
+    const last = undoRef.current.pop()
+    if (!last) { toast('Rien à annuler', { icon: '↩️' }); return }
+    const apiPatch: any = { ...last.inverse }
+    if ('parentSessionId' in apiPatch && apiPatch.parentSessionId == null) apiPatch.parentSessionId = -1
+    if ('evaluationSelectionId' in apiPatch && apiPatch.evaluationSelectionId == null) apiPatch.evaluationSelectionId = -1
+    setSessions(arr => arr.map(s => s.id === last.id ? { ...s, ...last.inverse } : s))
+    try { await sessionsApi.update(programmeId, last.id, apiPatch); toast('Annulé', { icon: '↩️' }) }
+    catch { toast.error('Erreur'); reload() }
+  }
+
+  /**
+   * Client-side mirror of the backend date rules — fails a bad drag/edit
+   * instantly (toast) instead of optimistically applying then reverting on a
+   * server 400. Returns an error message, or null when the dates are valid.
+   */
+  const dateError = (id: number, patch: Partial<Session>): string | null => {
+    const cur = sessions.find(s => s.id === id)
+    if (!cur) return null
+    const touchesDates = 'startDate' in patch || 'endDate' in patch || 'durationKind' in patch
+    if (!touchesDates) return null
+    const kind: DurationKind = patch.durationKind
+      ? (patch.durationKind === 'day' ? 'day' : 'range')
+      : kindOf(cur)
+    const start = parseDate(patch.startDate ?? cur.startDate)
+    if (!start) return null
+    let end = kind === 'day' ? start : parseDate(patch.endDate ?? cur.endDate ?? cur.startDate)
+    if (kind === 'range' && end && start.getTime() > end.getTime())
+      return 'La date de début doit précéder la date de fin de la plage.'
+    // Nested journée → must stay within its parent range window.
+    if (cur.parentSessionId != null) {
+      const parent = sessions.find(s => s.id === cur.parentSessionId)
+      const ps = parent ? parseDate(parent.startDate) : null
+      const pe = parent ? parseDate(parent.endDate ?? parent.startDate) : null
+      if (ps && pe && (start < ps || start > pe || (end != null && (end < ps || end > pe))))
+        return `La journée doit rester dans la plage « ${parent!.title || 'parente'} » (${parent!.startDate} → ${parent!.endDate}).`
+    }
+    // Range with nested journées → the new window must still contain them all.
+    if (kind === 'range' && end) {
+      for (const ch of childrenOf(id)) {
+        const cs = parseDate(ch.startDate)
+        if (cs && (cs < start || cs > end))
+          return `La journée « ${ch.title || 'Journée'} » (${ch.startDate}) sortirait de la plage. Déplacez-la d'abord ou élargissez la plage.`
+      }
+    }
+    return null
   }
 
   const update = async (id: number, patch: Partial<Session>) => {
-    setSessions(arr => arr.map(s => s.id === id ? { ...s, ...patch } : s))
+    const err = dateError(id, patch)
+    if (err) { toast.error(err); return }   // reject without touching state — bar stays put
+    recordUndo(id, patch)
+    // -1 is the API "clear" sentinel — locally it must become null, otherwise
+    // e.g. a freshly detached journée fails the parentSessionId == null filter
+    // and vanishes from the board until the next reload.
+    const local: Partial<Session> = { ...patch }
+    if ((local.parentSessionId as any) === -1) local.parentSessionId = null
+    if ((local.evaluationSelectionId as any) === -1) local.evaluationSelectionId = null
+    setSessions(arr => arr.map(s => s.id === id ? { ...s, ...local } : s))
     try { await sessionsApi.update(programmeId, id, patch) }
-    catch { toast.error('Erreur'); reload() }
+    catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur'); reload() }
   }
 
   const remove = async (id: number) => {
     const s = sessions.find(x => x.id === id)
-    if (!confirm(`Supprimer "${s?.title ?? '?'}" ?`)) return
+    const kids = childrenOf(id).length
+    const extra = kids > 0 ? `\n(${kids} journée(s) imbriquée(s) seront aussi supprimées)` : ''
+    if (!confirm(`Supprimer "${s?.title ?? '?'}" ?${extra}`)) return
     try {
       await sessionsApi.delete(programmeId, id)
-      setSessions(arr => arr.filter(x => x.id !== id))
       if (selectedId === id) setSelectedId(null)
+      await reload()
       toast.success('Supprimée')
     } catch { toast.error('Erreur') }
   }
 
-  // ── Drag-from-library to a precise day in a specific lane ────────────
+  // ── Drag-from-library ────────────────────────────────────────────────
   const trackRef = useRef<HTMLDivElement>(null)
-  const [dropPreview, setDropPreview] = useState<{ x: number; date: Date; lane: string } | null>(null)
+  const [dropPreview, setDropPreview] = useState<{ x: number; date: Date; hint?: string } | null>(null)
 
-  const xToDate = (clientX: number): Date | null => {
-    const el = trackRef.current
-    if (!el || days.length === 0) return null
-    const rect = el.getBoundingClientRect()
-    const x = clientX - rect.left
-    if (rect.width <= 0) return null
-    const idx = Math.floor((x / rect.width) * days.length)
-    return new Date(days[Math.max(0, Math.min(days.length - 1, idx))])
+  // ── Zoom: px per day. null = « Ajuster » (whole begin→end window visible). ──
+  const ZOOM_MIN = 2; const ZOOM_MAX = 360
+  const boardRef = useRef<HTMLDivElement>(null)
+  const [boardW, setBoardW] = useState(0)
+  const [zoom, setZoom] = useState<number | null>(null)
+  useEffect(() => {
+    const el = boardRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setBoardW(el.clientWidth))
+    ro.observe(el)
+    setBoardW(el.clientWidth)
+    return () => ro.disconnect()
+    // `loading` matters: the board only exists once loading is done, so the
+    // effect must re-run then (boardRef is null during the spinner render).
+  }, [view, loading])
+  /** Fit = the whole window (start → end) fills the visible board width. */
+  const fitPx = boardW > 0 && days.length > 0 ? Math.max(ZOOM_MIN, (boardW - 26) / days.length) : 28
+  const pxPerDay = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom ?? fitPx))
+  const trackW = Math.max(days.length * pxPerDay, 300)
+  /** Deep zoom → the timeline "becomes days": weekday axis + labeled day blocks. */
+  const dayMode = pxPerDay >= 26
+  /** Extreme zoom → the board becomes a VERTICAL calendar (days = columns,
+   *  hours flow downward, activities = agenda blocks). */
+  const hourMode = pxPerDay >= 120
+  const axisH   = dayMode ? 'h-12'  : 'h-9'
+  const axisTop = dayMode ? 'top-12' : 'top-9'
+  // Ctrl + molette = zoom, anchored at the cursor (native listener:
+  // React wheel handlers are passive, so preventDefault needs addEventListener).
+  const pxRef = useRef(pxPerDay)
+  pxRef.current = pxPerDay
+  const anchorRef = useRef<{ frac: number; vx: number } | null>(null)
+  useEffect(() => {
+    const el = boardRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return
+      e.preventDefault()
+      const rect = el.getBoundingClientRect()
+      const vx = e.clientX - rect.left
+      // One anchor per frame: rapid wheel events between renders must not
+      // recompute the fraction from a scrollLeft that hasn't been adjusted yet,
+      // or the anchored date drifts. (12 = p-3 left padding)
+      if (!anchorRef.current) {
+        anchorRef.current = { frac: (el.scrollLeft + vx - 12) / (days.length * pxRef.current), vx }
+      }
+      // Smooth, proportional zoom: small trackpad deltas = gentle steps,
+      // full wheel notches = bigger ones. Compound on pxRef so successive
+      // events within the same frame stay accurate.
+      const factor = Math.min(1.6, Math.max(0.625, Math.exp(-e.deltaY * 0.0022)))
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, pxRef.current * factor))
+      pxRef.current = next
+      setZoom(next)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [view, loading, days.length])
+  // After a zoom change, restore the anchor BEFORE paint (no visible jump):
+  // the date under the cursor (wheel) or at the viewport center (buttons)
+  // stays exactly in place.
+  useLayoutEffect(() => {
+    const el = boardRef.current; const a = anchorRef.current
+    if (!el || !a) return
+    anchorRef.current = null
+    el.scrollLeft = Math.max(0, a.frac * days.length * pxPerDay + 12 - a.vx)
+  }, [pxPerDay, days.length])
+
+  /** Button zoom — anchored at the viewport center (same math as the wheel). */
+  const zoomTo = (next: number) => {
+    const el = boardRef.current
+    if (el) {
+      const vx = el.clientWidth / 2
+      anchorRef.current = { frac: (el.scrollLeft + vx - 12) / (days.length * pxPerDay), vx }
+    }
+    setZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next)))
+  }
+
+  /** Smooth-scroll the board so today's column is centered. */
+  const scrollToToday = () => {
+    const el = boardRef.current
+    if (!el) return
+    const t = Date.now()
+    if (t < win.start.getTime() || t > win.end.getTime()) {
+      toast('Aujourd’hui est en dehors de la fenêtre du parcours.', { icon: '📅' })
+      return
+    }
+    const x = ((t - win.start.getTime()) / totalMs) * (days.length * pxPerDay) + 12
+    el.scrollTo({ left: Math.max(0, x - el.clientWidth / 2), behavior: 'smooth' })
   }
 
   // ── Drag a bar to move / resize ─────────────────────────────────────
   const dragRef = useRef<{
-    id: number; mode: 'move' | 'resize-left' | 'resize-right' | 'lane'
-    origX: number; origY: number; origStart: Date; origEnd: Date
-    pxPerDay: number; origLane: string
+    id: number; mode: 'move' | 'resize-left' | 'resize-right'
+    origX: number; origStart: Date; origEnd: Date; pxPerDay: number
   } | null>(null)
   const [drag, setDrag] = useState<{ id: number; deltaDays: number; mode: string } | null>(null)
-  const [hoveredLane, setHoveredLane] = useState<string | null>(null)
 
   const startDrag = (s: Session, e: React.PointerEvent, mode: 'move' | 'resize-left' | 'resize-right') => {
     e.stopPropagation()
-    if ((mode === 'resize-left' || mode === 'resize-right') && s.durationKind === 'day') return
+    if ((mode === 'resize-left' || mode === 'resize-right') && kindOf(s) === 'day') return
     const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
     if (!sd || !ed) return
     const track = trackRef.current
     if (!track) return
     const pxPerDay = track.getBoundingClientRect().width / days.length
     ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
-    dragRef.current = {
-      id: s.id, mode, origX: e.clientX, origY: e.clientY,
-      origStart: sd, origEnd: ed, pxPerDay,
-      origLane: s.lane?.trim() || 'Principal',
-    }
+    dragRef.current = { id: s.id, mode, origX: e.clientX, origStart: sd, origEnd: ed, pxPerDay }
   }
 
   const onBoardPointerMove = (e: React.PointerEvent) => {
@@ -332,27 +601,25 @@ function TimelineBoard({ programmeId, programme }: {
     const dx = e.clientX - dragRef.current.origX
     const delta = Math.round(dx / dragRef.current.pxPerDay)
     setDrag({ id: dragRef.current.id, deltaDays: delta, mode: dragRef.current.mode })
-    // Vertical lane-switching: detect which lane row is under the pointer
-    if (dragRef.current.mode === 'move') {
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      const laneEl = el?.closest('[data-lane]') as HTMLElement | null
-      setHoveredLane(laneEl?.dataset.lane ?? null)
-    }
   }
 
+  /** Set right after a real bar drag so the click that follows pointerup does
+   *  NOT open the session panel (drag = placement, click = open). */
+  const suppressClickRef = useRef(false)
+
   const onBoardPointerUp = () => {
-    if (!dragRef.current) { setDrag(null); setHoveredLane(null); return }
-    const { id, mode, origStart, origEnd, origLane } = dragRef.current
+    if (!dragRef.current) { setDrag(null); return }
+    const { id, mode, origStart, origEnd } = dragRef.current
     const dd = drag?.deltaDays ?? 0
-    const newLane = hoveredLane && hoveredLane !== origLane ? hoveredLane : null
     dragRef.current = null
-    setDrag(null); setHoveredLane(null)
-    if (dd === 0 && !newLane) return
+    setDrag(null)
+    if (dd === 0) return
+    suppressClickRef.current = true
+    setTimeout(() => { suppressClickRef.current = false }, 250)
     const patch: Partial<Session> = {}
     if (mode === 'move') {
       patch.startDate = fmtISO(new Date(origStart.getTime() + dd * DAY_MS))
       patch.endDate   = fmtISO(new Date(origEnd.getTime()   + dd * DAY_MS))
-      if (newLane) patch.lane = newLane
     } else if (mode === 'resize-right') {
       patch.endDate = fmtISO(new Date(Math.max(origStart.getTime(), origEnd.getTime() + dd * DAY_MS)))
     } else if (mode === 'resize-left') {
@@ -361,7 +628,112 @@ function TimelineBoard({ programmeId, programme }: {
     update(id, patch)
   }
 
+  /** Calendar view: click an empty slot of a journée column → 1h activity
+   *  at that time (the day row is lazily created when missing). */
+  const quickAddActivity = async (s: Session, rawMin: number) => {
+    const start = Math.max(HOUR_START * 60, Math.min(HOUR_END * 60 - 30, snap(rawMin)))
+    const end = Math.min(HOUR_END * 60, start + 60)
+    try {
+      let day = (s.days ?? []).find(d => d.id)
+      if (!day?.id) {
+        const r = await sessionsApi.addDay(programmeId, s.id, { dayOrder: 1, date: s.startDate ?? null } as any)
+        day = r.data
+      }
+      if (!day?.id) return
+      await sessionsApi.addActivity(programmeId, s.id, day.id, {
+        title: 'Nouvelle activité', color: colorOf(s),
+        startTime: minToTime(start), endTime: minToTime(end),
+      })
+      toast.success(`Activité ajoutée à ${minToTime(start).slice(0, 5)}`)
+      await reload()
+      setSelectedId(s.id)
+    } catch { toast.error('Erreur activité') }
+  }
+
+  // ── Parcours templates: save / apply the WHOLE session structure ──────────
+  const [tplMenuOpen, setTplMenuOpen] = useState(false)
+  const [parcoursTpls, setParcoursTpls] = useState<{ id: number; name: string; structureJson: string; sessionCount?: number }[]>([])
+  const reloadParcoursTpls = useCallback(() => {
+    parcoursTemplatesApi.list().then(r => setParcoursTpls(r.data ?? [])).catch(() => {})
+  }, [])
+  useEffect(() => { reloadParcoursTpls() }, [reloadParcoursTpls])
+
+  const saveParcoursTemplate = async () => {
+    if (!topLevel.length) { toast.error('Aucune session à enregistrer.'); return }
+    const name = prompt('Nom du modèle de parcours :')?.trim()
+    if (!name) return
+    const starts = topLevel.map(s => parseDate(s.startDate)).filter(Boolean) as Date[]
+    const origin = starts.length ? new Date(Math.min(...starts.map(d => d.getTime()))) : new Date()
+    const off = (d?: string) => { const p = parseDate(d); return p ? Math.round((p.getTime() - origin.getTime()) / DAY_MS) : 0 }
+    const ser = (s: Session) => ({
+      title: s.title, color: colorOf(s), durationKind: kindOf(s), sessionType: s.sessionType,
+      location: s.location, description: s.description, lane: s.lane,
+      offsetDays: off(s.startDate),
+      durationDays: Math.max(0, off(s.endDate ?? s.startDate) - off(s.startDate)),
+      days: (s.days ?? []).map(d => ({
+        title: d.title, description: d.description, location: d.location,
+        offsetDays: d.date ? off(d.date) : off(s.startDate),
+        activities: (d.activities ?? []).map(a => ({
+          title: a.title, description: a.description, color: a.color,
+          startTime: a.startTime, endTime: a.endTime, location: a.location,
+          responsibles: a.responsibles, guests: a.guests,
+        })),
+      })),
+    })
+    const structure = topLevel.map(s => ({ ...ser(s), children: childrenOf(s.id).map(ser) }))
+    try {
+      await parcoursTemplatesApi.create({ name, structureJson: JSON.stringify(structure), sessionCount: topLevel.length })
+      toast.success(`Modèle de parcours « ${name} » enregistré`)
+      reloadParcoursTpls()
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+  }
+
+  const applyParcoursTemplate = async (tpl: { name: string; structureJson: string }) => {
+    let structure: any[] = []
+    try { structure = JSON.parse(tpl.structureJson || '[]') } catch { toast.error('Modèle illisible'); return }
+    if (!structure.length) { toast.error('Modèle vide'); return }
+    const startStr = prompt(`Appliquer « ${tpl.name} » à partir de quelle date ? (AAAA-MM-JJ)`, fmtISO(new Date()))
+    if (!startStr) return
+    const origin = parseDate(startStr)
+    if (!origin) { toast.error('Date invalide'); return }
+    const at = (offset?: number) => fmtISO(addDays(origin, offset || 0))
+    const tid = toast.loading(`Application de « ${tpl.name} »…`)
+    const payload = (x: any, parentId: number | null) => ({
+      title: x.title || 'Session',
+      durationKind: x.durationKind === 'day' ? 'day' : 'range',
+      startDate: at(x.offsetDays),
+      endDate: at((x.offsetDays || 0) + (x.durationKind === 'day' ? 0 : (x.durationDays || 0))),
+      color: x.color, sessionType: x.sessionType, lane: x.lane || 'Principal',
+      location: x.location, description: x.description,
+      parentSessionId: parentId, phaseOrder: sessions.length,
+      days: (x.days ?? []).map((d: any) => ({
+        title: d.title, description: d.description, location: d.location,
+        date: at(d.offsetDays), activities: d.activities ?? [],
+      })),
+    })
+    try {
+      for (const s of structure) {
+        const r = await sessionsApi.create(programmeId, payload(s, null))
+        const newId = r?.data?.id ?? null
+        for (const ch of (s.children ?? [])) await sessionsApi.create(programmeId, payload(ch, newId))
+      }
+      toast.success(`Parcours « ${tpl.name} » appliqué`, { id: tid })
+      setTplMenuOpen(false)
+      await reload()
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur', { id: tid }) }
+  }
+
+  /** Shared preset-drop behavior (band + calendar): a journée nests in the
+   *  plage covering the drop date, else stays standalone; ranges = top-level. */
+  const handleDropPreset = (presetId: number, atDate: Date, parent?: Session) => {
+    const preset = presets.find(p => p.id === presetId)
+    if (!preset) return
+    if (kindOf(preset) === 'day') { addFromPreset(preset, atDate, undefined, parent, false); return }
+    addFromPreset(preset, atDate, undefined, undefined, false)
+  }
+
   const selectedSession = sessions.find(s => s.id === selectedId) ?? null
+  const drawerOpen = !!selectedSession
 
   // ── Render ──────────────────────────────────────────────────────────────
 
@@ -371,14 +743,15 @@ function TimelineBoard({ programmeId, programme }: {
     </div>
   )
 
-  const minWidth = Math.max(days.length * 32, 800)
-  const drawerOpen = !!selectedSession
-
   return (
     <div className="flex flex-col h-full"
       onPointerMove={onBoardPointerMove} onPointerUp={onBoardPointerUp}>
       {/* HEADER */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-gradient-to-r from-amber-500/5 via-card to-rose-500/5 shrink-0">
+        <a href={`/programmes/${programmeId}`} title="Retour au programme"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-accent shrink-0">
+          <ArrowLeft className="h-4 w-4" />
+        </a>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-rose-500 text-white shadow-sm">
           <Calendar className="h-4 w-4" />
         </div>
@@ -387,67 +760,173 @@ function TimelineBoard({ programmeId, programme }: {
             🗺️ Parcours · {programme?.title ?? `Programme #${programmeId}`}
           </p>
           <p className="text-[10px] text-muted-foreground">
-            {sessions.length} session{sessions.length > 1 ? 's' : ''} · {allLanes.length} voie{allLanes.length > 1 ? 's' : ''} ·
+            {ranges.length} plage{ranges.length > 1 ? 's' : ''} · {dayCount} journée{dayCount > 1 ? 's' : ''} ·
             {' '}{fmtMonthShort(win.start)} → {fmtMonthShort(win.end)} · autosauvegarde en direct
           </p>
         </div>
-        <a href={`/programmes/${programmeId}/timeline`} target="_blank" rel="noreferrer"
-          className="text-[11px] text-muted-foreground hover:text-brand-500 inline-flex items-center gap-1">
-          Plein écran <ArrowUpRight className="h-3 w-3" />
+        {/* Zoom controls (edit view) — Ajuster = whole parcours visible */}
+        {view === 'edit' && (
+          <div className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-0.5 shrink-0" title="Zoom · Ctrl + molette">
+            <button type="button" onClick={() => zoomTo(pxPerDay / 1.4)}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-card transition-colors" title="Zoom arrière">
+              <ZoomOut className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" onClick={() => setZoom(null)}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors ${
+                zoom == null ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              title="Ajuster : tout le parcours visible (début → fin)">
+              Ajuster
+            </button>
+            <button type="button" onClick={() => zoomTo(pxPerDay * 1.4)}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-card transition-colors" title="Zoom avant">
+              <ZoomIn className="h-3.5 w-3.5" />
+            </button>
+            <span className="px-1.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground select-none border-l border-border ml-0.5"
+              title="Granularité actuelle de la timeline">
+              {hourMode ? 'Heures' : dayMode ? 'Jours' : 'Mois'}
+            </span>
+          </div>
+        )}
+        {view === 'edit' && (
+          <button type="button" onClick={scrollToToday}
+            title="Centrer la timeline sur aujourd’hui"
+            className="inline-flex items-center gap-1 rounded-lg border border-rose-300/50 bg-rose-500/5 px-2 py-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-500/15 transition-colors shrink-0">
+            <Calendar className="h-3 w-3" />Aujourd&apos;hui
+          </button>
+        )}
+        {/* Parcours templates: save / apply the whole structure */}
+        {view === 'edit' && (
+          <div className="relative shrink-0">
+            <button type="button" onClick={() => setTplMenuOpen(v => !v)}
+              title="Modèles de parcours : enregistrer ou appliquer une structure complète"
+              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                tplMenuOpen ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300' : 'border-border text-muted-foreground hover:text-foreground'}`}>
+              <Layers className="h-3 w-3" />Modèles
+            </button>
+            {tplMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-xl border border-border bg-card shadow-xl p-2 space-y-1">
+                <button type="button" onClick={() => { setTplMenuOpen(false); saveParcoursTemplate() }}
+                  className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-foreground hover:bg-accent text-left">
+                  <Plus className="h-3.5 w-3.5 text-brand-500" />
+                  Enregistrer le parcours actuel comme modèle
+                </button>
+                {parcoursTpls.length > 0 && <div className="border-t border-border my-1" />}
+                {parcoursTpls.map(t => (
+                  <div key={t.id} className="flex items-center gap-1 rounded-lg hover:bg-accent/60 px-1">
+                    <button type="button" onClick={() => applyParcoursTemplate(t)}
+                      title="Appliquer ce modèle (choix de la date de départ)"
+                      className="flex-1 min-w-0 flex items-center gap-2 px-1.5 py-2 text-xs text-left">
+                      <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                      <span className="truncate font-semibold text-foreground">{t.name}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{t.sessionCount ?? '?'} session{(t.sessionCount ?? 0) > 1 ? 's' : ''}</span>
+                    </button>
+                    <button type="button" title="Supprimer ce modèle"
+                      onClick={async () => {
+                        if (!confirm(`Supprimer le modèle « ${t.name} » ?`)) return
+                        try { await parcoursTemplatesApi.delete(t.id); reloadParcoursTpls() } catch { toast.error('Erreur') }
+                      }}
+                      className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 shrink-0">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                {parcoursTpls.length === 0 && (
+                  <p className="px-2.5 py-1 text-[10px] text-muted-foreground italic">Aucun modèle enregistré pour l&apos;instant.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {/* Édition ⇄ Aperçu toggle */}
+        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5 text-[11px] font-semibold shrink-0">
+          {([['edit', 'Édition', Pencil], ['preview', 'Aperçu', Eye]] as const).map(([k, lbl, Icon]) => (
+            <button key={k} type="button" onClick={() => setView(k)}
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors ${
+                view === k ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+              <Icon className="h-3 w-3" />{lbl}
+            </button>
+          ))}
+        </div>
+        <a href={`/programmes/${programmeId}/builder`}
+          title="Ouvrir le constructeur visuel (canvas)"
+          className="text-[11px] text-muted-foreground hover:text-brand-500 inline-flex items-center gap-1 shrink-0">
+          <Sparkles className="h-3 w-3" />Constructeur
         </a>
       </div>
+
+      {view === 'preview' ? (
+        <TimelinePreview sessions={sessions} topLevel={topLevel} childrenOf={childrenOf} />
+      ) : (
+      <>
 
       {/* LIBRARY STRIP */}
       <div className="px-4 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center gap-1.5 shrink-0">
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-1">
           Bibliothèque
         </span>
-        {SESSION_TYPES.map(t => {
-          const c = TYPE_COLOR[t]
-          const dur = PRESET_DURATIONS[t]
+        {presets.map(p => {
+          const c = p.color || DEFAULT_COLOR
+          const kind = kindOf(p)
           return (
-            <button key={t} type="button" draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('application/timeline-preset', t)
-                e.dataTransfer.effectAllowed = 'copy'
-              }}
-              onClick={() => addPreset(t)}
-              title="Clic = ajouter · Glisser = déposer sur un jour précis"
-              className="group inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition-all hover:scale-105 active:scale-95 cursor-grab active:cursor-grabbing shadow-sm hover:shadow"
-              style={{ borderColor: c, color: c, background: c + '0D' }}>
-              <span className="h-2 w-2 rounded-full" style={{ background: c }} />
-              {TYPE_LABEL[t]}
-              <span className="text-[9px] opacity-70">
-                {dur === 'day' ? '1j' : dur === 'week' ? '7j' : '…'}
-              </span>
-              <Plus className="h-3 w-3 opacity-60 group-hover:opacity-100" />
-            </button>
+            <span key={p.id} className="group relative inline-flex items-center">
+              <button type="button" draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('application/timeline-preset', String(p.id))
+                  // Kind marker as a TYPE — readable during dragover (data is not),
+                  // so the drop preview can say where the journée will land.
+                  e.dataTransfer.setData(kind === 'day' ? 'application/timeline-day' : 'application/timeline-range', '1')
+                  e.dataTransfer.effectAllowed = 'copy'
+                }}
+                onClick={() => addFromPreset(p)}
+                title="Clic = ajouter · Glisser = déposer sur un jour précis (sur une plage = imbriquée)"
+                className="inline-flex items-center gap-1.5 rounded-full border pl-3 pr-2 py-1 text-xs font-bold transition-all hover:scale-105 active:scale-95 cursor-grab active:cursor-grabbing shadow-sm"
+                style={{ borderColor: c, color: c, background: c + '0D' }}>
+                <span className="h-2 w-2 rounded-full" style={{ background: c }} />
+                {p.title}
+                <span className="text-[9px] opacity-70 inline-flex items-center gap-0.5">
+                  {kind === 'day' ? <CalendarDays className="h-2.5 w-2.5" /> : <CalendarRange className="h-2.5 w-2.5" />}
+                </span>
+                <Plus className="h-3 w-3 opacity-60" />
+              </button>
+              <button type="button" title="Modifier ce préset"
+                onClick={() => setPresetModal({ mode: 'edit', preset: p })}
+                className="absolute -top-1.5 -right-1.5 hidden group-hover:flex h-4 w-4 items-center justify-center rounded-full bg-card border border-border text-muted-foreground hover:text-foreground shadow">
+                <Pencil className="h-2.5 w-2.5" />
+              </button>
+            </span>
           )
         })}
-        <button type="button" onClick={addLane}
-          className="ml-2 inline-flex items-center gap-1 rounded-full border border-dashed border-emerald-500/50 bg-emerald-500/5 hover:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 text-[11px] font-semibold transition-all">
-          <Plus className="h-3 w-3" />Nouvelle voie
+        <button type="button" onClick={() => setPresetModal({ mode: 'create' })}
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-brand-500/50 bg-brand-500/5 hover:bg-brand-500/15 text-brand-700 dark:text-brand-300 px-2.5 py-1 text-[11px] font-semibold transition-all">
+          <Plus className="h-3 w-3" />Préset
         </button>
       </div>
 
-      {/* TIMELINE BOARD — top portion (shrinks when drawer is open) */}
-      <div className={`overflow-auto p-3 transition-all ${drawerOpen ? 'flex-1 max-h-[55%]' : 'flex-1'}`}
+      {/* TIMELINE BOARD — opens fitted (begin → end visible); zoom = h-scroll */}
+      <div ref={boardRef} className="flex-1 overflow-auto p-3"
         onClick={() => setSelectedId(null)}>
-        <div ref={trackRef} className="relative" style={{ minWidth }}>
-          {/* Month axis */}
-          <div className="sticky top-0 z-20 bg-card border-b-2 border-border h-9 flex">
+        <div ref={trackRef} className="relative" style={{ width: trackW }}>
+          {/* Date axis — months zoomed out, days zoomed in, hours at extreme zoom */}
+          <div className={`sticky top-0 z-20 bg-card border-b-2 border-border flex ${axisH}`}>
             {days.map((d, i) => {
               const isMonthStart = d.getDate() === 1 || i === 0
               const isToday = d.toDateString() === new Date().toDateString()
               const isWeekend = d.getDay() === 0 || d.getDay() === 6
+              // Zoomed out → declutter: keep numbers only on Mondays / month starts / today.
+              const showNum = pxPerDay >= 14 || isMonthStart || isToday || (pxPerDay >= 5 && d.getDay() === 1)
               return (
                 <div key={i}
-                  className={`flex-1 min-w-[28px] flex flex-col items-center justify-center text-[10px] ${isWeekend ? 'bg-muted/30' : ''} ${isMonthStart ? 'border-l-2 border-foreground/30' : 'border-l border-border/20'}`}>
-                  <span className={`font-semibold ${isToday ? 'text-rose-600' : 'text-foreground/70'}`}>
-                    {d.getDate()}
-                  </span>
+                  className={`relative flex-1 flex flex-col items-center justify-center text-[10px] overflow-hidden ${isWeekend ? 'bg-muted/30' : ''} ${isMonthStart ? 'border-l-2 border-foreground/30' : pxPerDay >= 7 ? 'border-l border-border/20' : ''} ${isToday && dayMode ? 'bg-rose-500/10' : ''}`}>
+                  {dayMode && (
+                    <span className={`text-[8px] uppercase ${isToday ? 'text-rose-500 font-bold' : 'text-muted-foreground'}`}>
+                      {d.toLocaleDateString('fr-FR', { weekday: 'short' })}
+                    </span>
+                  )}
+                  {showNum && (
+                    <span className={`font-semibold ${isToday ? 'text-rose-600' : 'text-foreground/70'}`}>{d.getDate()}</span>
+                  )}
                   {isMonthStart && (
-                    <span className="text-[8px] font-bold uppercase text-muted-foreground tracking-wider -mt-0.5">
+                    <span className="text-[8px] font-bold uppercase text-muted-foreground tracking-wider -mt-0.5 whitespace-nowrap">
                       {fmtMonthShort(d)}
                     </span>
                   )}
@@ -456,14 +935,13 @@ function TimelineBoard({ programmeId, programme }: {
             })}
           </div>
 
-          {/* Today vertical line spans all lanes */}
+          {/* Today vertical line */}
           {(() => {
             const today = Date.now()
             if (today < win.start.getTime() || today > win.end.getTime()) return null
             const left = ((today - win.start.getTime()) / totalMs) * 100
             return (
-              <div className="absolute top-9 bottom-0 w-px bg-rose-500/60 z-10 pointer-events-none"
-                style={{ left: `${left}%` }}>
+              <div className={`absolute ${axisTop} bottom-0 w-px bg-rose-500/60 z-10 pointer-events-none`} style={{ left: `${left}%` }}>
                 <span className="absolute -top-1 -translate-x-1/2 rounded-sm bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold text-white whitespace-nowrap">
                   aujourd&apos;hui
                 </span>
@@ -471,74 +949,221 @@ function TimelineBoard({ programmeId, programme }: {
             )
           })()}
 
-          {/* Weekend stripes spanning lanes */}
+          {/* Weekend stripes */}
           {days.map((d, i) => {
             if (d.getDay() !== 0 && d.getDay() !== 6) return null
             const left = ((d.getTime() - win.start.getTime()) / totalMs) * 100
             const w = (DAY_MS / totalMs) * 100
-            return (
-              <div key={i} className="absolute top-9 bottom-0 bg-muted/20 pointer-events-none"
-                style={{ left: `${left}%`, width: `${w}%` }} />
-            )
+            return <div key={i} className={`absolute ${axisTop} bottom-0 bg-muted/20 pointer-events-none`} style={{ left: `${left}%`, width: `${w}%` }} />
           })}
 
-          {/* Drop preview line + label */}
+
+          {/* Drop preview */}
           {dropPreview && (
-            <div className="absolute top-9 bottom-0 w-1 bg-emerald-500/80 z-30 pointer-events-none rounded-full"
-              style={{ left: dropPreview.x - 2 }}>
+            <div className={`absolute ${axisTop} bottom-0 w-1 bg-emerald-500/80 z-30 pointer-events-none rounded-full`} style={{ left: dropPreview.x - 2 }}>
               <span className="absolute -top-1 -translate-x-1/2 rounded-md bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold text-white whitespace-nowrap shadow-lg">
-                {fmtShort(dropPreview.date)} · {dropPreview.lane}
+                {fmtShort(dropPreview.date)}{dropPreview.hint ? ` · ${dropPreview.hint}` : ''}
               </span>
             </div>
           )}
 
-          {/* Lanes */}
-          <div className="pt-2 space-y-1">
-            {allLanes.map(lane => (
-              <LaneRow
-                key={lane}
-                lane={lane}
-                sessions={sessionsByLane[lane] ?? []}
-                win={win}
-                days={days}
-                trackRef={trackRef}
-                isDropTarget={hoveredLane === lane}
-                onDropPreset={(type, atDate) => addPreset(type, atDate, lane)}
-                onDropPreviewMove={(x, d) => setDropPreview({ x, date: d, lane })}
-                onDropPreviewLeave={() => setDropPreview(null)}
-                selectedId={selectedId}
-                drag={drag}
-                onSelect={(id) => setSelectedId(id)}
-                onStartDrag={startDrag}
-              />
-            ))}
+          {/* Board content: horizontal band (Mois/Jours) — or a VERTICAL
+              calendar (days = columns, hours downward) at hour zoom. */}
+          {hourMode ? (
+            <CalendarGrid
+              sessions={sessions} win={win} days={days} totalMs={totalMs} trackRef={trackRef}
+              onSelect={(id) => setSelectedId(id)}
+              onAddDayAt={(d) => {
+                const host = ranges.find(s => {
+                  const ps = parseDate(s.startDate); const pe = parseDate(s.endDate ?? s.startDate)
+                  return !!ps && !!pe && d.getTime() >= ps.getTime() && d.getTime() <= pe.getTime()
+                })
+                addBlankDay(d, undefined, host)
+              }}
+              onQuickAddActivity={quickAddActivity}
+              onMoveActivity={async (s, dayId, aid, patch) => {
+                try {
+                  await sessionsApi.updateActivity(programmeId, s.id, dayId, aid, patch)
+                  await reload()
+                } catch { toast.error('Erreur — déplacement non enregistré') }
+              }}
+              onMoveDay={(s, deltaDays) => {
+                const sd0 = parseDate(s.startDate)
+                if (!sd0) return
+                const ns = fmtISO(addDays(sd0, deltaDays))
+                update(s.id, { startDate: ns, endDate: ns })
+              }}
+              onDropPreset={handleDropPreset}
+              onDropPreviewMove={(x, d, hint) => setDropPreview({ x, date: d, hint })}
+              onDropPreviewLeave={() => setDropPreview(null)}
+            />
+          ) : (
+          <div className="pt-2 space-y-2">
+            <Band
+              label="Sessions" kind="range"
+              sessions={topLevel} childrenOf={childrenOf}
+              win={win} days={days} trackRef={trackRef}
+              pxPerDay={pxPerDay}
+              onDropPreset={handleDropPreset}
+              onAddDay={(s, d) => addBlankDay(d, undefined, s)}
+              onDropPreviewMove={(x, d, hint) => setDropPreview({ x, date: d, hint })}
+              onDropPreviewLeave={() => setDropPreview(null)}
+              selectedId={selectedId} drag={drag}
+              onSelect={(id) => { if (suppressClickRef.current) return; setSelectedId(id) }}
+              onStartDrag={startDrag}
+            />
           </div>
+          )}
         </div>
 
-        {sessions.length === 0 && (
-          <EmptyHint />
-        )}
+        {topLevel.length === 0 && <EmptyHint />}
       </div>
 
-      {/* BOTTOM DRAWER */}
+      {/* CENTERED SESSION OVERLAY */}
+      {drawerOpen && (
+        <SessionOverlay
+          programmeId={programmeId}
+          programmeName={programme?.title}
+          session={selectedSession!}
+          allLanes={laneOptions}
+          parents={topLevel.filter(s => kindOf(s) === 'range' && s.id !== selectedSession!.id)}
+          children={childrenOf(selectedSession!.id)}
+          onUpdate={(patch) => update(selectedSession!.id, patch)}
+          onRemove={() => remove(selectedSession!.id)}
+          onDuplicate={() => duplicateSession(selectedSession!)}
+          onClose={() => setSelectedId(null)}
+          onOpenSession={(id) => setSelectedId(id)}
+          onAddChild={(preset) => {
+            const p = presets.find(x => x.id === preset)
+            if (p) addFromPreset(p, undefined, undefined, selectedSession!)
+          }}
+          onAddBlankChild={() => addBlankDay(undefined, undefined, selectedSession!)}
+          onSaveAsPreset={() => saveAsPreset(selectedSession!)}
+          dayPresets={presets.filter(p => kindOf(p) === 'day')}
+          onDaysChanged={reload}
+        />
+      )}
+
+      {/* PRESET EDITOR MODAL */}
       <AnimatePresence>
-        {drawerOpen && (
-          <motion.div
-            key="drawer"
-            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 280, damping: 28 }}
-            onClick={(e) => e.stopPropagation()}
-            className="shrink-0 border-t-2 border-border bg-card shadow-[0_-8px_20px_-8px_rgba(0,0,0,0.15)]"
-            style={{ height: '45%', minHeight: 260 }}>
-            <BottomDrawer
-              programmeId={programmeId}
-              session={selectedSession!}
-              allLanes={allLanes}
-              onUpdate={(patch) => update(selectedSession!.id, patch)}
-              onRemove={() => remove(selectedSession!.id)}
-              onClose={() => setSelectedId(null)}
-              onDaysChanged={reload}
-            />
+        {presetModal && (
+          <PresetEditorModal
+            programmeId={programmeId}
+            mode={presetModal.mode}
+            preset={presetModal.preset}
+            onClose={() => setPresetModal(null)}
+            onSaved={() => { setPresetModal(null); reloadPresets() }}
+          />
+        )}
+      </AnimatePresence>
+      </>
+      )}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//                       READ-ONLY APERÇU (PREVIEW)
+// ──────────────────────────────────────────────────────────────────────────
+
+/** All activities of a session (across its days), sorted chronologically. */
+function activitiesOf(session: Session): Activity[] {
+  const acts = (session.days ?? []).flatMap(d => d.activities ?? [])
+  return [...acts].sort((a, b) => timeToMin(a.startTime) - timeToMin(b.startTime))
+}
+
+/** Human-readable date / range for a session. */
+function dateText(s: Session): string {
+  const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
+  if (!sd) return 'Date à définir'
+  if (kindOf(s) === 'day' || !ed || sd.getTime() === ed.getTime()) return fmtShort(sd)
+  return `${fmtShort(sd)} → ${fmtShort(ed)}`
+}
+
+/** Total activities of a session, counting nested days for ranges. */
+function totalActivities(s: Session, childrenOf: (id: number) => Session[]): number {
+  return kindOf(s) === 'day'
+    ? activitiesOf(s).length
+    : activitiesOf(s).length + childrenOf(s.id).reduce((n, k) => n + activitiesOf(k).length, 0)
+}
+
+function TimelinePreview({ sessions, topLevel, childrenOf }: {
+  sessions: Session[]
+  topLevel: Session[]
+  childrenOf: (id: number) => Session[]
+}) {
+  const [openId, setOpenId] = useState<number | null>(null)
+  const [openDayId, setOpenDayId] = useState<number | null>(null)
+
+  const open    = openId    != null ? sessions.find(s => s.id === openId)    ?? null : null
+  const openDay = openDayId != null ? sessions.find(s => s.id === openDayId) ?? null : null
+
+  if (topLevel.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-center p-8">
+        <div className="max-w-xs space-y-2">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-500/15 text-brand-600">
+            <Sparkles className="h-6 w-6" />
+          </div>
+          <p className="text-sm font-bold text-foreground">Aperçu du parcours</p>
+          <p className="text-xs text-muted-foreground">
+            Aucune session pour l&apos;instant. Passez en « Édition » pour construire le parcours,
+            puis revenez ici pour le visualiser.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const byDate = (a: Session, b: Session) =>
+    (parseDate(a.startDate)?.getTime() ?? 0) - (parseDate(b.startDate)?.getTime() ?? 0)
+  const ordered = [...topLevel].sort(byDate)
+  const toggle = (id: number) => { setOpenId(p => (p === id ? null : id)); setOpenDayId(null) }
+  const openKids = open ? childrenOf(open.id) : []
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5 space-y-6">
+      <SnakeRoadmap sessions={ordered} childrenOf={childrenOf} openId={openId} onToggle={toggle} />
+
+      {/* Expanded detail of the selected station */}
+      <AnimatePresence initial={false} mode="wait">
+        {open && (
+          <motion.div key={open.id}
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.2 }}>
+            <div className="rounded-2xl border-2 bg-card/60 p-4" style={{ borderColor: colorOf(open) + '55' }}>
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className="h-3 w-3 rounded-full shrink-0" style={{ background: colorOf(open) }} />
+                <h3 className="text-sm font-bold text-foreground truncate">{open.title || 'Sans titre'}</h3>
+                <span className="text-[11px] text-muted-foreground">{dateText(open)}</span>
+                {open.location && (
+                  <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{open.location}</span>
+                )}
+                <button onClick={() => { setOpenId(null); setOpenDayId(null) }}
+                  className="ml-auto p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground" title="Fermer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {kindOf(open) === 'day' ? (
+                <AgendaList session={open} />
+              ) : openDay ? (
+                <>
+                  <PreviewBackBar color={colorOf(openDay)} title={openDay.title} subtitle={dateText(openDay)}
+                    onBack={() => setOpenDayId(null)} />
+                  <AgendaList session={openDay} />
+                </>
+              ) : (
+                <>
+                  <RangeSummary session={open} />
+                  {openKids.length > 0 ? (
+                    <DaysRiver days={openKids} onOpen={(id) => setOpenDayId(id)} />
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">Aucune journée dans cette session.</p>
+                  )}
+                </>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -546,23 +1171,540 @@ function TimelineBoard({ programmeId, programme }: {
   )
 }
 
+// ── Snake roadmap — one continuous winding path through ALL sessions ────────
+
+const SNAKE_COLS = 3
+
+function SnakeRoadmap({ sessions, childrenOf, openId, onToggle }: {
+  sessions: Session[]
+  childrenOf: (id: number) => Session[]
+  openId: number | null
+  onToggle: (id: number) => void
+}) {
+  // CSS-grid serpentine: every station is placed at an explicit (row, col) in
+  // boustrophedon order, and each connector is ANCHORED to its card (absolutely
+  // positioned at the card's edge, spanning exactly the grid gap) — so segments
+  // can never float detached like the old flex layout.
+  return (
+    <div className="grid grid-cols-3 gap-8">
+      {sessions.map((s, i) => {
+        const row = Math.floor(i / SNAKE_COLS)
+        const col = row % 2 === 0 ? i % SNAKE_COLS : SNAKE_COLS - 1 - (i % SNAKE_COLS)
+        const isLast = i === sessions.length - 1
+        const nextSameRow = !isLast && Math.floor((i + 1) / SNAKE_COLS) === row
+        const c = colorOf(s)
+        return (
+          <div key={s.id} className="relative min-w-0"
+            style={{ gridRowStart: row + 1, gridColumnStart: col + 1 }}>
+            <Station session={s} index={i} childCount={childrenOf(s.id).length}
+              actCount={totalActivities(s, childrenOf)} active={openId === s.id}
+              onClick={() => onToggle(s.id)} />
+            {/* → next station in the same row (gap-8 = w-8, hugs the card edge) */}
+            {nextSameRow && (
+              <div aria-hidden
+                className={`absolute top-1/2 -translate-y-1/2 h-1 w-8 rounded-full ${row % 2 === 0 ? 'left-full' : 'right-full'}`}
+                style={{ background: c + '66' }} />
+            )}
+            {/* ↓ turn to the next row (directly under the corner card) */}
+            {!isLast && !nextSameRow && (
+              <div aria-hidden
+                className="absolute left-1/2 -translate-x-1/2 top-full h-8 w-1 rounded-full"
+                style={{ background: c + '66' }} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function Station({ session, index, childCount, actCount, active, onClick }: {
+  session: Session; index: number; childCount: number; actCount: number; active: boolean; onClick: () => void
+}) {
+  const c = colorOf(session)
+  const kind = kindOf(session)
+  return (
+    <motion.button type="button" onClick={onClick}
+      initial={{ opacity: 0, scale: 0.92, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.05, 0.4), type: 'spring', stiffness: 320, damping: 26 }}
+      whileHover={{ y: -3 }}
+      className="group relative h-full w-full min-w-0 rounded-2xl border-2 bg-card p-3 text-left shadow-sm hover:shadow-xl transition-shadow"
+      style={{ borderColor: active ? c : c + '44', boxShadow: active ? `0 0 0 3px ${c}33` : undefined }}>
+      <div className="flex items-center gap-2">
+        <span className="h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-extrabold text-white shrink-0 shadow"
+          style={{ background: c }}>{index + 1}</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-foreground truncate">{session.title || 'Sans titre'}</p>
+          <p className="text-[10px] text-muted-foreground truncate">{dateText(session)}</p>
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+        <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ background: c + '1A', color: c }}>
+          {kind === 'day' ? <CalendarDays className="h-2.5 w-2.5" /> : <CalendarRange className="h-2.5 w-2.5" />}
+          {kind === 'day' ? 'Journée' : 'Plage'}
+        </span>
+        {fonctionOf(session) !== 'STANDARD' && (
+          <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground" title={FONCTION_META[fonctionOf(session)].hint}>
+            {fonctionOf(session) === 'CANDIDATURE_SUBMISSION' ? <Mail className="h-2.5 w-2.5" /> : <ClipboardList className="h-2.5 w-2.5" />}
+            {FONCTION_META[fonctionOf(session)].label}
+          </span>
+        )}
+        {childCount > 0 && (
+          <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+            <CalendarDays className="h-2.5 w-2.5" />{childCount}
+          </span>
+        )}
+        {actCount > 0 && (
+          <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+            <Clock className="h-2.5 w-2.5" />{actCount}
+          </span>
+        )}
+        <ChevronRight className={`ml-auto h-4 w-4 shrink-0 transition-transform ${active ? 'rotate-90 text-foreground' : 'text-muted-foreground'}`} />
+      </div>
+    </motion.button>
+  )
+}
+
+function PreviewBackBar({ color, title, subtitle, lane, onBack }: {
+  color: string; title?: string; subtitle?: string; lane?: string; onBack: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <button onClick={onBack}
+        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-accent">
+        <ArrowLeft className="h-3.5 w-3.5" />Retour
+      </button>
+      <span className="h-3 w-3 rounded-full shrink-0" style={{ background: color }} />
+      <h3 className="text-sm font-bold text-foreground truncate">{title || 'Sans titre'}</h3>
+      {subtitle && <span className="text-[11px] text-muted-foreground">{subtitle}</span>}
+      {lane && <span className="text-[10px] rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{lane}</span>}
+    </div>
+  )
+}
+
+function RangeSummary({ session }: { session: Session }) {
+  const hasResp = (session.responsibles?.length ?? 0) > 0
+  if (!session.description && !session.location && !hasResp) return null
+  return (
+    <div className="rounded-xl border border-border bg-muted/10 p-3 mb-3 space-y-1.5 text-sm">
+      {session.location && (
+        <p className="flex items-center gap-1.5 text-muted-foreground"><MapPin className="h-3.5 w-3.5 shrink-0" />{session.location}</p>
+      )}
+      {hasResp && (
+        <p className="flex items-center gap-1.5 text-muted-foreground"><Users className="h-3.5 w-3.5 shrink-0" />{session.responsibles!.join(', ')}</p>
+      )}
+      {session.description && <p className="text-muted-foreground whitespace-pre-wrap">{session.description}</p>}
+    </div>
+  )
+}
+
+function DaysRiver({ days, onOpen }: { days: Session[]; onOpen: (id: number) => void }) {
+  const sorted = [...days].sort((a, b) =>
+    (parseDate(a.startDate)?.getTime() ?? 0) - (parseDate(b.startDate)?.getTime() ?? 0))
+  return (
+    <div>
+      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1">
+        <CalendarDays className="h-3 w-3" />Journées
+      </p>
+      <div className="relative pl-5">
+        <div className="absolute left-[7px] top-3 bottom-3 w-px bg-border" />
+        <div className="space-y-2">
+          {sorted.map(d => {
+            const c = colorOf(d)
+            const n = activitiesOf(d).length
+            return (
+              <button key={d.id} onClick={() => onOpen(d.id)}
+                className="group relative w-full text-left flex items-center gap-3 rounded-xl border border-border bg-card hover:border-brand-400 hover:shadow-sm p-3 transition-all">
+                <span className="absolute -left-[17px] top-1/2 -translate-y-1/2 h-3 w-3 rounded-full ring-2 ring-card" style={{ background: c }} />
+                <span className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: c + '1A', color: c }}>
+                  <CalendarDays className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-foreground truncate">{d.title || 'Journée'}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {dateText(d)}{n > 0 ? ` · ${n} activité${n > 1 ? 's' : ''}` : ''}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-brand-500 shrink-0" />
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AgendaList({ session }: { session: Session }) {
+  const acts = activitiesOf(session)
+  const base = colorOf(session)
+  if (acts.length === 0) {
+    return (
+      <div className="rounded-xl border-2 border-dashed border-border bg-muted/10 p-6 text-center">
+        <Clock className="h-6 w-6 mx-auto text-muted-foreground/50 mb-2" />
+        <p className="text-xs text-muted-foreground">Aucune activité planifiée pour cette journée.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-2">
+      {acts.map((a, i) => {
+        const c = a.color || base
+        const resp = a.responsibles ?? []
+        const guests = a.guests ?? []
+        return (
+          <div key={a.id ?? i} className="flex gap-3 rounded-xl border border-border bg-card p-3">
+            <div className="w-14 shrink-0 text-right pt-0.5">
+              <p className="text-xs font-bold tabular-nums text-foreground">{fmtHM(a.startTime) || '—'}</p>
+              {a.endTime && <p className="text-[10px] text-muted-foreground tabular-nums">{fmtHM(a.endTime)}</p>}
+            </div>
+            <div className="w-1 rounded-full shrink-0" style={{ background: c }} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-foreground">{a.title || 'Sans titre'}</p>
+              {(a.location || resp.length > 0 || guests.length > 0) && (
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                  {a.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{a.location}</span>}
+                  {resp.length > 0 && <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{resp.join(', ')}</span>}
+                  {guests.length > 0 && <span className="inline-flex items-center gap-1"><UserPlus className="h-3 w-3" />{guests.join(', ')}</span>}
+                </div>
+              )}
+              {a.description && <p className="mt-1 text-[11px] text-muted-foreground whitespace-pre-wrap">{a.description}</p>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ──────────────────────────────────────────────────────────────────────────
-//                                  LANE ROW
+//              VERTICAL CALENDAR — hour view at extreme zoom
+//   Days are COLUMNS, hours flow DOWNWARD (like a week calendar): plages as
+//   slim all-day bands on top, journées as column headers, activities as
+//   time-positioned agenda blocks.
 // ──────────────────────────────────────────────────────────────────────────
 
-function LaneRow({
-  lane, sessions, win, days, trackRef, isDropTarget,
+const CAL_HOUR_PX = 44   // px per hour (vertical)
+const CAL_BAND_H  = 24   // height of one plage band in the all-day strip
+
+function CalendarGrid({
+  sessions, win, days, totalMs, trackRef,
+  onSelect, onAddDayAt, onQuickAddActivity, onMoveActivity, onMoveDay,
   onDropPreset, onDropPreviewMove, onDropPreviewLeave,
-  selectedId, drag, onSelect, onStartDrag,
 }: {
-  lane: string
   sessions: Session[]
   win: Window
   days: Date[]
+  totalMs: number
   trackRef: React.RefObject<HTMLDivElement>
-  isDropTarget: boolean
-  onDropPreset: (type: SessionType, atDate: Date) => void
-  onDropPreviewMove: (x: number, d: Date) => void
+  onSelect: (id: number) => void
+  onAddDayAt: (d: Date) => void
+  onQuickAddActivity: (s: Session, startMin: number) => void
+  onMoveActivity: (s: Session, dayId: number, aid: number, patch: { startTime: string; endTime: string }) => void
+  onMoveDay: (s: Session, deltaDays: number) => void
+  onDropPreset: (presetId: number, atDate: Date, parent?: Session) => void
+  onDropPreviewMove: (x: number, d: Date, hint?: string) => void
+  onDropPreviewLeave: () => void
+}) {
+  const ranges      = useMemo(() => sessions.filter(s => s.parentSessionId == null && kindOf(s) === 'range'), [sessions])
+  const daySessions = useMemo(() => sessions.filter(s => kindOf(s) === 'day' && s.startDate), [sessions])
+  const { rowOf, rowCount } = useMemo(() => stackRows(ranges), [ranges])
+
+  // ── Mouse interactions: drag activities (move / resize) + drag journée chips ──
+  const [actDrag, setActDrag] = useState<{
+    sid: number; dayId: number; aid: number; mode: 'move' | 'resize'
+    origStart: number; origEnd: number; startY: number; deltaMin: number
+  } | null>(null)
+  const [chipDrag, setChipDrag] = useState<{ sid: number; startX: number; deltaDays: number } | null>(null)
+  const dragMovedRef = useRef(false)
+  const dayIdOf = (s: Session, aid: number): number | undefined =>
+    (s.days ?? []).find(d => (d.activities ?? []).some(x => x.id === aid))?.id
+  const colPx = () => (trackRef.current?.getBoundingClientRect().width ?? 0) / Math.max(1, days.length)
+
+  const onGridPointerMove = (e: React.PointerEvent) => {
+    if (actDrag) {
+      const dy = e.clientY - actDrag.startY
+      if (Math.abs(dy) > 3) dragMovedRef.current = true
+      const dm = snap((dy / CAL_HOUR_PX) * 60)
+      setActDrag(d => (d ? { ...d, deltaMin: dm } : d))
+    }
+    if (chipDrag) {
+      const dx = e.clientX - chipDrag.startX
+      if (Math.abs(dx) > 4) dragMovedRef.current = true
+      const dd = Math.round(dx / Math.max(1, colPx()))
+      setChipDrag(d => (d ? { ...d, deltaDays: dd } : d))
+    }
+  }
+  const onGridPointerUp = () => {
+    if (actDrag) {
+      const { sid, dayId, aid, mode, origStart, origEnd, deltaMin } = actDrag
+      setActDrag(null)
+      if (deltaMin !== 0) {
+        const lo = HOUR_START * 60, hi = HOUR_END * 60
+        let ns = origStart, ne = origEnd
+        if (mode === 'move') {
+          const span = Math.max(SNAP_MIN, origEnd - origStart)
+          ns = Math.max(lo, Math.min(hi - span, origStart + deltaMin)); ne = ns + span
+        } else {
+          ne = Math.min(hi, Math.max(origStart + SNAP_MIN, origEnd + deltaMin))
+        }
+        const sess = daySessions.find(x => x.id === sid)
+        if (sess) onMoveActivity(sess, dayId, aid, { startTime: minToTime(ns), endTime: minToTime(ne) })
+      }
+    }
+    if (chipDrag) {
+      const { sid, deltaDays } = chipDrag
+      setChipDrag(null)
+      if (deltaDays !== 0) {
+        const sess = daySessions.find(x => x.id === sid)
+        if (sess) onMoveDay(sess, deltaDays)
+      }
+    }
+    if (dragMovedRef.current) setTimeout(() => { dragMovedRef.current = false }, 200)
+  }
+  const stripH = 6 + Math.max(1, rowCount) * CAL_BAND_H
+  const hours  = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i)
+  const gridH  = (HOUR_END - HOUR_START) * CAL_HOUR_PX
+
+  const dateAtClientX = (clientX: number): Date | null => {
+    const rect = trackRef.current?.getBoundingClientRect()
+    if (!rect || !days.length) return null
+    const idx = Math.floor(((clientX - rect.left) / rect.width) * days.length)
+    return days[Math.max(0, Math.min(days.length - 1, idx))]
+  }
+  const hostFor = (d: Date) => ranges.find(s => {
+    const ps = parseDate(s.startDate); const pe = parseDate(s.endDate ?? s.startDate)
+    return !!ps && !!pe && d.getTime() >= ps.getTime() && d.getTime() <= pe.getTime()
+  })
+  const colLeft = (d: Date) => ((d.getTime() - win.start.getTime()) / totalMs) * 100
+  const colW = (DAY_MS / totalMs) * 100
+
+  return (
+    <div
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('application/timeline-preset')) return
+        e.preventDefault(); e.dataTransfer.dropEffect = 'copy'
+        const rect = trackRef.current?.getBoundingClientRect()
+        const d = dateAtClientX(e.clientX)
+        if (!rect || !d) return
+        let hint: string | undefined
+        if (e.dataTransfer.types.includes('application/timeline-day')) {
+          const host = hostFor(d)
+          hint = host ? `↳ dans « ${host.title || 'plage'} »` : 'journée autonome'
+        }
+        onDropPreviewMove(e.clientX - rect.left, d, hint)
+      }}
+      onDragLeave={onDropPreviewLeave}
+      onDrop={(e) => {
+        e.preventDefault()
+        const raw = e.dataTransfer.getData('application/timeline-preset')
+        onDropPreviewLeave()
+        const presetId = Number(raw); const d = dateAtClientX(e.clientX)
+        if (!presetId || !d) return
+        onDropPreset(presetId, d, hostFor(d))
+      }}
+      onPointerMove={onGridPointerMove}
+      onPointerUp={onGridPointerUp}
+      className="relative mt-2 rounded-xl border border-border bg-card/30"
+      style={{ height: stripH + gridH + 6 }}>
+
+      {/* All-day strip: plages as slim bands */}
+      {ranges.map(s => {
+        const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
+        if (!sd || !ed) return null
+        const width = (Math.max(ed.getTime() - sd.getTime() + DAY_MS, DAY_MS) / totalMs) * 100
+        const row = rowOf.get(s.id) ?? 0
+        const c = colorOf(s)
+        return (
+          <button key={s.id} type="button" onClick={() => onSelect(s.id)}
+            title={`${s.title} · ${s.startDate} → ${s.endDate}`}
+            className="absolute z-10 rounded-md text-[10px] font-bold text-white px-2 truncate text-left shadow-sm hover:shadow inline-flex items-center gap-1"
+            style={{ left: `${colLeft(sd)}%`, width: `${width}%`, top: 4 + row * CAL_BAND_H, height: CAL_BAND_H - 5, background: c }}>
+            {fonctionOf(s) !== 'STANDARD' && (
+              fonctionOf(s) === 'CANDIDATURE_SUBMISSION'
+                ? <Mail className="h-2.5 w-2.5 shrink-0 opacity-90" />
+                : <ClipboardList className="h-2.5 w-2.5 shrink-0 opacity-90" />
+            )}
+            <span className="truncate">{s.title || 'Plage'}</span>
+          </button>
+        )
+      })}
+
+      {/* Hour lines + hour labels (sticky to the left edge while scrolling) */}
+      {hours.map(h => (
+        <div key={h} className={`absolute left-0 right-0 ${h === HOUR_START ? 'border-t-2 border-border' : 'border-t border-border/40'}`}
+          style={{ top: stripH + (h - HOUR_START) * CAL_HOUR_PX }}>
+          <span className="sticky left-1.5 inline-block -translate-y-1/2 rounded bg-card/95 border border-border/60 px-1 text-[9px] font-semibold tabular-nums text-muted-foreground z-20">
+            {h}h
+          </span>
+        </div>
+      ))}
+
+      {/* Day columns: separators, weekend tint, « + journée » on empty days */}
+      {days.map((d, i) => {
+        const isWeekend = d.getDay() === 0 || d.getDay() === 6
+        const has = daySessions.some(s => parseDate(s.startDate)?.toDateString() === d.toDateString())
+        return (
+          <div key={i} className="absolute" style={{ left: `${colLeft(d)}%`, width: `${colW}%`, top: stripH, bottom: 0 }}>
+            <div className="absolute left-0 top-0 bottom-0 w-px bg-border/40" />
+            {isWeekend && <div className="absolute inset-0 bg-muted/20 pointer-events-none" />}
+            {!has && (
+              <button type="button" onClick={() => onAddDayAt(d)}
+                title={`Ajouter une journée le ${fmtShort(d)}`}
+                className="absolute inset-x-1 top-1 h-5 z-10 rounded-md text-[10px] font-semibold text-transparent hover:text-muted-foreground hover:bg-accent/70 transition-colors">
+                + journée
+              </button>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Journées + their activities as a vertical agenda */}
+      {daySessions.map(s => {
+        const cd = parseDate(s.startDate)
+        if (!cd) return null
+        const c = colorOf(s)
+        const acts = activitiesOf(s)
+        // Side-by-side columns when activities overlap (same algorithm as the
+        // day agenda) — no more blocks hidden behind each other.
+        const lay = layoutActivities(acts)
+        const chipOffsetPx = chipDrag?.sid === s.id ? chipDrag.deltaDays * colPx() : 0
+        return (
+          <div key={s.id}
+            className="absolute cursor-copy"
+            title="Cliquer sur un créneau libre = ajouter une activité à cette heure"
+            onClick={(e) => {
+              if (dragMovedRef.current) return
+              const y = e.clientY - e.currentTarget.getBoundingClientRect().top
+              onQuickAddActivity(s, HOUR_START * 60 + (y / CAL_HOUR_PX) * 60)
+            }}
+            style={{ left: `${colLeft(cd)}%`, width: `${colW}%`, top: stripH, bottom: 6 }}>
+            <button type="button"
+              onClick={(e) => { e.stopPropagation(); if (dragMovedRef.current) return; onSelect(s.id) }}
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+                dragMovedRef.current = false
+                setChipDrag({ sid: s.id, startX: e.clientX, deltaDays: 0 })
+              }}
+              title={`${s.title || 'Journée'} · ${s.startDate}${s.parentSessionId != null ? ' (imbriquée)' : ''} — glisser pour changer de jour`}
+              className="absolute inset-x-1 top-1 z-20 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white truncate text-left shadow cursor-grab active:cursor-grabbing"
+              style={{ background: c, transform: chipOffsetPx ? `translateX(${chipOffsetPx}px)` : undefined }}>
+              {s.parentSessionId != null ? '↳ ' : ''}{s.title || 'Journée'}
+              {chipDrag?.sid === s.id && chipDrag.deltaDays !== 0 && (
+                <span className="ml-1 rounded bg-black/30 px-1">{fmtShort(addDays(cd, chipDrag.deltaDays))}</span>
+              )}
+            </button>
+            {acts.map((a, j) => {
+              const isDragged = actDrag?.sid === s.id && actDrag.aid === a.id
+              const dMove = isDragged && actDrag!.mode === 'move' ? actDrag!.deltaMin : 0
+              const dResize = isDragged && actDrag!.mode === 'resize' ? actDrag!.deltaMin : 0
+              const rawStart = timeToMin(a.startTime) + dMove
+              const rawEnd0 = (a.endTime ? timeToMin(a.endTime) : timeToMin(a.startTime) + 60) + dMove + dResize
+              const s0 = Math.max(rawStart, HOUR_START * 60)
+              const e0 = Math.min(Math.max(rawEnd0, s0 + 30), HOUR_END * 60)
+              if (s0 >= HOUR_END * 60) return null
+              const ac = a.color || c
+              const pos = a.id != null ? lay.get(a.id) : undefined
+              const cols = pos?.cols ?? 1
+              const col = pos?.col ?? 0
+              return (
+                <button key={a.id ?? j} type="button"
+                  onClick={(e) => { e.stopPropagation(); if (dragMovedRef.current) return; onSelect(s.id) }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    if (a.id == null) return
+                    const dayId = dayIdOf(s, a.id)
+                    if (dayId == null) return
+                    ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+                    dragMovedRef.current = false
+                    setActDrag({
+                      sid: s.id, dayId, aid: a.id, mode: 'move',
+                      origStart: timeToMin(a.startTime),
+                      origEnd: a.endTime ? timeToMin(a.endTime) : timeToMin(a.startTime) + 60,
+                      startY: e.clientY, deltaMin: 0,
+                    })
+                  }}
+                  title={`${a.title}${a.startTime ? ` · ${fmtHM(a.startTime)}–${fmtHM(a.endTime)}` : ''} — glisser pour déplacer, bord bas pour redimensionner`}
+                  className={`absolute z-10 rounded-md border text-left px-1 py-0.5 overflow-hidden hover:brightness-110 transition-[filter] ${isDragged ? 'cursor-grabbing ring-2 ring-foreground/30' : 'cursor-grab'}`}
+                  style={{
+                    top: ((s0 - HOUR_START * 60) / 60) * CAL_HOUR_PX,
+                    height: Math.max(((e0 - s0) / 60) * CAL_HOUR_PX - 2, 14),
+                    left: `calc(${(col / cols) * 100}% + 3px)`,
+                    width: `calc(${100 / cols}% - 6px)`,
+                    background: ac + '26', borderColor: ac + '77',
+                  }}>
+                  <p className="text-[9px] font-bold truncate" style={{ color: ac }}>
+                    {isDragged ? `${minToTime(s0).slice(0, 5)}–${minToTime(e0).slice(0, 5)} ` : `${fmtHM(a.startTime)} `}
+                    {a.title || 'Activité'}
+                  </p>
+                  {/* Bottom resize handle */}
+                  <span
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      if (a.id == null) return
+                      const dayId = dayIdOf(s, a.id)
+                      if (dayId == null) return
+                      ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+                      dragMovedRef.current = false
+                      setActDrag({
+                        sid: s.id, dayId, aid: a.id, mode: 'resize',
+                        origStart: timeToMin(a.startTime),
+                        origEnd: a.endTime ? timeToMin(a.endTime) : timeToMin(a.startTime) + 60,
+                        startY: e.clientY, deltaMin: 0,
+                      })
+                    }}
+                    className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize hover:bg-black/15" />
+                </button>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//                          BAND (a type-row: ranges OR days)
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Greedy interval-partition: assign each session a sub-row so none overlap. */
+function stackRows(sessions: Session[]): { rowOf: Map<number, number>; rowCount: number } {
+  const sorted = [...sessions].sort(
+    (a, b) => (parseDate(a.startDate)?.getTime() ?? 0) - (parseDate(b.startDate)?.getTime() ?? 0))
+  const rowEnd: number[] = []
+  const rowOf = new Map<number, number>()
+  for (const s of sorted) {
+    const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
+    if (!sd) continue
+    const startMs = sd.getTime()
+    const endMs = Math.max(ed?.getTime() ?? startMs, startMs) + DAY_MS
+    let r = rowEnd.findIndex(e => e <= startMs)
+    if (r === -1) { r = rowEnd.length; rowEnd.push(0) }
+    rowEnd[r] = endMs
+    rowOf.set(s.id, r)
+  }
+  return { rowOf, rowCount: Math.max(1, rowEnd.length) }
+}
+
+function Band({
+  label, kind, sessions, childrenOf, win, days, trackRef, pxPerDay,
+  onDropPreset, onAddDay, onDropPreviewMove, onDropPreviewLeave,
+  selectedId, drag, onSelect, onStartDrag,
+}: {
+  label: string
+  kind: DurationKind
+  sessions: Session[]
+  childrenOf: (id: number) => Session[]
+  win: Window
+  days: Date[]
+  trackRef: React.RefObject<HTMLDivElement>
+  pxPerDay: number
+  onDropPreset: (presetId: number, atDate: Date, parent?: Session) => void
+  onAddDay: (s: Session, d: Date) => void
+  onDropPreviewMove: (x: number, d: Date, hint?: string) => void
   onDropPreviewLeave: () => void
   selectedId: number | null
   drag: { id: number; deltaDays: number; mode: string } | null
@@ -570,55 +1712,75 @@ function LaneRow({
   onStartDrag: (s: Session, e: React.PointerEvent, mode: 'move' | 'resize-left' | 'resize-right') => void
 }) {
   const totalMs = win.end.getTime() - win.start.getTime()
-  const ROW_HEIGHT = 56
+  const dayMode = pxPerDay >= 26
+  const LABEL_H = 6
+  // Day mode = calendar template: taller bars so day cells/labels are readable.
+  const ROW_H = dayMode ? 76 : 50
+  const { rowOf, rowCount } = useMemo(() => stackRows(sessions), [sessions])
+  const height = LABEL_H + rowCount * ROW_H + 6
+
+  const dateAtClientX = (clientX: number): Date | null => {
+    const rect = trackRef.current?.getBoundingClientRect()
+    if (!rect || !days.length) return null
+    const idx = Math.floor(((clientX - rect.left) / rect.width) * days.length)
+    return days[Math.max(0, Math.min(days.length - 1, idx))]
+  }
 
   return (
     <div
-      data-lane={lane}
+      data-band={kind}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('application/timeline-preset')) return
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'copy'
+        e.preventDefault(); e.dataTransfer.dropEffect = 'copy'
         const rect = trackRef.current?.getBoundingClientRect()
-        if (rect && days.length) {
-          const x = e.clientX - rect.left
-          const idx = Math.floor((x / rect.width) * days.length)
-          onDropPreviewMove(x, days[Math.max(0, Math.min(days.length - 1, idx))])
+        const d = dateAtClientX(e.clientX)
+        if (!rect || !d) return
+        // Tell the user where a journée will land: inside the plage covering
+        // the hovered date, or as a standalone session.
+        let hint: string | undefined
+        if (e.dataTransfer.types.includes('application/timeline-day')) {
+          const host = sessions.find(s => {
+            if (kindOf(s) !== 'range') return false
+            const ps = parseDate(s.startDate); const pe = parseDate(s.endDate ?? s.startDate)
+            return !!ps && !!pe && d.getTime() >= ps.getTime() && d.getTime() <= pe.getTime()
+          })
+          hint = host ? `↳ dans « ${host.title || 'plage'} »` : 'journée autonome'
         }
+        onDropPreviewMove(e.clientX - rect.left, d, hint)
       }}
       onDragLeave={onDropPreviewLeave}
       onDrop={(e) => {
         e.preventDefault()
-        const t = e.dataTransfer.getData('application/timeline-preset') as SessionType
+        const raw = e.dataTransfer.getData('application/timeline-preset')
         onDropPreviewLeave()
-        if (!t) return
-        const rect = trackRef.current?.getBoundingClientRect()
-        if (!rect || !days.length) return
-        const idx = Math.floor(((e.clientX - rect.left) / rect.width) * days.length)
-        onDropPreset(t, days[Math.max(0, Math.min(days.length - 1, idx))])
+        const presetId = Number(raw)
+        const d = dateAtClientX(e.clientX)
+        if (!presetId || !d) return
+        // Target phase: the bar actually under the cursor (event target), else
+        // the plage whose date window contains the drop date — forgiving, so a
+        // journée dropped anywhere in a phase's period nests there.
+        const barEl = (e.target as HTMLElement | null)?.closest?.('[data-session-id]') as HTMLElement | null
+        const hitId = barEl ? Number(barEl.dataset.sessionId) : null
+        let parent = hitId ? sessions.find(s => s.id === hitId && kindOf(s) === 'range') : undefined
+        if (!parent) {
+          parent = sessions.find(s => {
+            if (kindOf(s) !== 'range') return false
+            const ps = parseDate(s.startDate); const pe = parseDate(s.endDate ?? s.startDate)
+            return !!ps && !!pe && d.getTime() >= ps.getTime() && d.getTime() <= pe.getTime()
+          })
+        }
+        onDropPreset(presetId, d, parent)
       }}
-      className={`relative rounded-xl border-2 transition-colors ${
-        isDropTarget
-          ? 'border-emerald-500/70 bg-emerald-500/10'
-          : 'border-transparent hover:border-border bg-muted/10'
-      }`}
-      style={{ height: ROW_HEIGHT }}>
-      {/* Lane label — sticky on the left */}
-      <div className="absolute left-1 top-1.5 z-10 flex items-center gap-1 rounded-md bg-card/95 backdrop-blur border border-border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground shadow-sm pointer-events-none">
-        <GripVertical className="h-2.5 w-2.5 opacity-40" />
-        {lane}
-      </div>
-
-      {/* Empty lane hint */}
+      className="relative"
+      style={{ height }}>
       {sessions.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className="text-[11px] text-muted-foreground italic">
-            voie vide — glissez un préset ici
+            glissez un préset ici
           </span>
         </div>
       )}
 
-      {/* Session bars in this lane */}
       {sessions.map((s) => {
         const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
         if (!sd || !ed) return null
@@ -626,21 +1788,45 @@ function LaneRow({
         const widthMs = Math.max(ed.getTime() - sd.getTime() + DAY_MS, DAY_MS)
         const width = (widthMs / totalMs) * 100
         const myDrag = drag?.id === s.id ? drag : null
-        const pxPerDay = (trackRef.current?.getBoundingClientRect().width ?? 0) / days.length
         const offsetPx = myDrag?.mode === 'move'         ? myDrag.deltaDays * pxPerDay : 0
         const rightDx  = myDrag?.mode === 'resize-right' ? myDrag.deltaDays * pxPerDay : 0
         const leftDx   = myDrag?.mode === 'resize-left'  ? myDrag.deltaDays * pxPerDay : 0
+        const row = rowOf.get(s.id) ?? 0
+        // Live feedback while dragging: the dates the bar will get on release.
+        const dragDates = (() => {
+          if (!myDrag || myDrag.deltaDays === 0) return null
+          const dd = myDrag.deltaDays
+          const ns = myDrag.mode === 'resize-right' ? sd : new Date(sd.getTime() + dd * DAY_MS)
+          const ne = myDrag.mode === 'resize-left'  ? ed : new Date(Math.max(
+            (myDrag.mode === 'resize-right' ? sd : ns).getTime(),
+            ed.getTime() + dd * DAY_MS))
+          return kindOf(s) === 'day' ? fmtShort(ns) : `${fmtShort(ns)} → ${fmtShort(ne)}`
+        })()
         return (
-          <SessionBar key={s.id}
-            session={s}
-            left={`calc(${left}% + ${offsetPx + leftDx}px)`}
-            width={`calc(${width}% + ${rightDx - leftDx}px)`}
-            isSelected={selectedId === s.id}
-            onSelect={(e) => { e.stopPropagation(); onSelect(s.id) }}
-            onPointerDown={(e) => onStartDrag(s, e, 'move')}
-            onResizeLeft={(e) => onStartDrag(s, e, 'resize-left')}
-            onResizeRight={(e) => onStartDrag(s, e, 'resize-right')}
-          />
+          <div key={s.id} className="contents">
+            <SessionBar
+              session={s}
+              childDays={childrenOf(s.id)}
+              pxPerDay={pxPerDay}
+              win={win}
+              left={`calc(${left}% + ${offsetPx + leftDx}px)`}
+              width={`calc(${width}% + ${rightDx - leftDx}px)`}
+              top={LABEL_H + row * ROW_H + 5}
+              isSelected={selectedId === s.id}
+              onSelect={(e) => { e.stopPropagation(); onSelect(s.id) }}
+              onSelectChild={(id) => onSelect(id)}
+              onAddDay={(d) => onAddDay(s, d)}
+              onPointerDown={(e) => onStartDrag(s, e, 'move')}
+              onResizeLeft={(e) => onStartDrag(s, e, 'resize-left')}
+              onResizeRight={(e) => onStartDrag(s, e, 'resize-right')}
+            />
+            {dragDates && (
+              <div className="absolute z-40 rounded-md bg-foreground text-background px-1.5 py-0.5 text-[10px] font-bold pointer-events-none whitespace-nowrap shadow-lg"
+                style={{ left: `calc(${left}% + ${offsetPx + leftDx}px)`, top: LABEL_H + row * ROW_H - 16 }}>
+                {dragDates}
+              </div>
+            )}
+          </div>
         )
       })}
     </div>
@@ -652,90 +1838,135 @@ function LaneRow({
 // ──────────────────────────────────────────────────────────────────────────
 
 function SessionBar({
-  session, left, width, isSelected, onSelect, onPointerDown, onResizeLeft, onResizeRight,
+  session, childDays, win, left, width, top = 10, isSelected,
+  onSelect, onSelectChild, onAddDay, onPointerDown, onResizeLeft, onResizeRight,
+  pxPerDay = 0,
 }: {
   session: Session
-  left: string; width: string
+  childDays: Session[]
+  win: Window
+  left: string; width: string; top?: number
+  pxPerDay?: number
   isSelected: boolean
   onSelect: (e: React.MouseEvent) => void
+  onSelectChild: (id: number) => void
+  onAddDay?: (d: Date) => void
   onPointerDown: (e: React.PointerEvent) => void
   onResizeLeft: (e: React.PointerEvent) => void
   onResizeRight: (e: React.PointerEvent) => void
 }) {
-  const c = TYPE_COLOR[session.sessionType as string] ?? '#10B981'
-  const locked = session.durationKind === 'day'
-  const { critical, warnings } = detectMissing(session)
-
-  // Day-tick marks inside the bar (subtle vertical dividers per day)
+  const c = colorOf(session)
+  const kind = kindOf(session)
+  const fn = fonctionOf(session)
+  /** Deep zoom: the bar becomes a calendar day-template (cells, numbers, +).
+   *  (At hour zoom the whole board switches to the vertical CalendarGrid.) */
+  const dayModeBar = kind === 'range' && pxPerDay >= 26
+  const locked = kind === 'day'
+  const { critical } = detectMissing(session)
   const sd = parseDate(session.startDate); const ed = parseDate(session.endDate ?? session.startDate)
   const dayCount = sd && ed ? Math.max(1, Math.round((ed.getTime() - sd.getTime()) / DAY_MS) + 1) : 1
-  const ticks = Array.from({ length: Math.max(0, dayCount - 1) }, (_, i) => (i + 1) / dayCount)
+
+  // Child day markers positioned along the bar by their date offset within the range.
+  const spanMs = sd && ed ? Math.max(ed.getTime() - sd.getTime() + DAY_MS, DAY_MS) : DAY_MS
 
   return (
     <div
+      data-session-id={session.id}
       onClick={onSelect}
       onPointerDown={onPointerDown}
-      title={`${session.title}  ${session.startDate ?? '?'} → ${session.endDate ?? '?'}\n${session.lane ?? 'Principal'}`}
-      className={`absolute rounded-xl flex items-center text-[11px] font-bold text-white cursor-grab active:cursor-grabbing select-none transition-shadow shadow-md hover:shadow-lg overflow-hidden ${isSelected ? 'ring-2 ring-offset-2 ring-foreground/40' : ''}`}
-      style={{
-        left, width,
-        height: 36, top: 10,
-        background: `linear-gradient(135deg, ${c}, ${c}DD)`,
-      }}>
+      title={`${session.title}  ${session.startDate ?? '?'}${kind === 'range' ? ' → ' + (session.endDate ?? '?') : ''}\n${session.lane ?? 'Principal'}`}
+      className={`absolute rounded-lg flex ${dayModeBar ? 'items-start' : 'items-center'} text-[11px] font-bold text-white cursor-grab active:cursor-grabbing select-none transition-shadow shadow-sm hover:shadow-md overflow-hidden ${isSelected ? 'ring-2 ring-offset-2 ring-foreground/40' : ''}`}
+      style={{ left, width, height: dayModeBar ? 66 : 40, top, background: c }}>
       {/* Left resize handle */}
-      <div
-        onPointerDown={(e) => { e.stopPropagation(); onResizeLeft(e) }}
-        title={locked ? 'Verrouillé (Journée)' : 'Glisser pour avancer la date de début'}
-        className={`shrink-0 self-stretch w-2 ${
-          locked ? 'cursor-not-allowed opacity-20' : 'cursor-ew-resize hover:bg-white/30'
-        }`} />
-
-      {/* Day-tick marks — thin vertical lines on each day boundary inside the bar */}
-      {ticks.map((pct, i) => (
-        <div key={i} className="absolute top-1 bottom-1 w-px bg-white/30 pointer-events-none"
-          style={{ left: `${pct * 100}%` }} />
-      ))}
+      <div onPointerDown={(e) => { e.stopPropagation(); onResizeLeft(e) }}
+        title={locked ? 'Journée (verrouillé)' : 'Glisser pour avancer le début'}
+        className={`shrink-0 self-stretch w-2 z-10 ${locked ? 'cursor-default opacity-0' : 'cursor-ew-resize hover:bg-white/30'}`} />
 
       {/* Body */}
-      <div className="flex-1 min-w-0 px-2.5 truncate flex items-center gap-1.5">
+      <div className={`flex-1 min-w-0 px-2 truncate flex items-center gap-1.5 ${dayModeBar ? 'pt-1' : ''}`}>
+        {kind === 'day' ? <CalendarDays className="h-3 w-3 shrink-0 opacity-90" /> : <CalendarRange className="h-3 w-3 shrink-0 opacity-90" />}
         <span className="truncate">{session.title || '·'}</span>
-        {dayCount > 1 && (
-          <span className="text-[9px] opacity-75 rounded-full bg-white/20 px-1 py-0.5 shrink-0">
-            {dayCount}j
+        {fn !== 'STANDARD' && (
+          <span title={FONCTION_META[fn].hint}
+            className="text-[9px] rounded-full bg-white/25 px-1 py-0.5 shrink-0 inline-flex items-center gap-0.5">
+            {fn === 'CANDIDATURE_SUBMISSION' ? <Mail className="h-2.5 w-2.5" /> : <ClipboardList className="h-2.5 w-2.5" />}
+          </span>
+        )}
+        {childDays.length > 0 && (
+          <span className="text-[9px] opacity-90 rounded-full bg-black/20 px-1 py-0.5 shrink-0 inline-flex items-center gap-0.5">
+            <CalendarDays className="h-2.5 w-2.5" />{childDays.length}
           </span>
         )}
       </div>
 
-      {/* Status / type pip on the right */}
-      <span className="shrink-0 text-[9px] opacity-90 rounded-full bg-white/20 px-1.5 py-0.5 mr-1 uppercase tracking-wider">
-        {(TYPE_LABEL[session.sessionType ?? '']?.slice(0, 3) ?? '·')}
-      </span>
+      {/* Calendar day-template (deep zoom): per-day cells with separators,
+          day numbers and a hover « + » to add a journée on that exact date. */}
+      {dayModeBar && sd && dayCount <= 92 && Array.from({ length: dayCount }).map((_, di) => {
+        const date = new Date(sd.getTime() + di * DAY_MS)
+        const leftPct = (di * DAY_MS / spanMs) * 100
+        const wPct = (DAY_MS / spanMs) * 100
+        const taken = childDays.some(ch => parseDate(ch.startDate)?.toDateString() === date.toDateString())
+        return (
+          <div key={`cell-${di}`} className="absolute top-0 bottom-0 pointer-events-none"
+            style={{ left: `${leftPct}%`, width: `${wPct}%` }}>
+            {di > 0 && <div className="absolute left-0 top-0 bottom-0 w-px bg-white/20" />}
+            <span className="absolute top-0.5 right-1 text-[8px] font-bold text-white/50">{date.getDate()}</span>
+            {!taken && onAddDay && (
+              <button type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onAddDay(date) }}
+                title={`Ajouter une journée le ${fmtShort(date)}`}
+                className="pointer-events-auto absolute inset-x-0.5 bottom-0.5 h-5 rounded-md flex items-center justify-center text-[12px] font-bold text-white/0 hover:text-white hover:bg-white/25 transition-colors">
+                +
+              </button>
+            )}
+          </div>
+        )
+      })}
 
-      {/* Warnings (top-right) */}
-      {(critical.length > 0 || warnings.length > 0) && (
-        <div className="absolute -top-1 -right-1 flex gap-0.5">
-          {critical.length > 0 && (
-            <div className="h-3 w-3 rounded-full bg-rose-500 ring-2 ring-card flex items-center justify-center"
-              title={`Critique : ${critical.join(', ')}`}>
-              <AlertTriangle className="h-2 w-2 text-white" />
-            </div>
-          )}
-          {warnings.length > 0 && (
-            <div className="h-3 w-3 rounded-full bg-amber-400 ring-2 ring-card flex items-center justify-center"
-              title={`Attention : ${warnings.join(', ')}`}>
-              <Info className="h-2 w-2 text-white" />
-            </div>
-          )}
+      {/* Nested day markers (children) — deep zoom turns them into labeled
+          one-day blocks ("the timeline becomes days"); zoomed out = slim pins. */}
+      {kind === 'range' && sd && childDays.map(ch => {
+        const cd = parseDate(ch.startDate)
+        if (!cd) return null
+        if (dayModeBar) {
+          const startPct = ((cd.getTime() - sd.getTime()) / spanMs) * 100
+          const wPct = (DAY_MS / spanMs) * 100
+          return (
+            <button key={ch.id} type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onSelectChild(ch.id) }}
+              title={`${ch.title || 'Journée'} · ${ch.startDate}`}
+              className="absolute top-6 bottom-1 rounded-md bg-white/90 hover:bg-white shadow ring-1 ring-black/10 px-1 text-[9px] font-bold truncate text-left flex items-center"
+              style={{ left: `calc(${Math.max(0, Math.min(100, startPct))}% + 1px)`, width: `calc(${wPct}% - 2px)`, color: c }}>
+              <span className="truncate">{ch.title || 'Journée'}</span>
+            </button>
+          )
+        }
+        const pct = ((cd.getTime() - sd.getTime() + DAY_MS / 2) / spanMs) * 100
+        return (
+          <button key={ch.id} type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onSelectChild(ch.id) }}
+            title={`${ch.title} · ${ch.startDate}`}
+            className="absolute top-1 bottom-1 w-3 -translate-x-1/2 rounded-sm bg-white/85 hover:bg-white shadow ring-1 ring-black/10"
+            style={{ left: `${Math.max(1, Math.min(99, pct))}%` }} />
+        )
+      })}
+
+      {/* Only CRITICAL issues surface on the board — soft warnings live in the
+          session panel, keeping the timeline calm. */}
+      {critical.length > 0 && (
+        <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-500 ring-2 ring-card flex items-center justify-center"
+          title={`Critique : ${critical.join(', ')}`}>
+          <AlertTriangle className="h-2 w-2 text-white" />
         </div>
       )}
 
       {/* Right resize handle */}
-      <div
-        onPointerDown={(e) => { e.stopPropagation(); onResizeRight(e) }}
-        title={locked ? 'Verrouillé (Journée)' : 'Glisser pour rallonger'}
-        className={`shrink-0 self-stretch w-2 ${
-          locked ? 'cursor-not-allowed opacity-20' : 'cursor-ew-resize hover:bg-white/30'
-        }`} />
+      <div onPointerDown={(e) => { e.stopPropagation(); onResizeRight(e) }}
+        title={locked ? 'Journée (verrouillé)' : 'Glisser pour rallonger'}
+        className={`shrink-0 self-stretch w-2 ${locked ? 'cursor-default opacity-0' : 'cursor-ew-resize hover:bg-white/30'}`} />
     </div>
   )
 }
@@ -748,78 +1979,263 @@ function EmptyHint() {
   return (
     <div className="mt-4 rounded-xl border border-dashed border-emerald-500/40 bg-emerald-500/5 p-4 text-center">
       <p className="text-xs text-emerald-700 dark:text-emerald-300 font-bold">
-        ↑ Glissez un préset de la bibliothèque vers la voie « Principal » pour démarrer
+        ↑ Glissez un préset de la bibliothèque pour démarrer le parcours —
+        une journée déposée sur les dates d&apos;une plage s&apos;y imbrique, ailleurs elle reste autonome
       </p>
     </div>
   )
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-//                              BOTTOM DRAWER
+//                          SIDE PANEL (right-side editor)
 // ──────────────────────────────────────────────────────────────────────────
 
-function BottomDrawer({
-  programmeId, session, allLanes, onUpdate, onRemove, onClose, onDaysChanged,
+function SessionOverlay({
+  programmeId, programmeName, session, allLanes, parents, children, dayPresets,
+  onUpdate, onRemove, onDuplicate, onClose, onOpenSession, onAddChild, onAddBlankChild, onSaveAsPreset, onDaysChanged,
 }: {
   programmeId: number
+  programmeName?: string
   session: Session
   allLanes: string[]
+  parents: Session[]
+  children: Session[]
+  dayPresets: Preset[]
   onUpdate: (p: Partial<Session>) => void
   onRemove: () => void
+  onDuplicate: () => void
   onClose: () => void
+  onOpenSession: (id: number) => void
+  onAddChild: (presetId: number) => void
+  onAddBlankChild: () => void
+  onSaveAsPreset: () => void
   onDaysChanged: () => void
 }) {
-  const c = TYPE_COLOR[session.sessionType as string] ?? '#10B981'
+  const c = colorOf(session)
+  const kind = kindOf(session)
   const { critical, warnings } = detectMissing(session)
+  // A session's « Fonction » (reused sessionType) wires it to a programme feature.
+  const fonction = fonctionOf(session)
+  const isFunctionPhase = fonction !== 'STANDARD'
+  // Range shows its fields immediately; day / function phases focus their content
+  // (fields behind « Détails »).
+  const [showDetails, setShowDetails] = useState(false)
+  // Day sessions with a function keep their agenda: Fonction ⇄ Agenda tabs.
+  const [fnTab, setFnTab] = useState<'fonction' | 'agenda'>('fonction')
+  useEffect(() => { setFnTab('fonction') }, [session.id])
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  // Programme criteria — used by the per-session criteria picker (EditorPanel).
+  const [criteria, setCriteria] = useState<Criterion[]>([])
+  useEffect(() => {
+    programmesApi.criteria(programmeId).then(r => setCriteria(r.data ?? [])).catch(() => {})
+  }, [programmeId])
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div onClick={onClose}
+      className="fixed inset-0 z-[55] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+      <div onClick={(e) => e.stopPropagation()}
+        className={`w-full ${kind === 'day' || isFunctionPhase ? 'max-w-5xl' : 'max-w-3xl'} h-[88vh] flex flex-col rounded-2xl bg-card border-2 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150`}
+        style={{ borderColor: c + '66' }}>
+        {/* Header */}
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-border shrink-0" style={{ background: c + '10' }}>
+          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: c }} />
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground shrink-0">
+            {kind === 'day' ? <><CalendarDays className="h-3 w-3" />Journée</> : <><CalendarRange className="h-3 w-3" />Plage</>}
+          </span>
+          <span className="text-sm font-bold text-foreground truncate">{session.title || 'Sans titre'}</span>
+          <span className="text-[11px] text-muted-foreground shrink-0 hidden sm:inline">{dateText(session)}</span>
+          {critical.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-300/40 px-1.5 py-0.5 text-[10px] font-bold shrink-0" title={`Critique : ${critical.join(', ')}`}>
+              <AlertTriangle className="h-3 w-3" />{critical.length}
+            </span>
+          )}
+          {warnings.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-300/40 px-1.5 py-0.5 text-[10px] font-bold shrink-0" title={`Attention : ${warnings.join(', ')}`}>
+              <Info className="h-3 w-3" />{warnings.length}
+            </span>
+          )}
+          {/* Fonction — the three session types, one click each:
+              Standard · Candidature (accepter) · Évaluation (jury). */}
+          <div className="ml-auto inline-flex rounded-lg border border-border bg-muted/40 p-0.5 shrink-0">
+            {(['STANDARD', 'CANDIDATURE_SUBMISSION', 'PRESELECTION'] as const).map(f => {
+              const Icon = f === 'CANDIDATURE_SUBMISSION' ? Mail : f === 'PRESELECTION' ? ClipboardList : Calendar
+              const active = fonction === f
+              return (
+                <button key={f} type="button" title={FONCTION_META[f].hint}
+                  onClick={() => onUpdate({ sessionType: f === 'STANDARD' ? 'INCUBATION' : f })}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
+                    active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+                  <Icon className="h-3 w-3" />{FONCTION_META[f].label}
+                </button>
+              )
+            })}
+          </div>
+          {kind === 'day' && !isFunctionPhase && (
+            <button onClick={() => setShowDetails(v => !v)}
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors shrink-0 ${
+                showDetails ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300' : 'border-border text-muted-foreground hover:text-foreground'}`}>
+              <Pencil className="h-3 w-3" />Détails
+            </button>
+          )}
+          <button onClick={onDuplicate} title="Dupliquer la session (avec journées + activités)"
+            className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground shrink-0">
+            <Copy className="h-4 w-4" />
+          </button>
+          <button onClick={onRemove} title="Supprimer la session (touche Suppr)"
+            className="p-1 rounded hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 shrink-0">
+            <Trash2 className="h-4 w-4" />
+          </button>
+          <button onClick={onClose} className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground shrink-0" title="Fermer (Échap)">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        {isFunctionPhase ? (
+          /* Function phase — settings (left) + feature panel (right) on the SAME page. */
+          <div className="flex-1 min-h-0 grid grid-cols-[300px_1fr]">
+            <div className="overflow-y-auto border-r border-border">
+              <EditorPanel session={session} allLanes={allLanes} parents={parents}
+                onUpdate={onUpdate} onSaveAsPreset={onSaveAsPreset} criteria={criteria} />
+            </div>
+            <div className="min-w-0 flex flex-col min-h-0">
+              {/* A journée with fonction keeps its agenda — switchable tabs */}
+              {kind === 'day' && (
+                <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border bg-muted/20 shrink-0">
+                  {([['fonction', FONCTION_META[fonction].label, fonction === 'CANDIDATURE_SUBMISSION' ? Mail : ClipboardList],
+                     ['agenda', 'Agenda', Clock]] as const).map(([k, lbl, Icon]) => (
+                    <button key={k} type="button" onClick={() => setFnTab(k)}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                        fnTab === k ? 'bg-card text-foreground shadow-sm border border-border' : 'text-muted-foreground hover:text-foreground'}`}>
+                      <Icon className="h-3 w-3" />{lbl}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                {kind === 'day' && fnTab === 'agenda'
+                  ? <DayCanvas programmeId={programmeId} programmeName={programmeName} session={session} onChanged={onDaysChanged} />
+                  : fonction === 'CANDIDATURE_SUBMISSION'
+                    ? <CandidaturePhasePanel programmeId={programmeId} />
+                    : <PreselectionPhasePanel programmeId={programmeId}
+                        session={{ id: session.id, title: session.title, focusCriteriaIds: session.focusCriteriaIds,
+                          criterionWeightsJson: session.criterionWeightsJson, evaluationSelectionId: session.evaluationSelectionId }}
+                        onUpdateSession={(patch) => onUpdate(patch as Partial<Session>)} />}
+              </div>
+            </div>
+          </div>
+        ) : kind === 'range' ? (
+          <div className="flex-1 min-h-0 grid grid-cols-[300px_1fr]">
+            <div className="overflow-y-auto border-r border-border">
+              <EditorPanel session={session} allLanes={allLanes} parents={parents}
+                onUpdate={onUpdate} onSaveAsPreset={onSaveAsPreset} criteria={criteria} />
+            </div>
+            <div className="overflow-y-auto min-w-0">
+              <ChildDaysPane session={session} children={children} dayPresets={dayPresets}
+                onOpenSession={onOpenSession} onAddChild={onAddChild} onAddBlankChild={onAddBlankChild} />
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 flex flex-col">
+            {showDetails && (
+              <div className="border-b-2 border-border max-h-[42%] overflow-y-auto shrink-0">
+                <EditorPanel session={session} allLanes={allLanes} parents={parents}
+                  onUpdate={onUpdate} onSaveAsPreset={onSaveAsPreset} criteria={criteria} />
+              </div>
+            )}
+            <div className="flex-1 min-h-0">
+              <DayCanvas programmeId={programmeId} programmeName={programmeName} session={session} onChanged={onDaysChanged} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//                       PER-SESSION CRITERIA PICKER
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Lets a session pick which programme criteria apply (empty = all) and set a
+ *  per-criterion weight. Persists focusCriteriaIds + criterionWeightsJson via
+ *  onUpdate (both accepted by updatePhase / the eval grid uses them). */
+function SessionCriteriaPicker({ session, criteria, onUpdate }: {
+  session: Session
+  criteria: Criterion[]
+  onUpdate: (p: Partial<Session>) => void
+}) {
+  const allIds = criteria.map(c => c.id)
+  const focus = session.focusCriteriaIds ?? []
+  const isSelected = (id: number) => focus.length === 0 || focus.includes(id)
+
+  let weights: Record<string, number> = {}
+  try { if (session.criterionWeightsJson) weights = JSON.parse(session.criterionWeightsJson) } catch { /* ignore */ }
+
+  const toggle = (id: number) => {
+    const set = new Set<number>(focus.length ? focus : allIds)
+    if (set.has(id)) set.delete(id); else set.add(id)
+    const next = allIds.filter(x => set.has(x))
+    onUpdate({ focusCriteriaIds: next.length === allIds.length ? [] : next })
+  }
+  const setWeight = (id: number, val: number) =>
+    onUpdate({ criterionWeightsJson: JSON.stringify({ ...weights, [id]: val }) })
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Drawer header */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-border"
-        style={{ borderTopWidth: 3, borderTopColor: c }}>
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} />
-        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: c }}>
-          {TYPE_LABEL[session.sessionType ?? ''] ?? 'Session'}
-        </span>
-        <span className="text-sm font-bold text-foreground truncate">{session.title}</span>
-        {critical.length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-300/40 px-2 py-0.5 text-[10px] font-bold">
-            <AlertTriangle className="h-3 w-3" />Critique : {critical.join(', ')}
-          </span>
-        )}
-        {warnings.length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-300/40 px-2 py-0.5 text-[10px] font-bold">
-            <Info className="h-3 w-3" />{warnings.join(', ')}
-          </span>
-        )}
-        <button onClick={onClose} className="ml-auto p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
-          title="Fermer">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* Body — two panels */}
-      <div className="flex-1 grid grid-cols-[290px_1fr] min-h-0">
-        <EditorPanel session={session} allLanes={allLanes} onUpdate={onUpdate} onRemove={onRemove} />
-        <DayCanvas
-          programmeId={programmeId}
-          session={session}
-          onChanged={onDaysChanged}
-        />
-      </div>
+    <div>
+      <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
+        <ClipboardList className="h-3 w-3" />Critères de cette session
+      </label>
+      {criteria.length === 0 ? (
+        <p className="mt-1 text-[10px] text-muted-foreground italic">
+          Aucun critère programme — ajoutez-en dans l’onglet « Critères ».
+        </p>
+      ) : (
+        <>
+          <p className="mt-0.5 mb-1 text-[9px] text-muted-foreground">Rien de coché = tous les critères s’appliquent.</p>
+          <div className="space-y-1">
+            {criteria.map(c => {
+              const sel = isSelected(c.id)
+              const w = weights[c.id] ?? c.weight ?? 0
+              return (
+                <div key={c.id} className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1">
+                  <input type="checkbox" checked={sel} onChange={() => toggle(c.id)} className="accent-brand-500 h-3.5 w-3.5 shrink-0" />
+                  <span className={`flex-1 text-[11px] truncate ${sel ? 'text-foreground' : 'text-muted-foreground line-through'}`} title={c.name}>{c.name}</span>
+                  {sel && (
+                    <input type="number" min={0} max={1} step={0.05} value={Number(w)}
+                      onChange={(e) => setWeight(c.id, Math.max(0, Math.min(1, Number(e.target.value) || 0)))}
+                      className="w-14 h-6 text-[10px] rounded border border-input bg-background px-1 shrink-0" title="Poids (0–1)" />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
     </div>
   )
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-//                              EDITOR PANEL (left of drawer)
+//                              EDITOR PANEL (left)
 // ──────────────────────────────────────────────────────────────────────────
 
-function EditorPanel({ session, allLanes, onUpdate, onRemove }: {
+function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, criteria = [] }: {
   session: Session
   allLanes: string[]
+  parents: Session[]
   onUpdate: (p: Partial<Session>) => void
-  onRemove: () => void
+  onSaveAsPreset: () => void
+  criteria?: Criterion[]
 }) {
   const [title, setTitle] = useState(session.title ?? '')
   const [location, setLocation] = useState(session.location ?? '')
@@ -830,24 +2246,37 @@ function EditorPanel({ session, allLanes, onUpdate, onRemove }: {
   useEffect(() => { setDescription(session.description ?? '') }, [session.description])
   useEffect(() => { setLane(session.lane ?? 'Principal') }, [session.lane])
 
+  const kind = kindOf(session)
+  const isChild = session.parentSessionId != null
+  /** Rarely-used settings live behind « Avancé » to keep the panel calm. */
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // A session may nest inside a range whose window contains its own dates.
+  const childStart = parseDate(session.startDate)
+  const childEnd = parseDate(session.endDate ?? session.startDate)
+  const eligibleParents = parents.filter(p => {
+    const ps = parseDate(p.startDate); const pe = parseDate(p.endDate ?? p.startDate)
+    if (!ps || !pe || !childStart) return false
+    const startsIn = childStart >= ps && childStart <= pe
+    const endsIn = !childEnd || (childEnd >= ps && childEnd <= pe)
+    return startsIn && endsIn
+  })
+
   return (
-    <div className="border-r border-border bg-muted/10 overflow-y-auto p-3 space-y-3">
-      {/* Type + Status */}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
-            <Tag className="h-3 w-3" />Type
-          </label>
-          <select value={session.sessionType ?? 'INCUBATION'}
-            onChange={(e) => onUpdate({ sessionType: e.target.value as any })}
-            className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2">
-            {SESSION_TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-          </select>
-        </div>
+    <div className="bg-muted/10 p-3 space-y-3 shrink-0">
+      <div>
+        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Titre *</label>
+        <Input value={title} onChange={(e) => setTitle(e.target.value)}
+          onBlur={() => { if (title !== session.title) onUpdate({ title }) }}
+          placeholder="Titre de la session" className="h-8 text-sm font-bold mt-0.5" />
+      </div>
+
+      {/* Color + Status */}
+      <div className="grid grid-cols-2 gap-2 items-start">
+        <ColorPicker value={colorOf(session)} onChange={(hex) => onUpdate({ color: hex })} />
         <div>
           <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Statut</label>
-          <select value={session.status ?? 'UPCOMING'}
-            onChange={(e) => onUpdate({ status: e.target.value as any })}
+          <select value={session.status ?? 'UPCOMING'} onChange={(e) => onUpdate({ status: e.target.value as any })}
             className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2">
             <option value="UPCOMING">À venir</option>
             <option value="ACTIVE">En cours</option>
@@ -856,52 +2285,24 @@ function EditorPanel({ session, allLanes, onUpdate, onRemove }: {
         </div>
       </div>
 
+      {/* Kind toggle */}
       <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Titre *</label>
-        <Input value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => { if (title !== session.title) onUpdate({ title }) }}
-          placeholder="Titre de la session"
-          className="h-8 text-sm font-bold mt-0.5" />
-      </div>
-
-      {/* Lane */}
-      <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
-          <Layers className="h-3 w-3" />Voie
-        </label>
-        <input list="lane-list" value={lane}
-          onChange={(e) => setLane(e.target.value)}
-          onBlur={() => { if (lane.trim() && lane !== session.lane) onUpdate({ lane: lane.trim() }) }}
-          placeholder="Principal, Cohorte A…"
-          className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2 focus:outline-none focus:ring-2 focus:ring-ring" />
-        <datalist id="lane-list">
-          {allLanes.map(l => <option key={l} value={l} />)}
-        </datalist>
-      </div>
-
-      {/* Duration */}
-      <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Durée</label>
+        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Type de durée</label>
         <div className="flex gap-1 mt-0.5">
-          {(['day', 'week', 'custom'] as const).map(k => (
+          {([['day', 'Journée', CalendarDays], ['range', 'Plage', CalendarRange]] as const).map(([k, lbl, Icon]) => (
             <button key={k} type="button"
               onClick={() => {
                 const patch: Partial<Session> = { durationKind: k }
-                if (session.startDate) {
-                  if (k === 'day') patch.endDate = session.startDate
-                  else if (k === 'week') {
-                    const sd = parseDate(session.startDate)!
-                    patch.endDate = fmtISO(addDays(sd, 6))
-                  }
+                if (k === 'day' && session.startDate) patch.endDate = session.startDate
+                if (k === 'range' && session.startDate && !session.endDate) {
+                  patch.endDate = fmtISO(addDays(parseDate(session.startDate)!, 13))
                 }
                 onUpdate(patch)
               }}
-              className={`flex-1 rounded-md border px-1.5 py-1 text-[11px] font-semibold transition-colors ${
-                session.durationKind === k
-                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                  : 'border-border text-muted-foreground hover:border-emerald-400'}`}>
-              {k === 'day' ? 'Journée' : k === 'week' ? 'Semaine' : 'Custom'}
+              className={`flex-1 inline-flex items-center justify-center gap-1 rounded-md border px-1.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                kind === k ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                           : 'border-border text-muted-foreground hover:border-emerald-400'}`}>
+              <Icon className="h-3.5 w-3.5" />{lbl}
             </button>
           ))}
         </div>
@@ -915,65 +2316,209 @@ function EditorPanel({ session, allLanes, onUpdate, onRemove }: {
             onChange={(e) => {
               const sd = e.target.value
               const patch: Partial<Session> = { startDate: sd }
-              if (session.durationKind === 'day') patch.endDate = sd
-              else if (session.durationKind === 'week' && sd) {
-                patch.endDate = fmtISO(addDays(parseDate(sd)!, 6))
-              }
+              if (kind === 'day') patch.endDate = sd
               onUpdate(patch)
             }}
             className="h-7 text-[11px] mt-0.5" />
         </div>
         <div>
           <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">
-            Fin {session.durationKind === 'day' && '(=Début)'}
+            Fin {kind === 'day' && '(= Début)'}
           </label>
-          <Input type="date" value={session.endDate ?? ''}
-            disabled={session.durationKind === 'day'}
+          <Input type="date" value={session.endDate ?? ''} disabled={kind === 'day'}
             onChange={(e) => onUpdate({ endDate: e.target.value })}
-            className={`h-7 text-[11px] mt-0.5 ${session.durationKind === 'day' ? 'opacity-60 cursor-not-allowed' : ''}`} />
+            className={`h-7 text-[11px] mt-0.5 ${kind === 'day' ? 'opacity-60 cursor-not-allowed' : ''}`} />
         </div>
       </div>
 
       <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
-          <MapPin className="h-3 w-3" />Lieu
-        </label>
-        <Input value={location} placeholder='"Salle A" ou "Online"'
-          onChange={(e) => setLocation(e.target.value)}
-          onBlur={() => { if (location !== (session.location ?? '')) onUpdate({ location }) }}
-          className="h-7 text-[11px] mt-0.5" />
+        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />Lieu</label>
+        <Input value={location} placeholder='"Salle A" ou "Online"' onChange={(e) => setLocation(e.target.value)}
+          onBlur={() => { if (location !== (session.location ?? '')) onUpdate({ location }) }} className="h-7 text-[11px] mt-0.5" />
       </div>
 
       <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
-          <FileText className="h-3 w-3" />Description
-        </label>
-        <textarea rows={3} value={description}
-          onChange={(e) => setDescription(e.target.value)}
+        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1"><FileText className="h-3 w-3" />Description</label>
+        <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
           onBlur={() => { if (description !== (session.description ?? '')) onUpdate({ description }) }}
           className="mt-0.5 w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] resize-y focus:outline-none focus:ring-2 focus:ring-ring" />
       </div>
 
+      {/* Fonction — wires the phase to a programme feature (form / jury evaluation). */}
+      <div>
+        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
+          <Sparkles className="h-3 w-3" />Fonction
+        </label>
+        <select
+          value={fonctionOf(session)}
+          onChange={(e) => onUpdate({ sessionType: e.target.value === 'STANDARD' ? 'INCUBATION' : e.target.value })}
+          className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2">
+          <option value="STANDARD">Standard (défaut)</option>
+          <option value="CANDIDATURE_SUBMISSION">Candidature — accepter les candidatures</option>
+          <option value="PRESELECTION">Évaluation — jury</option>
+        </select>
+        <p className="mt-1 text-[9px] text-muted-foreground">{FONCTION_META[fonctionOf(session)].hint}</p>
+      </div>
+
+      {/* ── Avancé (replié) : critères · imbrication · voie · préset ── */}
       <div className="pt-2 border-t border-border">
-        <button onClick={onRemove}
-          className="w-full inline-flex items-center justify-center gap-1 text-[11px] font-semibold text-destructive hover:bg-destructive/10 px-2 py-1.5 rounded-md border border-destructive/30">
-          <Trash2 className="h-3 w-3" />Supprimer la session
+        <button type="button" onClick={() => setShowAdvanced(v => !v)}
+          className="w-full flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors">
+          <ChevronRight className={`h-3 w-3 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
+          Avancé
+          <span className="font-normal normal-case tracking-normal opacity-60">critères · imbrication · voie · préset</span>
         </button>
+        {showAdvanced && (
+          <div className="mt-3 space-y-3">
+            {/* Per-session criteria — which programme criteria apply + their weights. */}
+            <SessionCriteriaPicker session={session} criteria={criteria} onUpdate={onUpdate} />
+
+            {/* Parent picker — nest inside a range whose dates contain this session */}
+            {(eligibleParents.length > 0 || session.parentSessionId != null) && (
+              <div>
+                <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1"><Layers className="h-3 w-3" />Imbriquée dans</label>
+                <select value={session.parentSessionId ?? ''} onChange={(e) => onUpdate({ parentSessionId: e.target.value ? Number(e.target.value) : -1 as any })}
+                  className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2">
+                  <option value="">— Aucune (autonome) —</option>
+                  {eligibleParents.map(p => <option key={p.id} value={p.id}>{p.title} ({p.startDate} → {p.endDate})</option>)}
+                </select>
+                {session.parentSessionId != null && (
+                  <p className="mt-1 text-[9px] text-muted-foreground">Doit rester dans la plage parente (selon les dates).</p>
+                )}
+              </div>
+            )}
+
+            {/* Lane — hidden for children (they inherit the parent's lane) */}
+            {!isChild && (
+              <div>
+                <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1"><Layers className="h-3 w-3" />Voie</label>
+                <input list="lane-list" value={lane} onChange={(e) => setLane(e.target.value)}
+                  onBlur={() => { if (lane.trim() && lane !== session.lane) onUpdate({ lane: lane.trim() }) }}
+                  placeholder="Principal, Cohorte A…"
+                  className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2 focus:outline-none focus:ring-2 focus:ring-ring" />
+                <datalist id="lane-list">{allLanes.map(l => <option key={l} value={l} />)}</datalist>
+              </div>
+            )}
+
+            <button onClick={onSaveAsPreset}
+              className="w-full inline-flex items-center justify-center gap-1 text-[11px] font-semibold text-brand-700 dark:text-brand-300 hover:bg-brand-500/10 px-2 py-1.5 rounded-md border border-brand-500/40">
+              <Sparkles className="h-3 w-3" />Enregistrer comme préset
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-//                              DAY CANVAS (right of drawer)
+//                       CHILD DAYS PANE (range sessions)
 // ──────────────────────────────────────────────────────────────────────────
 
-const HOUR_START = 8   // 08:00
-const HOUR_END   = 20  // 20:00
-const HOUR_PX    = 52  // each hour row is 52px tall — roomy, legible blocks
-const SNAP_MIN   = 15  // drag/resize snaps to 15-minute steps
+function ChildDaysPane({ session, children, dayPresets, onOpenSession, onAddChild, onAddBlankChild }: {
+  session: Session
+  children: Session[]
+  dayPresets: Preset[]
+  onOpenSession: (id: number) => void
+  onAddChild: (presetId: number) => void
+  onAddBlankChild: () => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const sorted = [...children].sort((a, b) =>
+    (parseDate(a.startDate)?.getTime() ?? 0) - (parseDate(b.startDate)?.getTime() ?? 0))
 
-// time ⇄ minutes-since-midnight helpers ───────────────────────────────────────
+  return (
+    <div className="overflow-y-auto p-4 bg-muted/5">
+      <div className="flex items-center gap-2 mb-3">
+        <CalendarDays className="h-4 w-4 text-brand-500" />
+        <h3 className="text-sm font-bold text-foreground">Journées de cette session</h3>
+        <span className="text-[10px] text-muted-foreground">{children.length} journée{children.length > 1 ? 's' : ''}</span>
+        <div className="ml-auto relative">
+          <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => setAdding(v => !v)}>
+            <Plus className="h-3.5 w-3.5" />Ajouter une journée
+          </Button>
+          {adding && (
+            <div className="absolute right-0 top-9 z-20 w-56 rounded-lg border-2 border-border bg-card shadow-xl p-1.5 space-y-0.5">
+              {/* Blank day — always first, no preset needed */}
+              <button onClick={() => { setAdding(false); onAddBlankChild() }}
+                className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-bold hover:bg-accent transition-colors text-left">
+                <span className="h-5 w-5 rounded-md border-2 border-dashed border-muted-foreground/50 flex items-center justify-center shrink-0">
+                  <Plus className="h-3 w-3 text-muted-foreground" />
+                </span>
+                Journée vierge
+              </button>
+              {dayPresets.length > 0 && (
+                <p className="px-1.5 pt-1.5 pb-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground border-t border-border/60">
+                  Ou depuis un préset
+                </p>
+              )}
+              {dayPresets.map(p => {
+                const c = p.color || DEFAULT_COLOR
+                return (
+                  <button key={p.id} onClick={() => { setAdding(false); onAddChild(p.id) }}
+                    className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-semibold hover:bg-accent transition-colors text-left">
+                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: c }} />
+                    {p.title}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="text-[10px] text-muted-foreground mb-3 flex items-center gap-1">
+        <Info className="h-3 w-3" />Le planning horaire (activités) se fait dans chaque journée. Cliquez une journée pour l&apos;ouvrir.
+      </p>
+
+      {sorted.length === 0 ? (
+        <div className="rounded-xl border-2 border-dashed border-border bg-muted/10 p-6 text-center">
+          <CalendarDays className="h-7 w-7 mx-auto text-muted-foreground/50 mb-2" />
+          <p className="text-xs text-muted-foreground">
+            Aucune journée pour l&apos;instant. Ajoutez-en une (ou glissez un préset « Journée »
+            sur la barre dans la timeline) — elle sera imbriquée dans cette session.
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {sorted.map(ch => {
+            const c = colorOf(ch)
+            const m = detectMissing(ch)
+            const nbAct = (ch.days ?? []).reduce((n, d) => n + (d.activities?.length ?? 0), 0)
+            return (
+              <button key={ch.id} onClick={() => onOpenSession(ch.id)}
+                className="group flex items-center gap-3 rounded-xl border border-border bg-card hover:border-brand-400 hover:shadow-sm p-3 text-left transition-all">
+                <span className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: c + '1A', color: c }}>
+                  <CalendarDays className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-foreground truncate">{ch.title}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {ch.startDate ? fmtShort(parseDate(ch.startDate)!) : 'date ?'}
+                    {nbAct > 0 && ` · ${nbAct} activité${nbAct > 1 ? 's' : ''}`}
+                    {ch.location && ` · ${ch.location}`}
+                  </p>
+                </div>
+                {m.critical.length > 0 && <AlertTriangle className="h-3.5 w-3.5 text-rose-500 shrink-0" />}
+                <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-brand-500 shrink-0" />
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//                           ACTIVITY TIME HELPERS
+// ──────────────────────────────────────────────────────────────────────────
+
+const HOUR_START = 8
+const HOUR_END   = 20
+const HOUR_PX    = 52
+const SNAP_MIN   = 15
+
 const timeToMin = (t?: string): number => {
   if (!t) return HOUR_START * 60
   const [h, m] = t.split(':').map(Number)
@@ -992,140 +2537,179 @@ const durLabel = (a: Activity): string => {
   return h > 0 ? (m > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`) : `${m}min`
 }
 
-function DayCanvas({ programmeId, session, onChanged }: {
+// ──────────────────────────────────────────────────────────────────────────
+//                              DAY CANVAS (day sessions only)
+// ──────────────────────────────────────────────────────────────────────────
+
+function DayCanvas({ programmeId, programmeName, session, onChanged }: {
   programmeId: number
+  programmeName?: string
   session: Session
   onChanged: () => void
 }) {
-  // Days are ALWAYS rendered from session.days OR from the date range if days
-  // haven't been created yet (lazy creation on first activity add).
   const [days, setDays] = useState<SessionDay[]>(session.days ?? [])
   const [loading, setLoading] = useState(false)
+  const [selectedActivityId, setSelectedActivityId] = useState<number | null>(null)
   useEffect(() => { setDays(session.days ?? []) }, [session.days, session.id])
+  useEffect(() => { setSelectedActivityId(null) }, [session.id])
 
-  const sd = parseDate(session.startDate); const ed = parseDate(session.endDate ?? session.startDate)
-  const dayCount = sd && ed ? Math.max(1, Math.round((ed.getTime() - sd.getTime()) / DAY_MS) + 1) : 1
+  const sd = parseDate(session.startDate)
 
-  /** Phantom days based on the session date range (used when no DB days exist yet). */
-  const phantomDays = useMemo<SessionDay[]>(() => {
-    if (!sd) return []
-    return Array.from({ length: dayCount }, (_, i) => ({
-      dayOrder: i + 1,
-      date: fmtISO(addDays(sd, i)),
-      activities: [],
-    }))
-  }, [sd, dayCount])
+  // A day session has exactly one day (its own date). Lazy-create on first activity.
+  const theDay = useMemo<SessionDay>(() => {
+    const real = days.find(d => d.dayOrder === 1) ?? days[0]
+    return real ?? { dayOrder: 1, date: session.startDate, activities: [] }
+  }, [days, session.startDate])
 
-  /** Effective days = real days indexed by order, padded with phantoms. */
-  const visibleDays = useMemo<SessionDay[]>(() => {
-    const out: SessionDay[] = []
-    for (let i = 1; i <= dayCount; i++) {
-      const real = days.find(d => d.dayOrder === i)
-      out.push(real ?? (phantomDays[i - 1] ?? { dayOrder: i, activities: [] }))
-    }
-    return out
-  }, [days, phantomDays, dayCount])
-
-  /** Ensure a DB day exists for the given order — create on demand. */
-  const ensureDay = async (dayOrder: number, date?: string): Promise<SessionDay | null> => {
-    const existing = days.find(d => d.dayOrder === dayOrder)
+  const ensureDay = async (): Promise<SessionDay | null> => {
+    const existing = days.find(d => d.id)
     if (existing?.id) return existing
     setLoading(true)
     try {
       const r = await sessionsApi.addDay(programmeId, session.id, {
-        dayOrder, date: date ?? null, title: null, location: null,
+        dayOrder: 1, date: session.startDate ?? null, title: null, location: null,
       } as any)
       const created: SessionDay = r.data
-      setDays(arr => [...arr, created])
+      setDays([created])
       return created
     } catch { toast.error('Erreur jour'); return null } finally { setLoading(false) }
   }
 
-  const addActivity = async (dayOrder: number, defaultDate?: string, startMin?: number) => {
-    const d = await ensureDay(dayOrder, defaultDate)
+  const addActivity = async (startMin?: number) => {
+    const d = await ensureDay()
     if (!d?.id) return
     const start = startMin != null ? snap(startMin) : 9 * 60
     const end   = Math.min(HOUR_END * 60, start + 60)
     try {
       const r = await sessionsApi.addActivity(programmeId, session.id, d.id, {
-        title: 'Nouvelle activité',
-        type: 'ACTIVITY',
-        startTime: minToTime(start),
-        endTime:   minToTime(end),
+        title: 'Nouvelle activité', color: colorOf(session), startTime: minToTime(start), endTime: minToTime(end),
       })
       const created: Activity = r.data
       setDays(arr => arr.map(x => x.id === d.id ? { ...x, activities: [...(x.activities ?? []), created] } : x))
+      setSelectedActivityId(created.id ?? null)
       onChanged()
     } catch { toast.error('Erreur activité') }
   }
 
   const updateActivity = async (dayId: number, aid: number, patch: Partial<Activity>) => {
     setDays(arr => arr.map(x => x.id === dayId
-      ? { ...x, activities: (x.activities ?? []).map(a => a.id === aid ? { ...a, ...patch } : a) }
-      : x))
-    try { await sessionsApi.updateActivity(programmeId, session.id, dayId, aid, patch) }
-    catch { toast.error('Erreur'); }
+      ? { ...x, activities: (x.activities ?? []).map(a => a.id === aid ? { ...a, ...patch } : a) } : x))
+    try {
+      await sessionsApi.updateActivity(programmeId, session.id, dayId, aid, patch)
+      // Propagate to the board's sessions state — otherwise reopening the
+      // overlay (or the calendar view) shows the pre-edit values.
+      onChanged()
+    } catch { toast.error('Erreur — modification non enregistrée'); }
   }
 
   const removeActivity = async (dayId: number, aid: number) => {
     if (!confirm('Supprimer cette activité ?')) return
     try {
       await sessionsApi.deleteActivity(programmeId, session.id, dayId, aid)
-      setDays(arr => arr.map(x => x.id === dayId
-        ? { ...x, activities: (x.activities ?? []).filter(a => a.id !== aid) } : x))
+      setDays(arr => arr.map(x => x.id === dayId ? { ...x, activities: (x.activities ?? []).filter(a => a.id !== aid) } : x))
       onChanged()
     } catch { toast.error('Erreur') }
   }
 
-  if (dayCount === 0 || !sd) {
+  /** Clone an activity, nudged +1h, so a busy agenda is fast to fill. */
+  const duplicateActivity = async (dayId: number, src: Activity) => {
+    const shift = (t?: string) => {
+      const m = Math.min(HOUR_END * 60, timeToMin(t) + 60)
+      return minToTime(m)
+    }
+    try {
+      const r = await sessionsApi.addActivity(programmeId, session.id, dayId, {
+        title: src.title, description: src.description, color: src.color ?? colorOf(session),
+        startTime: shift(src.startTime), endTime: shift(src.endTime),
+        location: src.location, responsibles: src.responsibles, guests: src.guests,
+      })
+      const created: Activity = r.data
+      setDays(arr => arr.map(x => x.id === dayId ? { ...x, activities: [...(x.activities ?? []), created] } : x))
+      onChanged()
+    } catch { toast.error('Erreur') }
+  }
+
+  if (!sd) {
     return (
-      <div className="flex items-center justify-center text-muted-foreground text-xs italic">
-        Renseignez d&apos;abord la date de début à gauche pour activer le planning des journées.
+      <div className="flex items-center justify-center text-muted-foreground text-xs italic p-6 text-center">
+        Renseignez d&apos;abord la date à gauche pour activer le planning horaire.
       </div>
     )
   }
 
-  return (
-    <div className="overflow-auto bg-muted/5">
-      <div className="flex h-full" style={{ minWidth: dayCount * 260 }}>
-        {/* Hours column (sticky left) — labels aligned on each grid line */}
-        <div className="sticky left-0 z-20 bg-card border-r border-border w-12 shrink-0">
-          <div className="h-9 border-b-2 border-border" />
-          <div className="relative" style={{ height: (HOUR_END - HOUR_START) * HOUR_PX }}>
-            {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i).map((h, i) => (
-              <div key={h}
-                className="absolute right-1 -translate-y-1/2 text-[10px] font-bold uppercase text-muted-foreground tabular-nums"
-                style={{ top: i * HOUR_PX }}>
-                {h}h
-              </div>
-            ))}
-          </div>
-        </div>
+  const selectedActivity = (theDay.activities ?? []).find(a => a.id === selectedActivityId) ?? null
 
-        {/* Day columns */}
-        {visibleDays.map(d => (
-          <DayColumn key={d.dayOrder}
-            day={d}
-            onAddActivity={(startMin) => addActivity(d.dayOrder ?? 1, d.date, startMin)}
-            onUpdateActivity={(aid, patch) => d.id && updateActivity(d.id, aid, patch)}
-            onRemoveActivity={(aid) => d.id && removeActivity(d.id, aid)}
+  return (
+    <div className="flex h-full min-h-0">
+      {/* Agenda — hour grid (left) */}
+      <div className="flex-1 min-w-0 overflow-auto bg-muted/5 relative">
+        <div className="flex" style={{ minWidth: 360 }}>
+          {/* Hours column */}
+          <div className="sticky left-0 z-20 bg-card border-r border-border w-12 shrink-0">
+            <div className="h-9 border-b-2 border-border" />
+            <div className="relative" style={{ height: (HOUR_END - HOUR_START) * HOUR_PX }}>
+              {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i).map((h, i) => (
+                <div key={h} className="absolute right-1 -translate-y-1/2 text-[10px] font-bold uppercase text-muted-foreground tabular-nums" style={{ top: i * HOUR_PX }}>
+                  {h}h
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Single day column */}
+          <DayColumn
+            day={theDay}
+            sessionColor={colorOf(session)}
+            selectedActivityId={selectedActivityId}
+            onSelectActivity={(aid) => setSelectedActivityId(aid)}
+            onAddActivity={(startMin) => addActivity(startMin)}
+            onUpdateActivity={(aid, patch) => theDay.id && updateActivity(theDay.id, aid, patch)}
+            onRemoveActivity={(aid) => theDay.id && removeActivity(theDay.id, aid)}
+            onDuplicateActivity={(a) => theDay.id && duplicateActivity(theDay.id, a)}
           />
-        ))}
-      </div>
-      {loading && (
-        <div className="absolute top-2 right-2 text-xs text-muted-foreground inline-flex items-center gap-1">
-          <Loader2 className="h-3 w-3 animate-spin" />Sauvegarde…
         </div>
-      )}
+        {loading && (
+          <div className="absolute top-2 right-2 text-xs text-muted-foreground inline-flex items-center gap-1">
+            <Loader2 className="h-3 w-3 animate-spin" />Sauvegarde…
+          </div>
+        )}
+      </div>
+
+      {/* Activity editor (right panel) */}
+      <div className="w-80 shrink-0 border-l border-border bg-card">
+        {selectedActivity ? (
+          <ActivityForm
+            activity={selectedActivity}
+            color={colorOf(session)}
+            ctx={selectedActivity.id != null ? {
+              programmeId, programmeName: programmeName ?? '',
+              phaseId: session.id, phaseName: session.title ?? '',
+              activityId: selectedActivity.id, activityName: selectedActivity.title ?? '',
+            } : undefined}
+            onUpdate={(patch) => theDay.id && selectedActivity.id != null && updateActivity(theDay.id, selectedActivity.id, patch)}
+            onRemove={() => {
+              if (theDay.id && selectedActivity.id != null) removeActivity(theDay.id, selectedActivity.id)
+              setSelectedActivityId(null)
+            }}
+            onDuplicate={() => theDay.id && duplicateActivity(theDay.id, selectedActivity)}
+            onClose={() => setSelectedActivityId(null)}
+          />
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
+            <Clock className="h-7 w-7 opacity-40" />
+            <p className="text-xs">Sélectionnez une activité pour l&apos;éditer, ou ajoutez-en une.</p>
+            <button onClick={() => addActivity()}
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 px-3 py-1.5 text-xs font-bold">
+              <Plus className="h-3.5 w-3.5" />Nouvelle activité
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-//                              DAY COLUMN
-// ──────────────────────────────────────────────────────────────────────────
-
-/** Greedy interval-partitioning: place overlapping activities in side-by-side columns. */
+/** Greedy interval-partitioning: side-by-side columns for overlapping activities. */
 function layoutActivities(acts: Activity[]): Map<number, { col: number; cols: number }> {
   const res = new Map<number, { col: number; cols: number }>()
   const items = acts.filter(a => a.id != null).sort(
@@ -1156,11 +2740,15 @@ function layoutActivities(acts: Activity[]): Map<number, { col: number; cols: nu
   return res
 }
 
-function DayColumn({ day, onAddActivity, onUpdateActivity, onRemoveActivity }: {
+function DayColumn({ day, sessionColor, selectedActivityId, onSelectActivity, onAddActivity, onUpdateActivity, onRemoveActivity, onDuplicateActivity }: {
   day: SessionDay
+  sessionColor: string
+  selectedActivityId: number | null
+  onSelectActivity: (aid: number) => void
   onAddActivity: (startMin?: number) => void
   onUpdateActivity: (aid: number, patch: Partial<Activity>) => void
   onRemoveActivity: (aid: number) => void
+  onDuplicateActivity: (a: Activity) => void
 }) {
   const HOURS = HOUR_END - HOUR_START
   const COLUMN_HEIGHT = HOURS * HOUR_PX
@@ -1169,10 +2757,9 @@ function DayColumn({ day, onAddActivity, onUpdateActivity, onRemoveActivity }: {
   const lay = useMemo(() => layoutActivities(acts), [acts])
 
   const dt = day.date ? new Date(day.date + 'T12:00:00') : null
-  const dateLabel = dt ? dt.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : 'date ?'
+  const dateLabel = dt ? dt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : 'date ?'
   const isToday = dt ? dt.toDateString() === new Date().toDateString() : false
 
-  /** clientY → minutes-since-midnight (relative to the grid body). */
   const yToMin = (clientY: number): number => {
     const el = gridRef.current
     if (!el) return HOUR_START * 60
@@ -1184,15 +2771,10 @@ function DayColumn({ day, onAddActivity, onUpdateActivity, onRemoveActivity }: {
   const nowTop = isToday ? ((now.getHours() + now.getMinutes() / 60) - HOUR_START) * HOUR_PX : -1
 
   return (
-    <div className="border-r border-border min-w-[240px] flex-1 flex flex-col">
+    <div className="flex-1 min-w-[300px] flex flex-col">
       {/* Day header */}
-      <div className="sticky top-0 z-20 bg-card border-b-2 border-border h-9 flex items-center gap-1.5 px-2 shadow-sm">
-        <span className="flex h-5 items-center justify-center rounded-md bg-foreground/10 px-1.5 text-[10px] font-extrabold text-foreground">
-          J{day.dayOrder}
-        </span>
-        <span className="text-[10px] font-semibold text-muted-foreground capitalize truncate flex-1">
-          {dateLabel}
-        </span>
+      <div className="sticky top-0 z-20 bg-card border-b-2 border-border h-9 flex items-center gap-1.5 px-3 shadow-sm">
+        <span className="text-[11px] font-bold text-foreground capitalize truncate flex-1">{dateLabel}</span>
         <span className="text-[9px] text-muted-foreground tabular-nums">{acts.length} act.</span>
         <button onClick={() => onAddActivity()} title="Ajouter une activité"
           className="inline-flex items-center gap-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold">
@@ -1200,10 +2782,10 @@ function DayColumn({ day, onAddActivity, onUpdateActivity, onRemoveActivity }: {
         </button>
       </div>
 
-      {/* Hour grid — click a free slot to add an activity at that time */}
+      {/* Hour grid */}
       <div ref={gridRef}
         onClick={(e) => { if (e.target === e.currentTarget) onAddActivity(snap(yToMin(e.clientY))) }}
-        title="Astuce : cliquez sur une plage libre pour ajouter une activité à cette heure"
+        title="Cliquez sur une plage libre pour ajouter une activité à cette heure"
         className="relative cursor-copy" style={{ height: COLUMN_HEIGHT }}>
         {Array.from({ length: HOURS }, (_, i) => (
           <div key={i}>
@@ -1213,7 +2795,6 @@ function DayColumn({ day, onAddActivity, onUpdateActivity, onRemoveActivity }: {
         ))}
         <div className="absolute left-0 right-0 border-t border-border/40 pointer-events-none" style={{ top: COLUMN_HEIGHT }} />
 
-        {/* now-line */}
         {nowTop >= 0 && nowTop <= COLUMN_HEIGHT && (
           <div className="absolute left-0 right-0 z-10 pointer-events-none" style={{ top: nowTop }}>
             <div className="border-t border-rose-500/70" />
@@ -1221,20 +2802,22 @@ function DayColumn({ day, onAddActivity, onUpdateActivity, onRemoveActivity }: {
           </div>
         )}
 
-        {/* Activities */}
         {acts.map(a => (
           <ActivityBlock key={a.id}
             activity={a}
+            sessionColor={sessionColor}
             place={a.id != null ? lay.get(a.id) : undefined}
-            colHeight={COLUMN_HEIGHT}
+            selected={a.id != null && a.id === selectedActivityId}
+            onSelect={() => a.id != null && onSelectActivity(a.id)}
             onUpdate={(patch) => a.id && onUpdateActivity(a.id, patch)}
             onRemove={() => a.id && onRemoveActivity(a.id)}
+            onDuplicate={() => onDuplicateActivity(a)}
           />
         ))}
 
         {acts.length === 0 && (
           <button onClick={() => onAddActivity()}
-            className="absolute inset-x-2 top-2 h-20 rounded-lg border-2 border-dashed border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/60 transition-colors flex flex-col items-center justify-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300 gap-0.5">
+            className="absolute inset-x-3 top-3 h-20 rounded-lg border-2 border-dashed border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/60 transition-colors flex flex-col items-center justify-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300 gap-0.5">
             <Plus className="h-4 w-4" />Ajouter une activité
             <span className="text-[9px] font-normal text-muted-foreground">ou cliquez sur une heure</span>
           </button>
@@ -1248,16 +2831,17 @@ function DayColumn({ day, onAddActivity, onUpdateActivity, onRemoveActivity }: {
 //                             ACTIVITY BLOCK
 // ──────────────────────────────────────────────────────────────────────────
 
-function ActivityBlock({ activity, place, colHeight, onUpdate, onRemove }: {
+function ActivityBlock({ activity, sessionColor, place, selected, onSelect, onUpdate, onRemove, onDuplicate }: {
   activity: Activity
+  sessionColor: string
   place?: { col: number; cols: number }
-  colHeight: number
+  selected: boolean
+  onSelect: () => void
   onUpdate: (patch: Partial<Activity>) => void
   onRemove: () => void
+  onDuplicate: () => void
 }) {
-  const c = ACTIVITY_TYPE_COLOR[activity.type as string] ?? '#10B981'
-  const label = ACTIVITY_TYPE_LABEL[activity.type as string] ?? 'Activité'
-  const [editing, setEditing] = useState(false)
+  const c = activity.color || sessionColor || DEFAULT_COLOR
   const [preview, setPreview] = useState<{ start: number; end: number } | null>(null)
   const dragRef = useRef<{ mode: 'move' | 'resize'; startY: number; origStart: number; origEnd: number; moved: boolean } | null>(null)
 
@@ -1299,24 +2883,19 @@ function ActivityBlock({ activity, place, colHeight, onUpdate, onRemove }: {
     if (!dr) return
     const p = preview
     setPreview(null)
-    if (!dr.moved) { setEditing(true); return }
+    if (!dr.moved) { onSelect(); return }
     if (p) {
       if (dr.mode === 'move') onUpdate({ startTime: minToTime(p.start), endTime: minToTime(p.end) })
       else onUpdate({ endTime: minToTime(p.end) })
     }
   }
 
-  const resp   = activity.responsibles ?? []
-  const guests = activity.guests ?? []
+  const resp = activity.responsibles ?? []
   const compact = height < 52
-  const openAbove = top > colHeight * 0.55
 
   return (
-    <>
       <div
-        onPointerDown={(e) => begin(e, 'move')}
-        onPointerMove={move}
-        onPointerUp={end}
+        onPointerDown={(e) => begin(e, 'move')} onPointerMove={move} onPointerUp={end}
         style={{
           top, height,
           left:  `calc(${leftPct}% + ${col === 0 ? 4 : 2}px)`,
@@ -1324,77 +2903,176 @@ function ActivityBlock({ activity, place, colHeight, onUpdate, onRemove }: {
           background: `linear-gradient(135deg, ${c}, ${c}E6)`,
           boxShadow: preview ? `0 10px 22px -6px ${c}` : undefined,
         }}
-        className={`absolute rounded-lg text-white shadow-md cursor-grab active:cursor-grabbing select-none overflow-hidden ring-1 ring-black/10 hover:ring-2 hover:ring-white/70 transition-[box-shadow] ${preview ? 'z-30 opacity-95' : 'z-20'}`}>
-        {/* header row */}
+        className={`absolute rounded-lg text-white shadow-md cursor-grab active:cursor-grabbing select-none overflow-hidden transition-[box-shadow] ${selected ? 'z-30 ring-2 ring-white ring-offset-1 ring-offset-card' : 'ring-1 ring-black/10 hover:ring-2 hover:ring-white/70'} ${preview ? 'z-30 opacity-95' : 'z-20'}`}>
         <div className="flex items-center gap-1 px-1.5 pt-1">
-          <span className="inline-flex items-center rounded-full bg-white/25 px-1.5 py-px text-[8px] font-extrabold uppercase tracking-wide leading-none">
-            {label}
+          {durLabel(activity) && <span className="text-[8px] font-bold opacity-90 tabular-nums">{durLabel(activity)}</span>}
+          <span className="ml-auto inline-flex items-center gap-1">
+            <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onSelect() }}
+              className="text-white/80 hover:text-white" title="Modifier"><Pencil className="h-2.5 w-2.5" /></button>
+            <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDuplicate() }}
+              className="text-white/80 hover:text-white" title="Dupliquer (+1h)"><Copy className="h-2.5 w-2.5" /></button>
+            <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRemove() }}
+              className="text-white/80 hover:text-white" title="Supprimer"><Trash2 className="h-2.5 w-2.5" /></button>
           </span>
-          {durLabel(activity) && (
-            <span className="ml-auto text-[8px] font-bold opacity-90 tabular-nums">{durLabel(activity)}</span>
-          )}
-          <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setEditing(true) }}
-            className={`${durLabel(activity) ? '' : 'ml-auto'} text-white/80 hover:text-white`} title="Modifier">
-            <Pencil className="h-2.5 w-2.5" />
-          </button>
-          <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRemove() }}
-            className="text-white/80 hover:text-white" title="Supprimer">
-            <Trash2 className="h-2.5 w-2.5" />
-          </button>
         </div>
-        {/* title + meta */}
         <div className="px-1.5 mt-0.5">
           <div className="text-[11px] font-bold leading-tight line-clamp-2">{activity.title || 'Sans titre'}</div>
-          {!compact && (
-            <div className="text-[9px] opacity-90 tabular-nums mt-0.5">
-              {fmtHM(minToTime(startMin))}–{fmtHM(minToTime(endMin))}
-            </div>
-          )}
-          {!compact && (activity.location || resp.length > 0 || guests.length > 0) && (
+          {!compact && <div className="text-[9px] opacity-90 tabular-nums mt-0.5">{fmtHM(minToTime(startMin))}–{fmtHM(minToTime(endMin))}</div>}
+          {!compact && (activity.location || resp.length > 0) && (
             <div className="mt-0.5 flex flex-col gap-px text-[8.5px] opacity-90">
-              {activity.location && (
-                <span className="inline-flex items-center gap-0.5 truncate"><MapPin className="h-2.5 w-2.5 shrink-0" />{activity.location}</span>
-              )}
-              {resp.length > 0 && (
-                <span className="inline-flex items-center gap-0.5 truncate"><Users className="h-2.5 w-2.5 shrink-0" />{resp.slice(0, 2).join(', ')}{resp.length > 2 ? ` +${resp.length - 2}` : ''}</span>
-              )}
+              {activity.location && <span className="inline-flex items-center gap-0.5 truncate"><MapPin className="h-2.5 w-2.5 shrink-0" />{activity.location}</span>}
+              {resp.length > 0 && <span className="inline-flex items-center gap-0.5 truncate"><Users className="h-2.5 w-2.5 shrink-0" />{resp.slice(0, 2).join(', ')}{resp.length > 2 ? ` +${resp.length - 2}` : ''}</span>}
             </div>
           )}
         </div>
-        {/* resize handle (bottom) */}
         <div onPointerDown={(e) => begin(e, 'resize')}
-          className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize flex items-end justify-center pb-0.5 group/rz"
-          title="Glisser pour changer la durée">
+          className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize flex items-end justify-center pb-0.5 group/rz" title="Glisser pour changer la durée">
           <div className="h-0.5 w-6 rounded-full bg-white/50 group-hover/rz:bg-white" />
         </div>
       </div>
-
-      {/* Editor popover — rendered as a sibling so it escapes the block's overflow-hidden */}
-      {editing && (
-        <div className="absolute z-40"
-          style={{
-            top:    openAbove ? undefined : top + height + 4,
-            bottom: openAbove ? `calc(100% - ${Math.max(0, top - 4)}px)` : undefined,
-            left:   `calc(${leftPct}% + 4px)`,
-            width:  252, maxWidth: 'calc(100% - 8px)',
-          }}>
-          <ActivityEditor activity={activity} color={c}
-            onUpdate={onUpdate} onRemove={onRemove} onClose={() => setEditing(false)} />
-        </div>
-      )}
-    </>
   )
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-//                             ACTIVITY EDITOR (popover)
-// ──────────────────────────────────────────────────────────────────────────
+// ── Activity participants (managed contacts → RSVP invitations) ─────────────
 
-function ActivityEditor({ activity, color, onUpdate, onRemove, onClose }: {
+interface InviteCtx {
+  programmeId?: number; programmeName: string
+  phaseId: number; phaseName: string
+  activityId: number; activityName: string
+}
+
+const INVITE_STATUS: Record<string, { label: string; cls: string }> = {
+  ACCEPTED: { label: 'Inscrit',    cls: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-300/40' },
+  DECLINED: { label: 'Décliné',    cls: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-300/40' },
+  SENT:     { label: 'En attente', cls: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-300/40' },
+  PENDING:  { label: 'En attente', cls: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-300/40' },
+  FAILED:   { label: 'Échec',      cls: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-300/40' },
+}
+
+function ActivityParticipants({ ctx }: { ctx: InviteCtx }) {
+  const [contacts, setContacts] = useState<any[]>([])
+  const [groups, setGroups]     = useState<any[]>([])
+  const [invites, setInvites]   = useState<any[]>([])
+  const [picking, setPicking]   = useState(false)
+  const [freeEmail, setFreeEmail] = useState('')
+  const [busy, setBusy]         = useState(false)
+
+  const loadInvites = useCallback(async () => {
+    try { const r = await notificationsApi.byActivity(ctx.activityId); setInvites(r.data ?? []) } catch { /* */ }
+  }, [ctx.activityId])
+
+  useEffect(() => {
+    contactsApi.list().then(r => setContacts(r.data ?? [])).catch(() => {})
+    contactGroupsApi.list().then(r => setGroups(r.data ?? [])).catch(() => {})
+    loadInvites()
+  }, [loadInvites])
+
+  const invitedEmails = new Set(invites.map(i => (i.recipientEmail ?? '').toLowerCase()))
+  const accepted = invites.filter(i => i.status === 'ACCEPTED').length
+
+  const sendInvites = async (recipients: { email: string; name?: string }[]) => {
+    const fresh = recipients.filter(r => r.email && !invitedEmails.has(r.email.toLowerCase()))
+    if (!fresh.length) { toast.error('Déjà invité(s) ou email manquant'); return }
+    setBusy(true)
+    try {
+      await notificationsApi.bulk({
+        type: 'GUEST', requiresRsvp: true,
+        programmeId: ctx.programmeId, programmeName: ctx.programmeName,
+        phaseId: ctx.phaseId, phaseName: ctx.phaseName,
+        activityId: ctx.activityId, activityName: ctx.activityName,
+        subject: `Invitation : ${ctx.activityName || ctx.phaseName}`,
+        message: `Vous êtes invité(e) à « ${ctx.activityName || ctx.phaseName} ». Merci de confirmer votre présence.`,
+        recipients: fresh,
+      })
+      toast.success(`${fresh.length} invitation(s) envoyée(s)`)
+      setFreeEmail(''); setPicking(false)
+      loadInvites()
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+    finally { setBusy(false) }
+  }
+
+  const inviteGroup = (g: any) =>
+    sendInvites(contacts.filter(c => (g.contactIds ?? []).includes(c.id)).map(c => ({ email: c.email, name: c.name })))
+
+  const resend = async (id: number) => { try { await notificationsApi.resend(id); loadInvites() } catch { /* */ } }
+  const cancel = async (id: number) => { if (!confirm('Retirer cet invité ?')) return; try { await notificationsApi.cancel(id); loadInvites() } catch { /* */ } }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" />Participants</span>
+        {invites.length > 0 && <span className="text-[10px] text-muted-foreground">{accepted}/{invites.length} inscrits</span>}
+        <button onClick={() => setPicking(v => !v)}
+          className="ml-auto inline-flex items-center gap-1 rounded-md border border-brand-500/40 text-brand-700 dark:text-brand-300 px-2 py-0.5 text-[10px] font-semibold hover:bg-brand-500/10">
+          <Plus className="h-3 w-3" />Inviter
+        </button>
+      </div>
+
+      {picking && (
+        <div className="rounded-lg border border-border bg-muted/20 p-2 space-y-1.5 max-h-52 overflow-y-auto">
+          {groups.length > 0 && <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Groupes</p>}
+          {groups.map(g => (
+            <button key={g.id} disabled={busy} onClick={() => inviteGroup(g)}
+              className="w-full flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-accent text-left disabled:opacity-50">
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ background: g.color || DEFAULT_COLOR }} />
+              <span className="truncate flex-1">{g.name}</span>
+              <span className="text-[9px] text-muted-foreground">{(g.contactIds ?? []).length}</span>
+            </button>
+          ))}
+          {contacts.length > 0 && <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground pt-1">Contacts</p>}
+          {contacts.map(c => {
+            const done = invitedEmails.has((c.email ?? '').toLowerCase())
+            return (
+              <button key={c.id} disabled={busy || done} onClick={() => sendInvites([{ email: c.email, name: c.name }])}
+                className="w-full flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-accent text-left disabled:opacity-50">
+                <span className="truncate">{c.name}</span>
+                <span className="text-[9px] text-muted-foreground truncate">{c.email}</span>
+                {done && <span className="ml-auto text-[9px] text-emerald-600">✓</span>}
+              </button>
+            )
+          })}
+          {contacts.length === 0 && groups.length === 0 && (
+            <p className="text-[10px] text-muted-foreground italic px-1">Aucun contact. Ajoutez-en dans l&apos;onglet « Invitations » du programme.</p>
+          )}
+          <div className="flex gap-1 pt-1 border-t border-border/60">
+            <input value={freeEmail} onChange={(e) => setFreeEmail(e.target.value)} type="email" placeholder="email@exemple.com"
+              className="flex-1 h-7 px-2 text-[11px] rounded-md border border-input bg-background" />
+            <button disabled={busy || !freeEmail.trim()} onClick={() => sendInvites([{ email: freeEmail.trim() }])}
+              className="inline-flex items-center gap-1 rounded-md bg-brand-500/10 text-brand-700 dark:text-brand-300 px-2 text-[11px] font-semibold disabled:opacity-50">
+              <Mail className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {invites.length === 0 && !picking && <p className="text-[10px] text-muted-foreground italic">Aucun participant invité.</p>}
+        {invites.map(i => {
+          const m = INVITE_STATUS[i.status] ?? INVITE_STATUS.PENDING
+          return (
+            <div key={i.id} className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-[11px]">
+              <span className="truncate flex-1" title={i.recipientEmail}>{i.recipientName || i.recipientEmail}</span>
+              <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold shrink-0 ${m.cls}`}>{m.label}</span>
+              {i.status !== 'ACCEPTED' && i.status !== 'DECLINED' && (
+                <button onClick={() => resend(i.id)} title="Renvoyer" className="text-muted-foreground hover:text-foreground shrink-0"><Send className="h-3 w-3" /></button>
+              )}
+              <button onClick={() => cancel(i.id)} title="Retirer" className="text-muted-foreground hover:text-destructive shrink-0"><X className="h-3 w-3" /></button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** Inline activity editor — used as the right panel inside a day overlay. */
+function ActivityForm({ activity, color, ctx, onUpdate, onRemove, onDuplicate, onClose }: {
   activity: Activity
   color: string
+  ctx?: InviteCtx
   onUpdate: (patch: Partial<Activity>) => void
   onRemove: () => void
+  onDuplicate: () => void
   onClose: () => void
 }) {
   const [title, setTitle]   = useState(activity.title ?? '')
@@ -1402,99 +3080,211 @@ function ActivityEditor({ activity, color, onUpdate, onRemove, onClose }: {
   const [loc, setLoc]       = useState(activity.location ?? '')
   const [resp, setResp]     = useState((activity.responsibles ?? []).join(', '))
   const [guests, setGuests] = useState((activity.guests ?? []).join(', '))
-  useEffect(() => { setTitle(activity.title ?? '') }, [activity.title])
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
+  // Re-sync drafts when a different activity becomes selected.
+  useEffect(() => { setTitle(activity.title ?? '') }, [activity.id, activity.title])
+  useEffect(() => { setDesc(activity.description ?? '') }, [activity.id])
+  useEffect(() => { setLoc(activity.location ?? '') }, [activity.id])
+  useEffect(() => { setResp((activity.responsibles ?? []).join(', ')) }, [activity.id])
+  useEffect(() => { setGuests((activity.guests ?? []).join(', ')) }, [activity.id])
   const toList = (v: string) => v.split(',').map(s => s.trim()).filter(Boolean)
+  const dur = durLabel(activity)
+  const c = activity.color || color
 
   return (
-    <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
-      className="rounded-xl bg-card text-foreground border-2 shadow-2xl p-2.5 space-y-2 cursor-default max-h-[60vh] overflow-y-auto"
-      style={{ borderColor: color }}>
-      <div className="flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full" style={{ background: color }} />
-        <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color }}>Activité</span>
-        <button onClick={onClose} className="ml-auto p-0.5 rounded hover:bg-accent text-muted-foreground" title="Fermer (Échap)">
-          <X className="h-3.5 w-3.5" />
+    <div className="h-full flex flex-col">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0" style={{ background: c + '12' }}>
+        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: c }} />
+        <span className="text-[11px] font-extrabold uppercase tracking-wider shrink-0" style={{ color: c }}>Activité</span>
+        {dur && <span className="text-[10px] font-bold text-muted-foreground tabular-nums truncate">{fmtHM(activity.startTime)}–{fmtHM(activity.endTime)} · {dur}</span>}
+        <button onClick={onClose} className="ml-auto p-1 rounded-md hover:bg-accent text-muted-foreground shrink-0" title="Désélectionner"><X className="h-4 w-4" /></button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Titre *</span>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus
+            onBlur={() => { if (title !== activity.title) onUpdate({ title }) }}
+            placeholder="Titre de l'activité" className="mt-1 w-full h-9 px-3 text-sm font-bold rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
+        </label>
+
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />Début</span>
+            <input type="time" step={900} value={fmtHM(activity.startTime)} onChange={(e) => onUpdate({ startTime: e.target.value + ':00' })}
+              className="mt-1 w-full h-9 px-2 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fin</span>
+            <input type="time" step={900} value={fmtHM(activity.endTime)} onChange={(e) => onUpdate({ endTime: e.target.value + ':00' })}
+              className="mt-1 w-full h-9 px-2 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
+          </label>
+        </div>
+
+        <ColorPicker value={activity.color || color} onChange={(hex) => onUpdate({ color: hex })} compact />
+
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />Lieu</span>
+          <input value={loc} onChange={(e) => setLoc(e.target.value)} onBlur={() => { if (loc !== (activity.location ?? '')) onUpdate({ location: loc }) }}
+            placeholder="Salle, lien visio…" className="mt-1 w-full h-9 px-3 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
+        </label>
+
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" />Responsables</span>
+          <input value={resp} onChange={(e) => setResp(e.target.value)} onBlur={() => onUpdate({ responsibles: toList(resp) })}
+            placeholder="Noms, séparés par des virgules" className="mt-1 w-full h-9 px-3 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
+        </label>
+
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><UserPlus className="h-3 w-3" />Invités</span>
+          <input value={guests} onChange={(e) => setGuests(e.target.value)} onBlur={() => onUpdate({ guests: toList(guests) })}
+            placeholder="Intervenants externes…" className="mt-1 w-full h-9 px-3 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring" />
+        </label>
+
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><FileText className="h-3 w-3" />Description</span>
+          <textarea rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} onBlur={() => { if (desc !== (activity.description ?? '')) onUpdate({ description: desc }) }}
+            placeholder="Détails, objectifs…" className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-input bg-background resize-y focus:outline-none focus:ring-2 focus:ring-ring" />
+        </label>
+
+        {ctx && (
+          <div className="pt-2 border-t border-border">
+            <ActivityParticipants ctx={ctx} />
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 px-3 py-2 border-t border-border bg-muted/20 shrink-0">
+        <button onClick={onRemove}
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-destructive hover:bg-destructive/10 px-2.5 py-1.5 rounded-lg border border-destructive/30">
+          <Trash2 className="h-3.5 w-3.5" />Supprimer
+        </button>
+        <button onClick={onDuplicate}
+          className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-accent px-2.5 py-1.5 rounded-lg border border-border">
+          <Copy className="h-3.5 w-3.5" />Dupliquer
         </button>
       </div>
-
-      {/* type chips */}
-      <div className="flex flex-wrap gap-1">
-        {ACTIVITY_TYPES.map(t => {
-          const tc = ACTIVITY_TYPE_COLOR[t]
-          const active = (activity.type ?? 'ACTIVITY') === t
-          return (
-            <button key={t} onClick={() => onUpdate({ type: t as any })}
-              className="rounded-full px-1.5 py-0.5 text-[9px] font-bold border transition-all"
-              style={active
-                ? { background: tc, color: '#fff', borderColor: tc }
-                : { color: tc, borderColor: tc + '55', background: tc + '12' }}>
-              {ACTIVITY_TYPE_LABEL[t]}
-            </button>
-          )
-        })}
-      </div>
-
-      <input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus
-        onBlur={() => { if (title !== activity.title) onUpdate({ title }) }}
-        placeholder="Titre de l'activité"
-        className="w-full h-8 px-2 text-[12px] font-bold rounded-md border bg-background" />
-
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><Clock className="h-2.5 w-2.5" />Début</span>
-          <input type="time" step={900} value={fmtHM(activity.startTime)}
-            onChange={(e) => onUpdate({ startTime: e.target.value + ':00' })}
-            className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
-        </label>
-        <label className="block">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Fin</span>
-          <input type="time" step={900} value={fmtHM(activity.endTime)}
-            onChange={(e) => onUpdate({ endTime: e.target.value + ':00' })}
-            className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
-        </label>
-      </div>
-
-      <label className="block">
-        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><MapPin className="h-2.5 w-2.5" />Lieu</span>
-        <input value={loc} onChange={(e) => setLoc(e.target.value)}
-          onBlur={() => { if (loc !== (activity.location ?? '')) onUpdate({ location: loc }) }}
-          placeholder="Salle, lien visio…"
-          className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
-      </label>
-
-      <label className="block">
-        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><Users className="h-2.5 w-2.5" />Responsables</span>
-        <input value={resp} onChange={(e) => setResp(e.target.value)}
-          onBlur={() => onUpdate({ responsibles: toList(resp) })}
-          placeholder="Noms, séparés par des virgules"
-          className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
-      </label>
-
-      <label className="block">
-        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><UserPlus className="h-2.5 w-2.5" />Invités</span>
-        <input value={guests} onChange={(e) => setGuests(e.target.value)}
-          onBlur={() => onUpdate({ guests: toList(guests) })}
-          placeholder="Intervenants externes…"
-          className="mt-0.5 w-full h-8 px-2 text-[11px] rounded-md border bg-background" />
-      </label>
-
-      <label className="block">
-        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1"><FileText className="h-2.5 w-2.5" />Description</span>
-        <textarea rows={2} value={desc} onChange={(e) => setDesc(e.target.value)}
-          onBlur={() => { if (desc !== (activity.description ?? '')) onUpdate({ description: desc }) }}
-          placeholder="Détails, objectifs…"
-          className="mt-0.5 w-full px-2 py-1 text-[11px] rounded-md border bg-background resize-y" />
-      </label>
-
-      <button onClick={() => { onRemove(); onClose() }}
-        className="w-full inline-flex items-center justify-center gap-1 text-[10px] font-bold text-destructive hover:bg-destructive/10 px-2 py-1.5 rounded-md border border-destructive/30">
-        <Trash2 className="h-3 w-3" />Supprimer l&rsquo;activité
-      </button>
     </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//                          PRESET EDITOR MODAL
+// ──────────────────────────────────────────────────────────────────────────
+
+function PresetEditorModal({ programmeId, mode, preset, onClose, onSaved }: {
+  programmeId: number
+  mode: 'create' | 'edit'
+  preset?: Preset
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [title, setTitle] = useState(preset?.title ?? '')
+  const [color, setColor] = useState(preset?.color || '#6366F1')
+  const [durationKind, setDurationKind] = useState<DurationKind>(kindOf(preset ?? { durationKind: 'day' }))
+  const [scope, setScope] = useState<'global' | 'local'>(preset?.programmeId != null ? 'local' : 'global')
+  const [saving, setSaving] = useState(false)
+  const builtIn = !!preset?.builtIn
+
+  const save = async () => {
+    if (!title.trim()) { toast.error('Titre requis'); return }
+    setSaving(true)
+    try {
+      if (mode === 'edit' && preset) {
+        await sessionPresetsApi.update(preset.id, { title: title.trim(), color, durationKind })
+        toast.success('Préset mis à jour')
+      } else {
+        await sessionPresetsApi.create({
+          programmeId: scope === 'local' ? programmeId : null,
+          title: title.trim(), color, durationKind,
+        })
+        toast.success('Préset créé')
+      }
+      onSaved()
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+    finally { setSaving(false) }
+  }
+
+  const del = async () => {
+    if (!preset || builtIn) return
+    if (!confirm(`Supprimer le préset "${preset.title}" ?`)) return
+    setSaving(true)
+    try { await sessionPresetsApi.delete(preset.id); toast.success('Préset supprimé'); onSaved() }
+    catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={onClose}>
+      <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl border-2 border-border bg-card shadow-2xl p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-brand-500" />
+          <h3 className="text-sm font-bold text-foreground">
+            {mode === 'edit' ? 'Modifier le préset' : 'Nouveau préset'}
+          </h3>
+          <button onClick={onClose} className="ml-auto p-1 rounded hover:bg-accent text-muted-foreground"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div>
+          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nom</label>
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ex. Bootcamp" className="mt-1 h-9" autoFocus />
+        </div>
+
+        <div>
+          <ColorPicker value={color} onChange={setColor} />
+          <Input value={color} onChange={(e) => setColor(e.target.value)} className="mt-1.5 h-8 font-mono text-xs" />
+        </div>
+
+        <div>
+          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Durée</label>
+          <div className="mt-1 flex gap-1.5">
+            {([['day', 'Journée', CalendarDays], ['range', 'Plage', CalendarRange]] as const).map(([k, lbl, Icon]) => (
+              <button key={k} type="button" onClick={() => setDurationKind(k)}
+                className={`flex-1 inline-flex items-center justify-center gap-1 rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
+                  durationKind === k ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-border text-muted-foreground hover:border-emerald-400'}`}>
+                <Icon className="h-3.5 w-3.5" />{lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {mode === 'create' && (
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Portée</label>
+            <div className="mt-1 flex gap-1.5">
+              {([['global', 'Global (tous les programmes)'], ['local', 'Ce programme uniquement']] as const).map(([k, lbl]) => (
+                <button key={k} type="button" onClick={() => setScope(k)}
+                  className={`flex-1 rounded-md border px-2 py-2 text-[11px] font-semibold transition-colors ${
+                    scope === k ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300' : 'border-border text-muted-foreground hover:border-brand-400'}`}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {builtIn && (
+          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <Info className="h-3 w-3" />Préset par défaut — modifiable mais non supprimable.
+          </p>
+        )}
+
+        <div className="flex items-center gap-2 pt-1">
+          {mode === 'edit' && !builtIn && (
+            <button onClick={del} disabled={saving}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-destructive hover:bg-destructive/10 px-2 py-2 rounded-md border border-destructive/30">
+              <Trash2 className="h-3.5 w-3.5" />Supprimer
+            </button>
+          )}
+          <Button onClick={save} disabled={saving} className="ml-auto gap-1.5">
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {mode === 'edit' ? 'Enregistrer' : 'Créer le préset'}
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
   )
 }

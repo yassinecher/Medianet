@@ -15,18 +15,18 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn, getInitials } from '@/lib/utils'
 
 const navItems = [
-  { label: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Assistant IA', href: '/ai-assistant', icon: Sparkles, highlight: true },
-  { label: 'Programmes', href: '/programmes', icon: FolderKanban },
-  { label: 'Candidatures', href: '/candidatures', icon: FileText },
-  { label: 'Tâches', href: '/tasks', icon: CheckSquare },
-  { label: 'Évaluation IA', href: '/ai-scoring', icon: Bot },
-  { label: 'Matching IA', href: '/ai-matching', icon: Trophy },
-  { label: 'Invitations', href: '/notifications', icon: Bell },
-  { label: 'Utilisateurs', href: '/users', icon: Users },
-  { label: 'Organisations', href: '/organizations', icon: Building2 },
-  { label: 'Page d\'accueil', href: '/landing-page', icon: Home },
-  { label: 'Paramètres', href: '/settings', icon: Settings },
+  { label: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
+  { label: 'Assistant IA', href: '/ai-assistant', icon: Sparkles, highlight: true, module: 'ai' },
+  { label: 'Programmes', href: '/programmes', icon: FolderKanban, module: 'programmes' },
+  { label: 'Candidatures', href: '/candidatures', icon: FileText, module: 'candidatures' },
+  { label: 'Tâches', href: '/tasks', icon: CheckSquare, module: 'tasks' },
+  { label: 'Évaluation IA', href: '/ai-scoring', icon: Bot, module: 'ai' },
+  { label: 'Matching IA', href: '/ai-matching', icon: Trophy, module: 'ai' },
+  { label: 'Invitations', href: '/notifications', icon: Bell, module: 'notifications' },
+  { label: 'Utilisateurs', href: '/users', icon: Users, module: 'users' },
+  { label: 'Organisations', href: '/organizations', icon: Building2, module: 'organizations' },
+  { label: 'Page d\'accueil', href: '/landing-page', icon: Home, module: 'landing' },
+  { label: 'Paramètres', href: '/settings', icon: Settings, module: 'settings' },
 ] as const
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -38,6 +38,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const handleLogout = () => { logout(); router.push('/login') }
+
+  // A module is shown only when the user holds its `{module}:read` permission.
+  // Fallback: if no permission info (older token), show everything (no lock-out).
+  const perms = (user?.permissions ?? user?.allPermissions ?? []) as string[]
+  const canSee = (m?: string) => !m || perms.length === 0 || perms.includes(`${m}:read`)
 
   const Sidebar = ({ onClose }: { onClose?: () => void }) => (
     <aside className="flex h-full w-64 flex-col border-r border-border bg-card">
@@ -54,7 +59,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-        {navItems.map((item: any) => {
+        {navItems.filter((item: any) => canSee(item.module)).map((item: any) => {
           const Icon = item.icon
           const active = pathname === item.href || pathname.startsWith(item.href + '/')
           return (

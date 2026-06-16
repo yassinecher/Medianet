@@ -20,9 +20,10 @@ import type { User } from '@/types'
 import {
   Home, FileText, CheckSquare, FolderKanban, LogOut, ChevronLeft, ChevronRight,
   Briefcase, Sparkles, GraduationCap, Menu, X, ChevronDown, Bell, User as UserIcon,
+  Building2,
 } from 'lucide-react'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
-import { useAuthStore, useUser, useActiveRole, frontofficeRolesOf, type FrontofficeRole } from '@/store/auth.store'
+import { useAuthStore, useUser, useFrontofficeRoles, usePerms, type FrontofficeRole } from '@/store/auth.store'
 import { cn, getInitials } from '@/lib/utils'
 
 const ROLE_META: Record<FrontofficeRole, { label: string; icon: any; color: string }> = {
@@ -35,22 +36,35 @@ type NavItem = {
   label: string
   href: string
   icon: any
+  /** Visible if the user holds ANY of these roles… */
   roles?: FrontofficeRole[]
+  /** …OR holds this permission slug. No constraint → always visible. */
+  perm?: string
 }
 
 const NAV: NavItem[] = [
-  { label: 'Tableau de bord',  href: '/dashboard',    icon: Home },
-  { label: 'Programmes',       href: '/programmes',   icon: FolderKanban },
-  { label: 'Mes candidatures', href: '/candidatures', icon: FileText, roles: ['PORTEUR'] },
-  { label: 'Mes tâches',       href: '/tasks',        icon: CheckSquare },
+  { label: 'Tableau de bord',  href: '/dashboard',     icon: Home },
+  { label: 'Programmes',       href: '/programmes',    icon: FolderKanban, perm: 'programmes:read' },
+  { label: 'Mes candidatures', href: '/candidatures',  icon: FileText,     perm: 'candidatures:read' },
+  { label: 'Mes organisations', href: '/organizations', icon: Building2,   perm: 'organizations:read' },
+  { label: 'Mes tâches',       href: '/tasks',         icon: CheckSquare,  perm: 'tasks:read' },
 ]
+
+/** A nav item shows when it has no constraint, or the user holds one of its
+ *  roles, or the user holds its permission — the union of role + permission. */
+function navVisible(item: NavItem, roles: FrontofficeRole[], perms: string[]): boolean {
+  if (!item.roles && !item.perm) return true
+  if (item.roles?.some((r) => roles.includes(r))) return true
+  if (item.perm && perms.includes(item.perm)) return true
+  return false
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const user = useUser()
-  const activeRole = useActiveRole()
-  const setActiveRole = useAuthStore((s) => s.setActiveRole)
+  const roles = useFrontofficeRoles()
+  const perms = usePerms()
   const logout = useAuthStore((s) => s.logout)
 
   const [collapsed, setCollapsed] = useState(false)
@@ -70,11 +84,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Close mobile sidebar on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
-  const availableRoles = frontofficeRolesOf(user)
-  const visibleNav = NAV.filter((n) => !n.roles || (activeRole && n.roles.includes(activeRole)))
+  const visibleNav = NAV.filter((n) => navVisible(n, roles, perms))
 
   const handleLogout = () => { logout(); router.push('/') }
-  const switchRole = (r: FrontofficeRole) => { setActiveRole(r); router.push('/dashboard') }
 
   return (
     <div className="min-h-screen bg-muted/20">
@@ -193,9 +205,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {/* Notifications */}
               <NotificationsButton />
 
-              {/* Avatar dropdown — holds account/role-switch/theme/logout */}
-              <AvatarMenu user={user} activeRole={activeRole} availableRoles={availableRoles}
-                onSwitchRole={switchRole} onLogout={handleLogout} />
+              {/* Avatar dropdown — account/theme/logout (no role switching) */}
+              <AvatarMenu user={user} roles={roles} onLogout={handleLogout} />
             </div>
           </div>
         </header>
@@ -272,11 +283,9 @@ function NotificationsButton() {
 
 // ── Avatar dropdown — account, theme, role, logout ──────────────────────────
 
-function AvatarMenu({ user, activeRole, availableRoles, onSwitchRole, onLogout }: {
+function AvatarMenu({ user, roles, onLogout }: {
   user: User | null
-  activeRole: FrontofficeRole | null
-  availableRoles: FrontofficeRole[]
-  onSwitchRole: (r: FrontofficeRole) => void
+  roles: FrontofficeRole[]
   onLogout: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -306,11 +315,18 @@ function AvatarMenu({ user, activeRole, availableRoles, onSwitchRole, onLogout }
           <div className="border-b border-border px-3 py-3 bg-gradient-to-br from-brand-500/5 to-purple-500/5">
             <p className="text-sm font-bold text-foreground truncate">{user.firstName} {user.lastName}</p>
             <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
-            {activeRole && (
-              <span className={cn('mt-1.5 inline-flex items-center gap-1 rounded-full bg-card border border-border px-2 py-0.5 text-[10px] font-bold', ROLE_META[activeRole].color)}>
-                {(() => { const I = ROLE_META[activeRole].icon; return <I className="h-3 w-3" /> })()}
-                {ROLE_META[activeRole].label}
-              </span>
+            {roles.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {roles.map((r) => {
+                  const I = ROLE_META[r].icon
+                  return (
+                    <span key={r} className={cn('inline-flex items-center gap-1 rounded-full bg-card border border-border px-2 py-0.5 text-[10px] font-bold', ROLE_META[r].color)}>
+                      <I className="h-3 w-3" />
+                      {ROLE_META[r].label}
+                    </span>
+                  )
+                })}
+              </div>
             )}
           </div>
 
@@ -326,27 +342,6 @@ function AvatarMenu({ user, activeRole, availableRoles, onSwitchRole, onLogout }
             <span>Thème</span>
             <AnimatedThemeToggler />
           </div>
-
-          {/* Role switcher */}
-          {availableRoles.length > 1 && (
-            <>
-              <div className="border-t border-border" />
-              <p className="px-3 pt-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Profils</p>
-              {availableRoles.map((r) => {
-                const Icon = ROLE_META[r].icon
-                const active = r === activeRole
-                return (
-                  <button key={r} type="button" onClick={() => { onSwitchRole(r); setOpen(false) }}
-                    className={cn('flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors',
-                      active ? 'bg-brand-500/10 text-brand-700 dark:text-brand-300 font-semibold' : 'hover:bg-accent text-foreground')}>
-                    <Icon className={cn('h-3.5 w-3.5', ROLE_META[r].color)} />
-                    {ROLE_META[r].label}
-                    {active && <span className="ml-auto text-[10px] text-brand-600">●</span>}
-                  </button>
-                )
-              })}
-            </>
-          )}
 
           {/* Logout */}
           <div className="border-t border-border" />

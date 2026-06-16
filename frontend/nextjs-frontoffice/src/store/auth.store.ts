@@ -17,6 +17,22 @@ export function frontofficeRolesOf(user: User | null | undefined): FrontofficeRo
   return FRONTOFFICE_ROLES.filter((r) => all.has(r))
 }
 
+/** Effective permission slugs (e.g. "candidatures:read") carried on the user. */
+export function permsOf(user: User | null | undefined): string[] {
+  if (!user) return []
+  return (user.permissions ?? user.allPermissions ?? []) as string[]
+}
+
+/**
+ * The single role used for role-flavored *content* (dashboard hero, copy).
+ * Auto-derived — the user never picks it. Preference order = FRONTOFFICE_ROLES
+ * (PORTEUR → MENTOR → JURY). The *layout* itself is driven by the full role +
+ * permission set, not this single value.
+ */
+export function primaryRoleOf(user: User | null | undefined): FrontofficeRole | null {
+  return frontofficeRolesOf(user)[0] ?? null
+}
+
 interface AuthStore {
   user: User | null
   token: string | null
@@ -37,10 +53,9 @@ export const useAuthStore = create<AuthStore>()(
       isAuthenticated: false,
       setAuth: (user, token) => {
         Cookies.set('token', token, { expires: 7, sameSite: 'Lax' })
-        // Auto-pick the active role if only one frontoffice role is available.
-        const fo = frontofficeRolesOf(user)
-        const activeRole: FrontofficeRole | null = fo.length === 1 ? fo[0] : null
-        set({ user, token, isAuthenticated: true, activeRole })
+        // The active role is auto-derived (primary role); the user never chooses.
+        // The layout shows the union of all their roles + permissions regardless.
+        set({ user, token, isAuthenticated: true, activeRole: primaryRoleOf(user) })
       },
       setActiveRole: (role) => set({ activeRole: role }),
       logout: () => {
@@ -58,6 +73,11 @@ export const useAuthStore = create<AuthStore>()(
 
 export const useUser = () => useAuthStore((s) => s.user)
 export const useActiveRole = () => useAuthStore((s) => s.activeRole)
-export const useIsPorteur = () => useAuthStore((s) => s.activeRole === 'PORTEUR')
-export const useIsMentor = () => useAuthStore((s) => s.activeRole === 'MENTOR')
-export const useIsJury = () => useAuthStore((s) => s.activeRole === 'JURY')
+/** All frontoffice roles the user holds (drives layout/nav visibility). */
+export const useFrontofficeRoles = () => useAuthStore((s) => frontofficeRolesOf(s.user))
+/** Effective permission slugs the user holds (drives layout/nav visibility). */
+export const usePerms = () => useAuthStore((s) => permsOf(s.user))
+// Membership-based (true whenever the user HOLDS the role, not just "active").
+export const useIsPorteur = () => useAuthStore((s) => frontofficeRolesOf(s.user).includes('PORTEUR'))
+export const useIsMentor = () => useAuthStore((s) => frontofficeRolesOf(s.user).includes('MENTOR'))
+export const useIsJury = () => useAuthStore((s) => frontofficeRolesOf(s.user).includes('JURY'))

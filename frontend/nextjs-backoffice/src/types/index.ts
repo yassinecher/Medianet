@@ -7,6 +7,12 @@ export interface User {
   role: string
   /** Full set of role names assigned to the user */
   roles?: string[]
+  /** Effective permission slugs from the login payload (AuthResponse.permissions) */
+  permissions?: string[]
+  /** Effective permission slugs (direct + role-inherited) — UserDto field */
+  allPermissions?: string[]
+  /** Direct permission slugs (granted to the user beyond their roles) */
+  directPermissions?: string[]
   phone?: string
   /** Whether the account is enabled (legacy alias) */
   enabled?: boolean

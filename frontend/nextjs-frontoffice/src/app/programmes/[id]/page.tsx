@@ -10,8 +10,9 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { programmesApi } from '@/lib/api'
-import { useUser } from '@/store/auth.store'
+import { useUser, useAuthStore } from '@/store/auth.store'
 import { Navbar } from '@/components/layout/Navbar'
+import { AppShell } from '@/components/layout/AppShell'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { NumberTicker } from '@/components/magicui/number-ticker'
 import { Button } from '@/components/ui/button'
@@ -52,6 +53,16 @@ export default function ProgrammeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const user = useUser()
   const router = useRouter()
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+  // Logged-in users see the programme inside the dashboard shell (sidebar);
+  // anonymous visitors keep the marketing navbar. Wait for hydration to avoid
+  // flashing the wrong chrome.
+  const wrap = (node: React.ReactNode) =>
+    hydrated && isAuthenticated
+      ? <AppShell>{node}</AppShell>
+      : <div className="min-h-screen bg-background"><Navbar />{node}</div>
   const [programme, setProgramme] = useState<Programme | null>(null)
   const [phases, setPhases] = useState<Phase[]>([])
   const [criteria, setCriteria] = useState<Criteria[]>([])
@@ -94,9 +105,8 @@ export default function ProgrammeDetailPage() {
   )
   const activeCriteria = criteria.filter((c) => c.active)
 
-  if (loading) return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
+  if (loading) return wrap(
+    <>
       <Skeleton className="h-72 w-full" />
       <main className="mx-auto max-w-6xl px-4 py-8 space-y-6">
         <div className="grid gap-6 lg:grid-cols-3">
@@ -106,17 +116,17 @@ export default function ProgrammeDetailPage() {
           <Skeleton className="h-80 rounded-2xl" />
         </div>
       </main>
-    </div>
+    </>
   )
 
   if (!programme) return null
 
-  const isOpen = programme.status === 'OPEN'
+  // Accepting candidatures = inside the candidature-session window (computed by the API);
+  // fall back to the raw OPEN status for older payloads.
+  const isOpen = programme.acceptingApplications ?? (programme.status === 'OPEN')
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-
+  return wrap(
+    <>
       {/* ── Hero ── */}
       <div className="relative w-full overflow-hidden">
         {/* Banner */}
@@ -217,6 +227,20 @@ export default function ProgrammeDetailPage() {
 
           {/* Left column — 2/3 */}
           <div className="space-y-10 lg:col-span-2">
+
+            {/* Empty programme — friendly placeholder instead of a blank column */}
+            {!programme.description && !(programme.sectors?.length) && !(programme.objectives?.length)
+              && phases.length === 0 && !(programme.benefits?.length) && activeCriteria.length === 0
+              && partners.length === 0 && (
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-muted/20 px-6 py-16 text-center">
+                <BookOpen className="h-10 w-10 text-muted-foreground opacity-30" />
+                <p className="font-semibold text-foreground">Programme en préparation</p>
+                <p className="text-sm text-muted-foreground max-w-md">
+                  Les détails de ce programme (description, calendrier, critères de sélection)
+                  seront publiés prochainement. Revenez bientôt !
+                </p>
+              </div>
+            )}
 
             {/* Description */}
             {programme.description && (
@@ -443,6 +467,6 @@ export default function ProgrammeDetailPage() {
           </div>
         </div>
       </main>
-    </div>
+    </>
   )
 }

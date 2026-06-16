@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate, statusColor } from '@/lib/utils'
+import { useCan } from '@/hooks/useCan'
 import type { Programme } from '@/types'
 
 const statusLabel: Record<string, string> = { DRAFT: 'Brouillon', OPEN: 'Ouvert', CLOSED: 'Fermé', ARCHIVED: 'Archivé' }
@@ -21,6 +22,7 @@ export default function ProgrammesPage() {
   const [programmes, setProgrammes] = useState<Programme[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const { can } = useCan()
 
   useEffect(() => {
     programmesApi.list().then((r) => setProgrammes(r.data?.content ?? r.data ?? [])).finally(() => setLoading(false))
@@ -46,9 +48,11 @@ export default function ProgrammesPage() {
             <h1 className="text-2xl font-bold text-foreground">Programmes</h1>
             <p className="text-muted-foreground">{filtered.length} programme(s)</p>
           </div>
-          <Button variant="brand" onClick={() => router.push('/programmes/new')}>
-            <Plus className="h-4 w-4" />Nouveau programme
-          </Button>
+          {can('programmes:create') && (
+            <Button variant="brand" onClick={() => router.push('/programmes/new')}>
+              <Plus className="h-4 w-4" />Nouveau programme
+            </Button>
+          )}
         </motion.div>
 
         <div className="relative">
@@ -82,9 +86,11 @@ export default function ProgrammesPage() {
                       <Link href={`/programmes/${p.id}`}>
                         <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
                       </Link>
-                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id, p.title ?? p.name ?? '')}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {can('programmes:delete') && (
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id, p.title ?? p.name ?? '')}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </MagicCard>

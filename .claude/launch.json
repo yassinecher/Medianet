@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backoffice-dev2",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "Set-Location frontend/nextjs-backoffice; npx next dev -p $env:PORT"],
+      "port": 3006,
+      "autoPort": true
+    }
+  ]
+}

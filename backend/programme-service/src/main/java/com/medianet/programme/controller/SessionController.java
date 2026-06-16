@@ -34,7 +34,7 @@ public class SessionController {
     }
 
     @PostMapping("/sessions")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammePhaseDto> createSession(
             @PathVariable Long programmeId,
             @Valid @RequestBody CreatePhaseRequest req) {
@@ -42,7 +42,7 @@ public class SessionController {
     }
 
     @PutMapping("/sessions/{sessionId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<ProgrammePhaseDto> updateSession(
             @PathVariable Long programmeId,
             @PathVariable Long sessionId,
@@ -51,7 +51,7 @@ public class SessionController {
     }
 
     @DeleteMapping("/sessions/{sessionId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Void> deleteSession(
             @PathVariable Long programmeId,
             @PathVariable Long sessionId) {
@@ -69,7 +69,7 @@ public class SessionController {
     }
 
     @PostMapping("/sessions/{sessionId}/days")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<SessionDayDto> addDay(
             @PathVariable Long programmeId,
             @PathVariable Long sessionId,
@@ -78,7 +78,7 @@ public class SessionController {
     }
 
     @PutMapping("/sessions/{sessionId}/days/{dayId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<SessionDayDto> updateDay(
             @PathVariable Long programmeId,
             @PathVariable Long sessionId,
@@ -88,7 +88,7 @@ public class SessionController {
     }
 
     @DeleteMapping("/sessions/{sessionId}/days/{dayId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Void> deleteDay(
             @PathVariable Long programmeId,
             @PathVariable Long sessionId,
@@ -100,7 +100,7 @@ public class SessionController {
     // ── Activities ───────────────────────────────────────────────────────────
 
     @PostMapping("/sessions/{sessionId}/days/{dayId}/activities")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<SessionActivityDto> addActivity(
             @PathVariable Long programmeId,
             @PathVariable Long sessionId,
@@ -111,7 +111,7 @@ public class SessionController {
     }
 
     @PutMapping("/sessions/{sessionId}/days/{dayId}/activities/{activityId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<SessionActivityDto> updateActivity(
             @PathVariable Long programmeId,
             @PathVariable Long sessionId,
@@ -123,7 +123,7 @@ public class SessionController {
     }
 
     @DeleteMapping("/sessions/{sessionId}/days/{dayId}/activities/{activityId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Void> deleteActivity(
             @PathVariable Long programmeId,
             @PathVariable Long sessionId,

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Users, UserCheck, UserX, Shield, Mail, Check, X,
-  Sparkles, Briefcase, GraduationCap, Crown
+  Sparkles, Briefcase, GraduationCap, Crown, Pencil, Lock, KeyRound, Save
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { usersApi } from '@/lib/api'
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate } from '@/lib/utils'
+import { useCan } from '@/hooks/useCan'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,26 @@ const roleBadge: Record<string, string> = {
   ADMIN:   'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30',
 }
 
+// CRUD columns for the permission matrix (read first — it's auto-granted by C/U/D).
+const ACTIONS = [
+  { key: 'read', short: 'R', label: 'Lire' },
+  { key: 'create', short: 'C', label: 'Créer' },
+  { key: 'update', short: 'U', label: 'Modifier' },
+  { key: 'delete', short: 'D', label: 'Supprimer' },
+] as const
+const MODULE_LABEL: Record<string, string> = {
+  dashboard: 'Tableau de bord', programmes: 'Programmes', candidatures: 'Candidatures',
+  tasks: 'Tâches', notifications: 'Invitations', users: 'Utilisateurs',
+  organizations: 'Organisations', landing: 'Page d\'accueil', ai: 'IA',
+  reports: 'Rapports', settings: 'Paramètres', sessions: 'Sessions',
+}
+
+// Modules a NON-admin user may hold (front-office features). Admin-only modules
+// (dashboard, users, organizations, landing, ai, reports, settings, notifications)
+// are hidden in the matrix and stripped when editing a non-admin user.
+const NON_ADMIN_MODULES = ['programmes', 'candidatures', 'sessions', 'tasks', 'organizations']
+const isFrontofficeSlug = (slug: string) => NON_ADMIN_MODULES.includes(slug.split(':')[0])
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function UsersPage() {
@@ -55,13 +76,28 @@ export default function UsersPage() {
   const [editingRolesFor, setEditingRolesFor] = useState<number | null>(null)
   const [draftRoles, setDraftRoles] = useState<string[]>([])
   const [savingRoles, setSavingRoles] = useState(false)
+  // Edit user data
+  const [editingDataFor, setEditingDataFor] = useState<number | null>(null)
+  const [draftData, setDraftData] = useState({ firstName: '', lastName: '', email: '' })
+  const [savingData, setSavingData] = useState(false)
+  // Permission matrix
+  const [catalog, setCatalog] = useState<Record<string, string>>({})
+  const [editingPermsFor, setEditingPermsFor] = useState<number | null>(null)
+  const [draftPerms, setDraftPerms] = useState<Set<string>>(new Set())
+  const [permInherited, setPermInherited] = useState<Set<string>>(new Set())
+  const [savingPerms, setSavingPerms] = useState(false)
+  const { can } = useCan()
 
   useEffect(() => {
     usersApi.list()
       .then((r) => setUsers(r.data?.content ?? r.data ?? []))
       .catch(() => toast.error('Impossible de charger les utilisateurs'))
       .finally(() => setLoading(false))
+    usersApi.permissionsCatalog().then((r) => setCatalog(r.data ?? {})).catch(() => {})
   }, [])
+
+  const modules = Array.from(new Set(Object.keys(catalog).map((s) => s.split(':')[0])))
+    .filter((m) => MODULE_LABEL[m]).sort()
 
   const handleToggle = async (user: User) => {
     const willDisable = user.active !== false
@@ -96,6 +132,63 @@ export default function UsersPage() {
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'Erreur')
     } finally { setSavingRoles(false) }
+  }
+
+  // ── Edit user data ─────────────────────────────────────────────────────────
+  const openDataEditor = (u: User) => {
+    setEditingDataFor(u.id); setEditingRolesFor(null); setEditingPermsFor(null)
+    setDraftData({ firstName: u.firstName ?? '', lastName: u.lastName ?? '', email: u.email ?? '' })
+  }
+  const saveData = async (userId: number) => {
+    setSavingData(true)
+    try {
+      const res = await usersApi.updateUser(userId, draftData)
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, ...res.data } : u))
+      toast.success('Utilisateur mis à jour'); setEditingDataFor(null)
+    } catch (err: any) { toast.error(err.response?.data?.message ?? 'Erreur') } finally { setSavingData(false) }
+  }
+
+  // ── Permission matrix ────────────────────────────────────────────────────────
+  const openPermsEditor = async (u: User) => {
+    setEditingPermsFor(u.id); setEditingRolesFor(null); setEditingDataFor(null)
+    setDraftPerms(new Set()); setPermInherited(new Set())
+    const isAdminUser = (u.roles ?? [u.role]).includes('ADMIN')
+    try {
+      const r = await usersApi.get(u.id)
+      let direct: string[] = r.data?.directPermissions ?? []
+      let all: string[] = r.data?.allPermissions ?? []
+      // A non-admin user can only hold front-office permissions. Drop any admin
+      // module perms from the draft so saving (syncPermissions) removes them.
+      if (!isAdminUser) {
+        direct = direct.filter(isFrontofficeSlug)
+        all = all.filter(isFrontofficeSlug)
+      }
+      setDraftPerms(new Set(direct))
+      setPermInherited(new Set(all.filter((s) => !direct.includes(s)))) // role-inherited
+    } catch { /* keep empties */ }
+  }
+  const togglePerm = (module: string, action: string) => {
+    const slug = `${module}:${action}`
+    setDraftPerms((prev) => {
+      const next = new Set(prev)
+      if (next.has(slug)) {
+        // Read is locked while any C/U/D of the module is selected.
+        if (action === 'read' && ['create', 'update', 'delete'].some((a) => next.has(`${module}:${a}`))) return next
+        next.delete(slug)
+      } else {
+        next.add(slug)
+        if (action !== 'read' && catalog[`${module}:read`]) next.add(`${module}:read`) // auto-read
+      }
+      return next
+    })
+  }
+  const savePerms = async (userId: number) => {
+    setSavingPerms(true)
+    try {
+      const res = await usersApi.syncPermissions(userId, Array.from(draftPerms))
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, ...res.data } : u))
+      toast.success('Permissions mises à jour'); setEditingPermsFor(null)
+    } catch (err: any) { toast.error(err.response?.data?.message ?? 'Erreur') } finally { setSavingPerms(false) }
   }
 
   // ── Filtering ──────────────────────────────────────────────────────────
@@ -183,7 +276,12 @@ export default function UsersPage() {
           <div className="space-y-2">
             {filtered.map((u, i) => {
               const userRoles = u.roles ?? [u.role]
-              const isEditing = editingRolesFor === u.id
+              const isUserAdmin = userRoles.includes('ADMIN')
+              const permModules = isUserAdmin ? modules : modules.filter((m) => NON_ADMIN_MODULES.includes(m))
+              const isEditingRoles = editingRolesFor === u.id
+              const isEditingData = editingDataFor === u.id
+              const isEditingPerms = editingPermsFor === u.id
+              const anyEditing = isEditingRoles || isEditingData || isEditingPerms
               const disabled = u.active === false
               return (
                 <motion.div key={u.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}>
@@ -201,7 +299,7 @@ export default function UsersPage() {
                           <p className={`font-medium ${disabled ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
                             {u.firstName} {u.lastName}
                           </p>
-                          {!isEditing && userRoles.map((r) => (
+                          {!anyEditing && userRoles.map((r) => (
                             <span key={r} className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${roleBadge[r] ?? 'bg-muted text-muted-foreground border-border'}`}>
                               {roleLabel(r)}
                             </span>
@@ -215,11 +313,17 @@ export default function UsersPage() {
                           {u.createdAt && <span>· Inscrit {formatDate(u.createdAt)}</span>}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {!isEditing && (
+                      <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                        {!anyEditing && can('users:update') && (
                           <>
+                            <Button variant="ghost" size="sm" onClick={() => openDataEditor(u)} className="gap-1">
+                              <Pencil className="h-3.5 w-3.5" />Modifier
+                            </Button>
                             <Button variant="ghost" size="sm" onClick={() => openRolesEditor(u)} className="gap-1">
                               <Shield className="h-3.5 w-3.5" />Rôles
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openPermsEditor(u)} className="gap-1">
+                              <KeyRound className="h-3.5 w-3.5" />Permissions
                             </Button>
                             <Button variant="ghost" size="sm"
                               className={disabled ? 'text-green-600 hover:text-green-600' : 'text-destructive hover:text-destructive'}
@@ -233,8 +337,8 @@ export default function UsersPage() {
 
                     {/* Inline role editor */}
                     <AnimatePresence>
-                      {isEditing && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                      {isEditingRoles && (
+                        <motion.div key="roles" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                           <div className="border-t border-border mt-3 pt-3 space-y-3">
                             <p className="text-xs font-medium text-muted-foreground">Choisir les rôles de cet utilisateur :</p>
@@ -263,6 +367,80 @@ export default function UsersPage() {
                             <p className="text-[10px] text-muted-foreground">
                               ⚠ Modifier le rôle d'un utilisateur change ses permissions immédiatement (la session JWT en cours reste valable jusqu'à expiration).
                             </p>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {isEditingData && (
+                        <motion.div key="data" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                          <div className="border-t border-border mt-3 pt-3 space-y-3">
+                            <p className="text-xs font-medium text-muted-foreground">Modifier les données de l'utilisateur :</p>
+                            <div className="grid gap-2 sm:grid-cols-3">
+                              <Input placeholder="Prénom" value={draftData.firstName} onChange={(e) => setDraftData((d) => ({ ...d, firstName: e.target.value }))} />
+                              <Input placeholder="Nom" value={draftData.lastName} onChange={(e) => setDraftData((d) => ({ ...d, lastName: e.target.value }))} />
+                              <Input type="email" placeholder="Email" value={draftData.email} onChange={(e) => setDraftData((d) => ({ ...d, email: e.target.value }))} />
+                            </div>
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={() => saveData(u.id)} disabled={savingData} className="gap-1.5"><Save className="h-3.5 w-3.5" />Enregistrer</Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingDataFor(null)}>Annuler</Button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {isEditingPerms && (
+                        <motion.div key="perms" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                          <div className="border-t border-border mt-3 pt-3 space-y-3">
+                            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                              <KeyRound className="h-3.5 w-3.5" />Permissions directes — cocher C/U/D ajoute « Lire » automatiquement ; les permissions héritées d'un rôle (<Lock className="inline h-3 w-3" />) sont verrouillées.
+                            </p>
+                            {!isUserAdmin && (
+                              <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                                Utilisateur non-admin : seules les permissions front-office (Programmes, Candidatures, Sessions, Tâches, Organisations) sont attribuables. Les modules d'administration sont réservés aux administrateurs.
+                              </p>
+                            )}
+                            <div className="overflow-x-auto rounded-lg border border-border">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-muted/40 text-muted-foreground">
+                                    <th className="text-left font-medium py-1.5 px-2">Module</th>
+                                    {ACTIONS.map((a) => <th key={a.key} className="px-2 py-1.5 font-medium" title={a.label}>{a.short}</th>)}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {permModules.map((m) => (
+                                    <tr key={m} className="border-t border-border/50">
+                                      <td className="py-1.5 px-2 font-medium text-foreground">{MODULE_LABEL[m] ?? m}</td>
+                                      {ACTIONS.map((a) => {
+                                        const slug = `${m}:${a.key}`
+                                        const exists = !!catalog[slug]
+                                        const inherited = permInherited.has(slug)
+                                        const checked = inherited || draftPerms.has(slug)
+                                        const lockedRead = a.key === 'read' && ['create', 'update', 'delete'].some((x) => draftPerms.has(`${m}:${x}`))
+                                        const cellDisabled = !exists || inherited || lockedRead
+                                        return (
+                                          <td key={a.key} className="px-2 py-1.5 text-center">
+                                            {exists ? (
+                                              <span className="inline-flex items-center justify-center gap-0.5">
+                                                <input type="checkbox" checked={checked} disabled={cellDisabled}
+                                                  onChange={() => togglePerm(m, a.key)} className="accent-brand-500 h-4 w-4 disabled:opacity-50" />
+                                                {inherited && <Lock className="h-3 w-3 text-muted-foreground" />}
+                                              </span>
+                                            ) : <span className="text-muted-foreground/30">—</span>}
+                                          </td>
+                                        )
+                                      })}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={() => savePerms(u.id)} disabled={savingPerms} className="gap-1.5"><Save className="h-3.5 w-3.5" />Enregistrer</Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingPermsFor(null)}>Annuler</Button>
+                            </div>
                           </div>
                         </motion.div>
                       )}

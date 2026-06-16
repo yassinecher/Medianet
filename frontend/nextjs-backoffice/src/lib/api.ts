@@ -67,6 +67,18 @@ export const sessionsApi = {
     api.delete(`/api/programmes/${programmeId}/sessions/${sid}/days/${dayId}/activities/${aid}`),
 }
 
+/** Reusable session presets for the Parcours library (global + per-programme). */
+export const sessionPresetsApi = {
+  /** Global presets + (optionally) those local to a programme. */
+  list:   (programmeId?: number) =>
+    api.get('/api/session-presets', { params: programmeId != null ? { programmeId } : {} }),
+  create: (data: { programmeId?: number | null; sessionType?: string; title: string; color?: string; durationKind?: string; sortOrder?: number }) =>
+    api.post('/api/session-presets', data),
+  update: (id: number, data: Partial<{ sessionType: string; title: string; color: string; durationKind: string; sortOrder: number }>) =>
+    api.put(`/api/session-presets/${id}`, data),
+  delete: (id: number) => api.delete(`/api/session-presets/${id}`),
+}
+
 /** Catalog of all session types — drives the SessionType dropdown. */
 export const SESSION_TYPES = [
   'CANDIDATURE_SUBMISSION',
@@ -110,6 +122,21 @@ export type OrganizationType = (typeof ORGANIZATION_TYPES)[number]
 
 export const MEMBER_TYPES = ['INTERNAL', 'EXTERNAL'] as const
 export type MemberType = (typeof MEMBER_TYPES)[number]
+
+/** Reusable named application-form templates (saved custom schemas). */
+export const formTemplatesApi = {
+  list:   () => api.get('/api/form-templates'),
+  create: (data: { name: string; schemaJson: string }) => api.post('/api/form-templates', data),
+  delete: (id: number) => api.delete(`/api/form-templates/${id}`),
+}
+
+/** Reusable parcours templates: full session structures with relative dates. */
+export const parcoursTemplatesApi = {
+  list:   () => api.get('/api/parcours-templates'),
+  create: (data: { name: string; structureJson: string; sessionCount: number }) =>
+    api.post('/api/parcours-templates', data),
+  delete: (id: number) => api.delete(`/api/parcours-templates/${id}`),
+}
 
 export const partnersApi = {
   list: () => api.get('/api/partners'),
@@ -192,6 +219,58 @@ export const adminAiApi = {
         }>
       }
     }>('/api/admin-ai/chat', data, { signal }),
+  /**
+   * Live variant of chat — POSTs to the SSE endpoint and invokes `onEvent` for
+   * each named event (`status`, `tool_start`, `tool_end`, `action_proposed`,
+   * `text`, `done`, `error`). Resolves once the stream closes. Throws before
+   * the first event if the endpoint is unreachable (caller falls back to the
+   * blocking chat()).
+   */
+  chatStream: async (
+    data: { conversationId?: number; message: string },
+    onEvent: (type: string, payload: any) => void,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const token = Cookies.get('admin_token')
+    const res = await fetch(`${API_URL}/api/admin-ai/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(data),
+      signal,
+    })
+    if (!res.ok || !res.body) throw new Error(`stream HTTP ${res.status}`)
+    const ct = res.headers.get('content-type') ?? ''
+    if (!ct.includes('text/event-stream')) throw new Error(`unexpected content-type: ${ct}`)
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      // SSE frames are separated by a blank line
+      let idx: number
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, idx)
+        buf = buf.slice(idx + 2)
+        let eventName = 'message'
+        const dataLines: string[] = []
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim()
+          else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+        }
+        if (dataLines.length === 0) continue
+        let payload: any = dataLines.join('\n')
+        try { payload = JSON.parse(payload) } catch { /* keep raw string */ }
+        onEvent(eventName, payload)
+      }
+    }
+  },
   /** Execute a (possibly edited) action plan from the wizard. */
   executePlan: (data: { conversationId?: number; plan: any }) =>
     api.post<{ ok: number; failed: number; results: any[] }>('/api/admin-ai/plan/execute', data),
@@ -231,10 +310,17 @@ export const candidaturesApi = {
   /** ADMIN final decision */
   accept: (id: number) => api.patch(`/api/candidatures/${id}/accept`),
   reject: (id: number, reason: string) => api.patch(`/api/candidatures/${id}/reject`, { reason }),
-  assignJury: (id: number, data: { juryAssignments: { juryId: number; juryEmail: string; juryName: string }[] }) =>
+  assignJury: (id: number, data: { juryAssignments: { juryId?: number; juryEmail: string; juryName: string }[]; phaseId?: number }) =>
     api.post(`/api/candidatures/${id}/assign-jury`, data),
   aiScore: (id: number) => api.post(`/api/ai/score/${id}`),
   aiMatch: (candidatureId: number) => api.post(`/api/ai/match/${candidatureId}`),
+  /** Saved candidature-list versions (shortlists) for the Présélection session */
+  listSelections:  (programmeId: number) => api.get(`/api/candidatures/programme/${programmeId}/selections`),
+  createSelection: (programmeId: number, data: { name: string; candidatureIds: number[] }) =>
+    api.post(`/api/candidatures/programme/${programmeId}/selections`, data),
+  updateSelection: (id: number, data: { name?: string; candidatureIds?: number[] }) =>
+    api.put(`/api/candidatures/selections/${id}`, data),
+  deleteSelection: (id: number) => api.delete(`/api/candidatures/selections/${id}`),
 }
 
 export const tasksApi = {
@@ -271,14 +357,39 @@ export const notificationsApi = {
   resend: (id: number) => api.post(`/api/notifications/invitations/${id}/resend`),
   /** Cancel / delete an invitation (token becomes invalid) */
   cancel: (id: number) => api.delete(`/api/notifications/invitations/${id}`),
+  /** Invitations tied to a specific session (phase) / activity */
+  byPhase: (phaseId: number) => api.get(`/api/notifications/invitations/phase/${phaseId}`),
+  byActivity: (activityId: number) => api.get(`/api/notifications/invitations/activity/${activityId}`),
   /** Freeform email to a list of addresses */
   sendEmail: (data: unknown) => api.post('/api/notifications/email/send', data),
+}
+
+/** Managed contact list — reusable invitees curated by admins. */
+export const contactsApi = {
+  list:   () => api.get('/api/notifications/contacts'),
+  create: (data: { name: string; email: string; organization?: string; tag?: string }) =>
+    api.post('/api/notifications/contacts', data),
+  update: (id: number, data: Partial<{ name: string; email: string; organization: string; tag: string }>) =>
+    api.put(`/api/notifications/contacts/${id}`, data),
+  delete: (id: number) => api.delete(`/api/notifications/contacts/${id}`),
+}
+
+/** Mailing groups / lists — named sets of contact ids. */
+export const contactGroupsApi = {
+  list:   () => api.get('/api/notifications/contact-groups'),
+  create: (data: { name: string; color?: string; contactIds?: number[] }) =>
+    api.post('/api/notifications/contact-groups', data),
+  update: (id: number, data: Partial<{ name: string; color: string; contactIds: number[] }>) =>
+    api.put(`/api/notifications/contact-groups/${id}`, data),
+  delete: (id: number) => api.delete(`/api/notifications/contact-groups/${id}`),
 }
 
 export const usersApi = {
   list: (params?: object) => api.get('/api/auth/users', { params }),
   byRole: (role: string) => api.get(`/api/auth/users/role/${role}`),
   get: (id: number) => api.get(`/api/auth/users/${id}`),
+  /** Look up a single user by email (404 when no account exists) */
+  byEmail: (email: string) => api.get('/api/auth/users/by-email', { params: { email } }),
   /** Toggle active/disabled */
   toggleActive: (id: number) => api.patch(`/api/auth/users/${id}/toggle-active`),
   /** Set the single primary role (PORTEUR/JURY/MENTOR/ADMIN) */
@@ -289,6 +400,13 @@ export const usersApi = {
   assignRoles: (id: number, roles: string[]) => api.post(`/api/auth/users/${id}/roles/assign`, { roles }),
   /** Remove specific roles */
   removeRoles: (id: number, roles: string[]) => api.post(`/api/auth/users/${id}/roles/remove`, { roles }),
+  /** Edit a user's basic data (name + email) */
+  updateUser: (id: number, data: { firstName?: string; lastName?: string; email?: string }) =>
+    api.put(`/api/auth/users/${id}`, data),
+  /** Direct permission management (server auto-adds read for create/update/delete) */
+  grantPermissions:  (id: number, permissions: string[]) => api.post(`/api/auth/users/${id}/permissions/grant`, { permissions }),
+  revokePermissions: (id: number, permissions: string[]) => api.post(`/api/auth/users/${id}/permissions/revoke`, { permissions }),
+  syncPermissions:   (id: number, permissions: string[]) => api.put(`/api/auth/users/${id}/permissions`, { permissions }),
   /** Catalog endpoints */
   rolesCatalog: () => api.get('/api/auth/roles'),
   permissionsCatalog: () => api.get('/api/auth/permissions'),

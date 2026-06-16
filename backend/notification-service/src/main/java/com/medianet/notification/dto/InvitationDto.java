@@ -20,6 +20,8 @@ public class InvitationDto {
     private String programmeName;
     private Long phaseId;
     private String phaseName;
+    private Long activityId;
+    private String activityName;
     private String recipientEmail;
     private String recipientName;
     private String subject;

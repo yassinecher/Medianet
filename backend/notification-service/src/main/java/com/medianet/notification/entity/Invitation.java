@@ -40,6 +40,9 @@ public class Invitation {
     private String programmeName;
     private Long phaseId;
     private String phaseName;
+    /** Optional activity (within a session/day) this invite is for. */
+    private Long activityId;
+    private String activityName;
 
     // ── Recipient ─────────────────────────────────────────────────────────────
     @Column(nullable = false)

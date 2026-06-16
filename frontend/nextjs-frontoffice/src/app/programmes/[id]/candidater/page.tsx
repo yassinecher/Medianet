@@ -9,7 +9,7 @@ import {
 import toast from 'react-hot-toast'
 import { programmesApi, candidaturesApi } from '@/lib/api'
 import { useUser } from '@/store/auth.store'
-import { Navbar } from '@/components/layout/Navbar'
+import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Programme, FormTemplate } from '@/types'
@@ -720,12 +720,35 @@ export default function CandidaterPage() {
   }
 
   if (loading) return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
-    </div>
+    <AppShell>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
+      </div>
+    </AppShell>
   )
 
   if (!programme) return null
+
+  // Applications are only possible during the candidature session (server-enforced too).
+  if ((programme as any).acceptingApplications === false) {
+    return (
+      <AppShell>
+        <div className="mx-auto max-w-xl px-4 py-20 text-center">
+          <div className="rounded-2xl border border-border bg-card p-8">
+            <p className="mb-3 text-4xl">🔒</p>
+            <h1 className="mb-2 text-xl font-bold text-foreground">Candidatures fermées</h1>
+            <p className="mb-5 text-sm text-muted-foreground">
+              Les candidatures pour «&nbsp;{programme.title}&nbsp;» ne sont pas ouvertes actuellement.
+              Elles ne sont possibles que pendant la session de candidature.
+            </p>
+            <Button onClick={() => router.push(`/programmes/${id}`)} className="gap-2">
+              <ArrowLeft className="h-4 w-4" />Retour au programme
+            </Button>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
 
   const programmeSectors = programme.sectors ?? []
   const customSchema: CustomFormSchema | null = parseSchema((programme as any).customFormSchema)
@@ -749,9 +772,7 @@ export default function CandidaterPage() {
     : null
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-
+    <AppShell>
       {/* Header */}
       <div className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="mx-auto max-w-4xl px-4 py-4">
@@ -896,6 +917,6 @@ export default function CandidaterPage() {
           </div>
         </div>
       </main>
-    </div>
+    </AppShell>
   )
 }

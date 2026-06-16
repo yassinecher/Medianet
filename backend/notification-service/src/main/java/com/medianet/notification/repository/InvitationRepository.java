@@ -18,6 +18,7 @@ public interface InvitationRepository extends JpaRepository<Invitation, Long> {
     List<Invitation> findByProgrammeIdAndTypeOrderByCreatedAtDesc(Long programmeId, InvitationType type);
     List<Invitation> findByProgrammeIdAndStatusOrderByCreatedAtDesc(Long programmeId, InvitationStatus status);
     List<Invitation> findByPhaseIdOrderByCreatedAtDesc(Long phaseId);
+    List<Invitation> findByActivityIdOrderByCreatedAtDesc(Long activityId);
     List<Invitation> findByRecipientEmailOrderByCreatedAtDesc(String recipientEmail);
     List<Invitation> findAllByOrderByCreatedAtDesc();
 

@@ -41,7 +41,7 @@ public class CandidatureController {
 
     /** All candidatures — admin/jury, optionally filtered by ?status= */
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('JURY')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('candidatures:update') or hasAuthority('candidatures:read') or hasRole('JURY')")
     public ResponseEntity<List<CandidatureDto>> getAll(
             @RequestParam(required = false) CandidatureStatus status) {
         return ResponseEntity.ok(candidatureService.getAllCandidatures(status));
@@ -49,7 +49,7 @@ public class CandidatureController {
 
     /** Candidatures for a specific programme — admin/jury */
     @GetMapping("/programme/{programmeId}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('JURY')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('candidatures:update') or hasAuthority('candidatures:read') or hasRole('JURY')")
     public ResponseEntity<List<CandidatureDto>> getByProgramme(
             @PathVariable Long programmeId,
             @RequestParam(required = false) CandidatureStatus status) {
@@ -58,7 +58,7 @@ public class CandidatureController {
 
     /** Per-programme stats — admin only */
     @GetMapping("/programme/{programmeId}/stats")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('candidatures:update') or hasAuthority('candidatures:read')")
     public ResponseEntity<Map<String, Long>> getProgrammeStats(@PathVariable Long programmeId) {
         return ResponseEntity.ok(candidatureService.getProgrammeStats(programmeId));
     }
@@ -85,7 +85,7 @@ public class CandidatureController {
     // ── Jury assignment ───────────────────────────────────────────────────────
 
     @PostMapping("/{id}/assign-jury")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('candidatures:update')")
     public ResponseEntity<CandidatureDto> assignJury(
             @PathVariable Long id,
             @Valid @RequestBody AssignJuryRequest request) {
@@ -104,10 +104,24 @@ public class CandidatureController {
         return ResponseEntity.ok(candidatureService.evaluateCandidature(id, juryId, request));
     }
 
+    // ── Token-based evaluation (public, no login — jury opens the email link) ───
+
+    @GetMapping("/evaluate/{token}")
+    public ResponseEntity<TokenEvaluationDto> getEvaluationByToken(@PathVariable String token) {
+        return ResponseEntity.ok(candidatureService.getEvaluationByToken(token));
+    }
+
+    @PostMapping("/evaluate/{token}")
+    public ResponseEntity<TokenEvaluationDto> submitEvaluationByToken(
+            @PathVariable String token,
+            @Valid @RequestBody EvaluationRequest request) {
+        return ResponseEntity.ok(candidatureService.submitEvaluationByToken(token, request));
+    }
+
     // ── Accept / Reject ───────────────────────────────────────────────────────
 
     @PatchMapping("/{id}/accept")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('candidatures:update')")
     public ResponseEntity<CandidatureDto> accept(
             @PathVariable Long id,
             HttpServletRequest httpRequest) {
@@ -116,7 +130,7 @@ public class CandidatureController {
     }
 
     @PatchMapping("/{id}/reject")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('candidatures:update')")
     public ResponseEntity<CandidatureDto> reject(
             @PathVariable Long id,
             @RequestBody AcceptRejectRequest request,
@@ -128,7 +142,7 @@ public class CandidatureController {
     // ── Stats ─────────────────────────────────────────────────────────────────
 
     @GetMapping("/stats")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('candidatures:update') or hasAuthority('candidatures:read')")
     public ResponseEntity<Map<String, Long>> getStats() {
         return ResponseEntity.ok(candidatureService.getStats());
     }

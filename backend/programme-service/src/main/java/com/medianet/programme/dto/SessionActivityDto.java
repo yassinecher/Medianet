@@ -11,8 +11,10 @@ public class SessionActivityDto {
     private Integer      activityOrder;
     private String       title;
     private String       description;
-    /** ACTIVITY | TRAINING_STEP | KEYNOTE | WORKSHOP | PANEL | PITCH | BREAK | NETWORKING | OTHER */
+    /** Legacy type (kept for read compat — activities are now free-form). */
     private String       type;
+    /** Hex color of the activity block (defaults to the session color). */
+    private String       color;
     private LocalTime    startTime;
     private LocalTime    endTime;
     private String       location;

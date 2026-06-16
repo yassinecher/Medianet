@@ -15,6 +15,8 @@ public class CreateInvitationRequest {
     private String programmeName;
     private Long phaseId;
     private String phaseName;
+    private Long activityId;
+    private String activityName;
 
     @NotBlank
     @Email

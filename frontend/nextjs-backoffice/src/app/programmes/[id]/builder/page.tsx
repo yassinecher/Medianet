@@ -68,7 +68,8 @@ export default function EditProgrammeBuilderPage() {
         }
         // Form template (always include — has a meaningful default)
         nodes.push({ id: 'formTemplate', type: 'formTemplate', position: { x: 460, y: 240 },
-          data: { kind: 'formTemplate', formTemplate: prog.formTemplate ?? 'STANDARD' } })
+          data: { kind: 'formTemplate', formTemplate: prog.formTemplate ?? 'STANDARD',
+            customFormSchema: prog.customFormSchema ?? '' } })
         edges.push({ id: 'e-formTemplate-programme', source: 'formTemplate', target: 'programme', animated: false, style: { strokeWidth: 1.5, strokeDasharray: '4 4', opacity: 0.5 } })
         // Stats
         if (prog.maxStartups || prog.expertCount || prog.trainingSessionsCount || prog.mentoringHoursPerMonth) {

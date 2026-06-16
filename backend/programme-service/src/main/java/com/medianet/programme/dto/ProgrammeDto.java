@@ -14,6 +14,12 @@ public class ProgrammeDto {
     private String description;
     private String type;
     private String status;
+    /** Computed: programme is accepting candidatures now (status + candidature-session window). */
+    private Boolean   acceptingApplications;
+    /** Computed: id of the candidature session (CANDIDATURE_SUBMISSION), or null. */
+    private Long      candidatureSessionId;
+    /** Computed: end date of the candidature session (the application deadline). */
+    private LocalDate candidatureDeadline;
     private String formTemplate;
     /** JSON-encoded custom form schema. Null = use formTemplate. */
     private String customFormSchema;

@@ -53,6 +53,13 @@ export const candidaturesApi = {
   submit: (data: unknown) => api.post('/api/candidatures', data),
 }
 
+/** Public, no-login jury evaluation via an emailed token. */
+export const evaluationApi = {
+  getByToken: (token: string) => api.get(`/api/candidatures/evaluate/${token}`),
+  submitByToken: (token: string, data: unknown) =>
+    api.post(`/api/candidatures/evaluate/${token}`, data),
+}
+
 export const tasksApi = {
   myTasks: () => api.get('/api/tasks/my'),
   updateStatus: (id: number, data: { status: string }) => api.patch(`/api/tasks/${id}/status`, data),

@@ -42,6 +42,8 @@ public class SecurityConfig {
                     "/api/programmes/*/phases",
                     "/api/programmes/*/sessions",
                     "/api/programmes/*/sessions/*/days",
+                    "/api/programmes/*/partners",
+                    "/api/session-presets",
                     "/api/landing-page").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/programmes/*").permitAll()
                 // Everything else (including task endpoints) requires authentication

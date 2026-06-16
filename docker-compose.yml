@@ -248,6 +248,7 @@ services:
       SPRING_RABBITMQ_USERNAME: medianet
       SPRING_RABBITMQ_PASSWORD: medianet2024
       AUTH_SERVICE_URL: http://auth-service:8081
+      PROGRAMME_SERVICE_URL: http://programme-service:8086
       EUREKA_URI: http://eureka-server:8761/eureka
     depends_on:
       postgres-candidature:

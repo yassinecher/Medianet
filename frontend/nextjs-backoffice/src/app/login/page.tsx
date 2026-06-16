@@ -23,8 +23,12 @@ export default function AdminLoginPage() {
     try {
       const { data } = await authApi.login(form.email, form.password)
       // AuthResponse is flat: { token, userId, email, firstName, lastName, role, roles, permissions }
-      if (data.role !== 'ADMIN' && !data.roles?.includes('ADMIN')) {
-        toast.error('Accès refusé — réservé aux administrateurs.')
+      // Back-office is reserved for administrators. Every non-admin (porteur, jury,
+      // mentor — even with management permissions) uses the front-office only.
+      const isAdmin = data.role === 'ADMIN' || data.roles?.includes('ADMIN')
+      if (!isAdmin) {
+        toast.error('Accès réservé aux administrateurs.')
+        window.location.href = 'http://localhost:3000/login'
         return
       }
       setAuth(data, data.token)

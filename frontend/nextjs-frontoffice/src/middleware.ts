@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 // Redirect admins to backoffice
-const PUBLIC = ['/', '/login', '/register', '/programmes', '/select-role']
+const PUBLIC = ['/', '/login', '/register', '/programmes']
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -10,7 +10,8 @@ export function middleware(request: NextRequest) {
 
   const isPublic =
     PUBLIC.some((p) => pathname === p || pathname.startsWith(p + '/')) ||
-    pathname.startsWith('/invitations/')
+    pathname.startsWith('/invitations/') ||
+    pathname.startsWith('/evaluate/')
 
   if (!token && !isPublic) {
     return NextResponse.redirect(new URL('/login', request.url))

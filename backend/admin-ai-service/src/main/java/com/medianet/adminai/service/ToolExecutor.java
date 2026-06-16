@@ -131,6 +131,49 @@ public class ToolExecutor {
             case "update_landing_page" ->
                 upstream.put(upstream.programme() + "/api/landing-page", args.get("patch"), adminToken);
 
+            // ── Sessions: days + activities + nested day-sessions ─────────────
+            case "add_session_day" -> {
+                Long pid = longArg(args, "programmeId");
+                Long sid = longArg(args, "sessionId");
+                Map<String, Object> body = new java.util.LinkedHashMap<>(args);
+                body.remove("programmeId"); body.remove("sessionId");
+                yield upstream.post(upstream.programme() + "/api/programmes/" + pid + "/sessions/" + sid + "/days",
+                                    body, adminToken);
+            }
+            case "add_session_activity" -> {
+                Long pid = longArg(args, "programmeId");
+                Long sid = longArg(args, "sessionId");
+                Long did = longArg(args, "dayId");
+                Map<String, Object> body = new java.util.LinkedHashMap<>(args);
+                body.remove("programmeId"); body.remove("sessionId"); body.remove("dayId");
+                yield upstream.post(upstream.programme() + "/api/programmes/" + pid + "/sessions/" + sid
+                                    + "/days/" + did + "/activities", body, adminToken);
+            }
+            case "create_child_day_session" -> {
+                Long pid = longArg(args, "programmeId");
+                Map<String, Object> body = new java.util.LinkedHashMap<>(args);
+                body.remove("programmeId");
+                body.put("durationKind", "day");   // children are always day-kind
+                // parentSessionId stays in the body — the programme-service validates nesting
+                yield upstream.post(upstream.programme() + "/api/programmes/" + pid + "/sessions",
+                                    body, adminToken);
+            }
+
+            // ── Session presets (Parcours library) ────────────────────────────
+            case "list_session_presets" -> {
+                String url = upstream.programme() + "/api/session-presets";
+                if (args.get("programmeId") != null) url += "?programmeId=" + args.get("programmeId");
+                yield upstream.get(url, adminToken);
+            }
+            case "create_session_preset" ->
+                upstream.post(upstream.programme() + "/api/session-presets", args, adminToken);
+            case "update_session_preset" -> {
+                Long id = longArg(args, "id");
+                Map<String, Object> body = new java.util.LinkedHashMap<>(args);
+                body.remove("id");
+                yield upstream.put(upstream.programme() + "/api/session-presets/" + id, body, adminToken);
+            }
+
             // ── Candidatures ───────────────────────────────────────────────
             case "get_candidature" ->
                 upstream.get(upstream.candidature() + "/api/candidatures/" + intArg(args, "id"), adminToken);

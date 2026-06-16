@@ -55,6 +55,13 @@ public final class ToolCatalog {
         "set_user_roles",
         "toggle_user_active",
         "update_landing_page",
+        // Sessions: days / activities / nested day-sessions
+        "add_session_day",
+        "add_session_activity",
+        "create_child_day_session",
+        // Session presets
+        "create_session_preset",
+        "update_session_preset",
         // Memory
         "remember_fact",
         "forget_fact"
@@ -325,6 +332,85 @@ public final class ToolCatalog {
                     ),
                     "required", List.of("patch")
                 )),
+
+            // ════════════════════════════════════════════════════════════════
+            // SESSIONS — days, activities, nested day-sessions, presets
+            // ════════════════════════════════════════════════════════════════
+            tool("add_session_day",
+                "Add a day to a session (use for the agenda of a DAY-kind session, or to add days to a session). " +
+                "Most day-kind sessions auto-create their single day on first activity — prefer add_session_activity directly.",
+                Map.of("type", "object",
+                    "properties", Map.of(
+                        "programmeId", Map.of("type", "integer"),
+                        "sessionId",   Map.of("type", "integer"),
+                        "dayOrder",    Map.of("type", "integer", "description", "1-based order; default next"),
+                        "title",       Map.of("type", "string"),
+                        "date",        Map.of("type", "string", "description", "ISO YYYY-MM-DD"),
+                        "location",    Map.of("type", "string")
+                    ),
+                    "required", List.of("programmeId", "sessionId"))),
+            tool("add_session_activity",
+                "Add an hour-grid activity to a session day. Times are HH:mm or HH:mm:ss (e.g. '09:00'). " +
+                "Agenda activities belong to DAY-kind sessions. Get the dayId from get_programme/list sessions " +
+                "(a day session usually has one day). type ∈ ACTIVITY|TRAINING_STEP|KEYNOTE|WORKSHOP|PANEL|PITCH|BREAK|NETWORKING|OTHER.",
+                Map.of("type", "object",
+                    "properties", Map.of(
+                        "programmeId",  Map.of("type", "integer"),
+                        "sessionId",    Map.of("type", "integer"),
+                        "dayId",        Map.of("type", "integer"),
+                        "title",        Map.of("type", "string"),
+                        "type",         Map.of("type", "string"),
+                        "startTime",    Map.of("type", "string", "description", "HH:mm"),
+                        "endTime",      Map.of("type", "string", "description", "HH:mm"),
+                        "location",     Map.of("type", "string"),
+                        "responsibles", Map.of("type", "array", "items", Map.of("type", "string")),
+                        "guests",       Map.of("type", "array", "items", Map.of("type", "string"))
+                    ),
+                    "required", List.of("programmeId", "sessionId", "dayId", "title"))),
+            tool("create_child_day_session",
+                "Create a single-DAY session nested INSIDE a range session (e.g. a 'Formation' day inside the " +
+                "'Incubation' range). The day's date MUST fall within the parent's [startDate,endDate]. " +
+                "durationKind is forced to 'day'. After creating it, you can add activities to its agenda.",
+                Map.of("type", "object",
+                    "properties", Map.of(
+                        "programmeId",     Map.of("type", "integer"),
+                        "parentSessionId", Map.of("type", "integer", "description", "The RANGE session to nest under"),
+                        "title",           Map.of("type", "string"),
+                        "sessionType",     Map.of("type", "string", "description", "TRAINING_DAY, PITCH_DAY, …"),
+                        "startDate",       Map.of("type", "string", "description", "ISO YYYY-MM-DD within the parent range"),
+                        "location",        Map.of("type", "string"),
+                        "lane",            Map.of("type", "string")
+                    ),
+                    "required", List.of("programmeId", "parentSessionId", "title", "startDate"))),
+            tool("list_session_presets",
+                "List reusable session presets (the Parcours library). Optionally filter by programmeId to also " +
+                "get that programme's local presets alongside the global ones.",
+                Map.of("type", "object",
+                    "properties", Map.of("programmeId", Map.of("type", "integer")))),
+            tool("create_session_preset",
+                "Create a reusable session preset. programmeId null/omitted = GLOBAL (all programmes); " +
+                "set = LOCAL to that programme. durationKind ∈ day|range. color is a hex like '#6366F1'.",
+                Map.of("type", "object",
+                    "properties", Map.of(
+                        "programmeId",  Map.of("type", "integer", "description", "Omit for a global preset"),
+                        "sessionType",  Map.of("type", "string"),
+                        "title",        Map.of("type", "string"),
+                        "color",        Map.of("type", "string", "description", "hex e.g. #6366F1"),
+                        "durationKind", Map.of("type", "string", "description", "day | range")
+                    ),
+                    "required", List.of("sessionType", "title"))),
+            tool("update_session_preset",
+                "Edit an existing preset (title, sessionType, color, durationKind). Built-in presets can be edited " +
+                "(but not deleted). programmeId/builtIn are not reassignable.",
+                Map.of("type", "object",
+                    "properties", Map.of(
+                        "id",           Map.of("type", "integer"),
+                        "sessionType",  Map.of("type", "string"),
+                        "title",        Map.of("type", "string"),
+                        "color",        Map.of("type", "string"),
+                        "durationKind", Map.of("type", "string", "description", "day | range")
+                    ),
+                    "required", List.of("id"))),
 
             // ════════════════════════════════════════════════════════════════
             // CANDIDATURES — read + decision tools

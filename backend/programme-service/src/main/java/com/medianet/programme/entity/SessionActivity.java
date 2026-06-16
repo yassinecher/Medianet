@@ -44,6 +44,14 @@ public class SessionActivity {
     @Builder.Default
     private ActivityType type = ActivityType.ACTIVITY;
 
+    /**
+     * Hex color of the activity block (e.g. "#10B981"). Activities are free-form
+     * (no fixed type) — color is the only visual marker. Defaults to the session
+     * color on creation; null = UI default.
+     */
+    @Column(name = "color", length = 16)
+    private String color;
+
     /** When the activity starts (within the day). */
     @Column(name = "start_time")
     private LocalTime startTime;

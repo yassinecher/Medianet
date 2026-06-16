@@ -257,6 +257,24 @@ public class AdminAiService {
               (titres, descriptions courtes, dates échelonnées, lieu "À définir") et propose
               directement les tool_calls. Si l'admin n'aime pas, il modifiera. Mieux vaut un
               brouillon utile qu'une question stérile.
+            • ── STRUCTURE SESSION (Parcours) ──
+              Une Session a un TYPE DE DURÉE :
+                - « range » (Plage) : s'étale sur plusieurs jours (startDate → endDate).
+                - « day » (Journée) : un seul jour (endDate = startDate).
+              Une session « Journée » peut être IMBRIQUÉE dans une session « Plage »
+              (champ parentSessionId) — ex. une journée « Formation » dans la plage
+              « Incubation ». La date de la journée doit tomber DANS la plage parente.
+              → Pour imbriquer : create_child_day_session(programmeId, parentSessionId, title, startDate, …).
+              Le PLANNING HORAIRE (activités heure par heure) n'existe QUE sur les sessions
+              « Journée ». Pour le remplir : add_session_activity(... dayId ...). Une session
+              Journée a en général UNE journée (récupère son dayId via get_programme).
+              N'essaie PAS d'ajouter des activités à une session « Plage » — crée d'abord
+              des journées imbriquées, puis ajoute les activités dans ces journées.
+              PRÉSETS : la bibliothèque du Parcours. list_session_presets / create_session_preset
+              (programmeId omis = global, sinon local au programme) / update_session_preset.
+              Tu peux proposer « crée un préset Bootcamp global » ou bâtir un parcours complet
+              avec propose_plan (create_programme → add_programme_phase pour les plages →
+              create_child_day_session pour les journées → add_session_activity pour les agendas).
             • ── STRUCTURE PROGRAMME ── un Programme se construit avec ces tools :
                 - create_programme — métadonnées (titre, dates, secteurs, status…)
                 - add_programme_phase — UNE phase/session par appel (timeline)
@@ -340,7 +358,22 @@ public class AdminAiService {
 
     // ── Public API ────────────────────────────────────────────────────────────
 
+    /**
+     * Sink for live progress events. The streaming endpoint passes an SSE-backed
+     * implementation so the admin can watch the agent work in real time
+     * ("Réflexion…", "🔍 search_programmes…", partial text). The blocking
+     * endpoint passes null — all emits become no-ops.
+     */
+    public interface ChatEventSink {
+        void emit(String type, Map<String, Object> data);
+    }
+
     public ChatResponse chat(ChatRequest req, Long adminId, String adminName, String adminToken) {
+        return chat(req, adminId, adminName, adminToken, null);
+    }
+
+    public ChatResponse chat(ChatRequest req, Long adminId, String adminName, String adminToken,
+                             ChatEventSink sink) {
         if (req.getMessage() == null || req.getMessage().isBlank()) {
             throw new IllegalArgumentException("Le message ne peut pas être vide.");
         }
@@ -379,6 +412,10 @@ public class AdminAiService {
             // force tool_choice="none" so the model produces a text reply
             // (recap + suggestions for what's next) instead of more tool calls.
             boolean forceText = (loop == MAX_LOOPS - 1) || stoppedDueToToolSpam || wroteThisTurn;
+            safeEmit(sink, "status", Map.of("label",
+                    loop == 0 ? "Réflexion…"
+                              : wroteThisTurn ? "Rédaction de la réponse…"
+                                              : "Analyse des résultats…"));
             Map<String, Object> response = llm.chat(messages, ToolCatalog.toolsAsJson(),
                     systemPrompt, forceText ? "none" : "auto");
 
@@ -420,7 +457,11 @@ public class AdminAiService {
             if (toolCalls != null && !toolCalls.isEmpty()) assistantMsg.put("tool_calls", toolCalls);
             appendMessage(conv, "assistant", assistantMsg);
 
-            if (content != null && !content.isBlank()) finalText.append(content).append("\n");
+            if (content != null && !content.isBlank()) {
+                finalText.append(content).append("\n");
+                // Stream the cleaned partial text so the UI renders it immediately.
+                safeEmit(sink, "text", Map.of("content", cleanAssistantText(finalText.toString())));
+            }
 
             if (toolCalls == null || toolCalls.isEmpty() || "stop".equals(finishReason)) {
                 // Model is done.
@@ -430,6 +471,38 @@ public class AdminAiService {
             // Track whether any tool in this batch was a write (so we can short-circuit
             // the loop after running them all)
             boolean anyWrite = false;
+
+            // ── Parallel pre-execution of plain READ tools ────────────────
+            // When the model batches several searches (search_programmes +
+            // search_candidatures + …) run them concurrently; results are
+            // appended in call order below so the conversation stays valid.
+            Map<String, java.util.concurrent.CompletableFuture<String>> readResults = new HashMap<>();
+            for (Map<String, Object> call : toolCalls) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> fn0 = (Map<String, Object>) call.get("function");
+                if (fn0 == null) continue;
+                String tn = (String) fn0.get("name");
+                if (tn == null || ToolCatalog.isWrite(tn)
+                        || "propose_plan".equals(tn) || "ask_user_choice".equals(tn)
+                        || "generate_landing_section".equals(tn)) continue;
+                String callId0 = (String) call.get("id");
+                String argsRaw0 = (String) fn0.get("arguments");
+                Map<String, Object> args0;
+                try {
+                    args0 = (argsRaw0 == null || argsRaw0.isBlank()) ? Map.of() : json.readValue(argsRaw0, Map.class);
+                } catch (Exception e) { args0 = Map.of(); }
+                final Map<String, Object> fArgs = args0;
+                final String fTool = tn;
+                safeEmit(sink, "tool_start", Map.of("tool", fTool, "label", toolLabel(fTool, fArgs)));
+                readResults.put(callId0, java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        Object result = toolExecutor.run(fTool, fArgs, adminToken);
+                        return json.writeValueAsString(truncate(result));
+                    } catch (Exception ex) {
+                        return "ERREUR: " + ex.getMessage();
+                    }
+                }, READ_POOL));
+            }
 
             // Walk tool_calls and produce a "tool" message per call
             for (Map<String, Object> call : toolCalls) {
@@ -541,6 +614,8 @@ public class AdminAiService {
                 // the result straight back so the model can pass it to
                 // update_landing_page. No DB write, no confirmation.
                 if ("generate_landing_section".equals(toolName)) {
+                    safeEmit(sink, "tool_start", Map.of("tool", toolName,
+                            "label", "✍️ Rédaction de la section « " + args.getOrDefault("section", "hero") + " »…"));
                     String genResult;
                     try {
                         String section = String.valueOf(args.getOrDefault("section", "hero"));
@@ -580,6 +655,10 @@ public class AdminAiService {
                     anyWrite = true;
                     AdminAction pending = createPendingAction(conv, toolName, args, adminId, adminName, adminToken);
                     pendingIds.add(pending.getId());
+                    safeEmit(sink, "action_proposed", Map.of(
+                            "actionId", pending.getId(),
+                            "tool", toolName == null ? "" : toolName,
+                            "title", pending.getTitle()));
                     // Wording carefully chosen so the AI does NOT confuse the action-id
                     // (internal queue number) with the entity-id (real DB id assigned
                     // only after the admin confirms).
@@ -589,12 +668,24 @@ public class AdminAiService {
                                      "Ne propose PAS d'action de suite qui dépend d'un id non encore créé. " +
                                      "Résumé : " + pending.getTitle();
                 } else {
-                    try {
-                        Object result = toolExecutor.run(toolName, args, adminToken);
-                        toolResultText = json.writeValueAsString(truncate(result));
-                    } catch (Exception ex) {
-                        toolResultText = "ERREUR: " + ex.getMessage();
+                    // Result was pre-computed in parallel above — just join it.
+                    java.util.concurrent.CompletableFuture<String> fut = readResults.get(callId);
+                    if (fut != null) {
+                        try { toolResultText = fut.join(); }
+                        catch (Exception ex) { toolResultText = "ERREUR: " + ex.getMessage(); }
+                    } else {
+                        try {
+                            Object result = toolExecutor.run(toolName, args, adminToken);
+                            toolResultText = json.writeValueAsString(truncate(result));
+                        } catch (Exception ex) {
+                            toolResultText = "ERREUR: " + ex.getMessage();
+                        }
                     }
+                    boolean isErr = toolResultText.startsWith("ERREUR");
+                    safeEmit(sink, "tool_end", Map.of(
+                            "tool", toolName == null ? "" : toolName,
+                            "ok", !isErr,
+                            "preview", preview(toolResultText)));
                 }
 
                 // Persist the tool-result message (role:"tool", tool_call_id, content)
@@ -658,6 +749,64 @@ public class AdminAiService {
                 .clarification(clarification)
                 .plan(plan)
                 .build();
+    }
+
+    // ── Live-event helpers ────────────────────────────────────────────────────
+
+    /** Small shared pool for concurrent read-tool execution (HTTP GETs upstream). */
+    private static final java.util.concurrent.ExecutorService READ_POOL =
+            java.util.concurrent.Executors.newFixedThreadPool(4, r -> {
+                Thread t = new Thread(r, "ai-read-tool");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /** Emit an event to the sink, never letting a broken SSE connection kill the chat. */
+    private static void safeEmit(ChatEventSink sink, String type, Map<String, Object> data) {
+        if (sink == null) return;
+        try { sink.emit(type, data); }
+        catch (Exception e) { /* client gone — keep computing, result is persisted anyway */ }
+    }
+
+    /** Human label for a tool start event, e.g. "🔍 Recherche programmes « foodtech »…". */
+    private static String toolLabel(String tool, Map<String, Object> args) {
+        String detail = "";
+        Object q = args.get("query");
+        Object id = args.get("id") != null ? args.get("id") : args.get("programmeId");
+        if (q != null && !String.valueOf(q).isBlank()) detail = " « " + q + " »";
+        else if (id != null) detail = " #" + id;
+        String base = tool.startsWith("search_") ? "🔍 " + tool.substring(7).replace('_', ' ')
+                    : tool.startsWith("get_")    ? "📄 " + tool.substring(4).replace('_', ' ')
+                    : tool.startsWith("list_")   ? "📋 " + tool.substring(5).replace('_', ' ')
+                    : "⚙️ " + tool.replace('_', ' ');
+        return base + detail + "…";
+    }
+
+    /** Short result preview for tool_end events ("12 résultats", "ok", or the error). */
+    private static String preview(String resultJson) {
+        if (resultJson == null) return "";
+        if (resultJson.startsWith("ERREUR")) {
+            return resultJson.length() > 160 ? resultJson.substring(0, 160) + "…" : resultJson;
+        }
+        String t = resultJson.trim();
+        if (t.startsWith("[")) {
+            // Cheap count of top-level objects in a JSON array
+            int depth = 0, count = 0;
+            boolean inString = false, esc = false;
+            for (int i = 0; i < t.length(); i++) {
+                char c = t.charAt(i);
+                if (esc) { esc = false; continue; }
+                if (c == '\\' && inString) { esc = true; continue; }
+                if (c == '"') { inString = !inString; continue; }
+                if (inString) continue;
+                if (c == '{') { if (depth == 1) count++; depth++; }
+                else if (c == '}') depth--;
+                else if (c == '[') depth++;
+                else if (c == ']') depth--;
+            }
+            return count + " résultat(s)";
+        }
+        return t.length() > 120 ? t.substring(0, 120) + "…" : t;
     }
 
     // ── Output polishing ──────────────────────────────────────────────────────
@@ -1106,6 +1255,12 @@ public class AdminAiService {
             case "create_partner"          -> "Créer le partenaire « " + args.getOrDefault("name", "(sans nom)") + " »";
             case "link_partner_to_programme"     -> "Lier le partenaire #" + args.get("partnerId") + " au programme #" + args.get("programmeId");
             case "unlink_partner_from_programme" -> "Délier le partenaire #" + args.get("partnerId") + " du programme #" + args.get("programmeId");
+            // Sessions: days / activities / nested days / presets
+            case "add_session_day"          -> "Ajouter une journée à la session #" + args.get("sessionId");
+            case "add_session_activity"     -> "Ajouter l'activité « " + args.getOrDefault("title", "(sans titre)") + " » à la journée #" + args.get("dayId");
+            case "create_child_day_session" -> "Ajouter la journée « " + args.getOrDefault("title", "(sans titre)") + " » dans la session #" + args.get("parentSessionId");
+            case "create_session_preset"    -> "Créer le préset « " + args.getOrDefault("title", "(sans titre)") + " »" + (args.get("programmeId") == null ? " (global)" : " (ce programme)");
+            case "update_session_preset"    -> "Modifier le préset #" + args.get("id");
             // Notifications + users
             case "send_email"              -> "Envoyer un email à " + args.get("toEmails");
             case "invite_user"             -> "Inviter " + args.get("recipientEmail") + " comme " + args.get("type");
@@ -1143,6 +1298,15 @@ public class AdminAiService {
      * Each row in ai_messages stores a single complete message object as JSON;
      * we just deserialize them in order.
      */
+    /**
+     * Sliding context window — long conversations get slow AND noisy (the model
+     * re-reads dozens of stale tool results each turn). We keep only the most
+     * recent messages, cutting at a *user* message boundary so tool-call threads
+     * are never split, and prepend a short note so the model knows it has a
+     * truncated view.
+     */
+    private static final int MAX_HISTORY_MESSAGES = 40;
+
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> loadOpenAiHistory(AiConversation conv) {
         List<AiMessage> messages = messageRepo.findByConversationIdOrderByIdAsc(conv.getId());
@@ -1157,6 +1321,22 @@ public class AdminAiService {
                 log.warn("Skipping malformed message {}", m.getId());
             }
         }
+
+        // Window: keep the last MAX_HISTORY_MESSAGES, snapped forward to the next
+        // "user" message so we never start mid tool-thread.
+        if (out.size() > MAX_HISTORY_MESSAGES) {
+            int start = out.size() - MAX_HISTORY_MESSAGES;
+            while (start < out.size() && !"user".equals(out.get(start).get("role"))) start++;
+            if (start >= out.size()) start = out.size() - MAX_HISTORY_MESSAGES; // no user msg found — fall back
+            int omitted = start;
+            List<Map<String, Object>> windowed = new ArrayList<>(out.size() - start + 1);
+            windowed.add(Map.of("role", "system", "content",
+                    "(Contexte tronqué — " + omitted + " messages antérieurs omis. "
+                    + "Si une info ancienne te manque, redemande ou utilise un outil de recherche.)"));
+            windowed.addAll(out.subList(start, out.size()));
+            out = windowed;
+        }
+
         return sanitizeForLlm(out);
     }
 

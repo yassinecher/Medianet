@@ -26,7 +26,7 @@ public class TaskController {
      * Admin or Mentor can assign tasks to any porteur.
      */
     @PostMapping("/api/programmes/{programmeId}/tasks")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MENTOR')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
     public ResponseEntity<TaskDto> createTask(
             @PathVariable Long programmeId,
             @Valid @RequestBody CreateTaskRequest req,
@@ -72,7 +72,7 @@ public class TaskController {
      * Admin / Mentor only.
      */
     @PutMapping("/api/programmes/{programmeId}/tasks/{taskId}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MENTOR')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
     public ResponseEntity<TaskDto> updateTask(
             @PathVariable Long programmeId,
             @PathVariable Long taskId,
@@ -107,7 +107,7 @@ public class TaskController {
      * Delete a task — ADMIN only.
      */
     @DeleteMapping("/api/programmes/{programmeId}/tasks/{taskId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update')")
     public ResponseEntity<Void> deleteTask(
             @PathVariable Long programmeId,
             @PathVariable Long taskId) {
@@ -119,7 +119,7 @@ public class TaskController {
      * Task stats for a programme — ADMIN / MENTOR.
      */
     @GetMapping("/api/programmes/{programmeId}/tasks/stats")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MENTOR')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
     public ResponseEntity<Map<String, Long>> programmeStats(@PathVariable Long programmeId) {
         return ResponseEntity.ok(taskService.getProgrammeTaskStats(programmeId));
     }
@@ -133,7 +133,7 @@ public class TaskController {
      * Equivalent to POST /api/programmes/{programmeId}/tasks.
      */
     @PostMapping("/api/tasks")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MENTOR')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
     public ResponseEntity<TaskDto> createTaskFlat(
             @Valid @RequestBody CreateTaskRequest req,
             @RequestAttribute("userId") Long adminId,
@@ -148,7 +148,7 @@ public class TaskController {
 
     /** Convenience: list all tasks (ADMIN/MENTOR), optionally filtered by ?status= or ?programmeId= */
     @GetMapping("/api/tasks")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MENTOR')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
     public ResponseEntity<List<TaskDto>> getAllTasks(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long programmeId) {
@@ -157,7 +157,7 @@ public class TaskController {
 
     /** Convenience: update a task by its global id (admin/mentor only). */
     @PutMapping("/api/tasks/{taskId}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MENTOR')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
     public ResponseEntity<TaskDto> updateTaskFlat(
             @PathVariable Long taskId,
             @RequestBody UpdateTaskRequest req) {
@@ -166,7 +166,7 @@ public class TaskController {
 
     /** Convenience: delete a task by its global id (admin only). */
     @DeleteMapping("/api/tasks/{taskId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update')")
     public ResponseEntity<Void> deleteTaskFlat(@PathVariable Long taskId) {
         taskService.deleteTaskById(taskId);
         return ResponseEntity.noContent().build();
@@ -214,7 +214,7 @@ public class TaskController {
      * Tasks for a specific phase — ADMIN / MENTOR.
      */
     @GetMapping("/api/tasks/phase/{phaseId}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MENTOR')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
     public ResponseEntity<List<TaskDto>> byPhase(@PathVariable Long phaseId) {
         return ResponseEntity.ok(taskService.getTasksByPhase(phaseId));
     }

@@ -67,6 +67,14 @@ public class ProgrammePhase {
     private String lane = "Principal";
 
     /**
+     * Hex color of the session bar (e.g. "#0EA5E9"). First-class since sessions
+     * no longer derive their color from {@link #sessionType}. Inherited from the
+     * preset on creation; freely editable afterwards. Null = UI default.
+     */
+    @Column(name = "color", length = 16)
+    private String color;
+
+    /**
      * IDs of ProgrammeCriteria that this phase focuses on.
      * Empty = all programme criteria apply.
      */
@@ -86,12 +94,22 @@ public class ProgrammePhase {
     private String location;
 
     /**
-     * Logical duration: "day" (single day), "week" (multi-day), or "custom".
-     * Drives the Timeline visual rendering.
+     * Logical duration kind: <b>"day"</b> (single day) or <b>"range"</b> (date range).
+     * Legacy rows may hold "week"/"custom" — these are read as "range".
+     * Drives the Timeline visual rendering and whether the hour-grid agenda is
+     * editable (day-kind sessions only).
      */
     @Column(name = "duration_kind", length = 16)
     @Builder.Default
     private String durationKind = "day";
+
+    /**
+     * Optional parent session. A <b>day</b> session may nest inside a <b>range</b>
+     * session of the same programme (e.g. a "Formation" day inside the "Incubation"
+     * range). Null = top-level session. Children are cascade-deleted with the parent.
+     */
+    @Column(name = "parent_session_id")
+    private Long parentSessionId;
 
     /** People responsible for running this session (emails or names). */
     @ElementCollection(fetch = FetchType.EAGER)
@@ -129,6 +147,14 @@ public class ProgrammePhase {
      */
     @Column(name = "criterion_weights_json", columnDefinition = "TEXT")
     private String criterionWeightsJson;
+
+    /**
+     * Évaluation sessions: id of the saved candidature selection (shortlist,
+     * candidature-service {@code CandidatureSelection}) the jury evaluates.
+     * Null = the jury evaluates all programme candidatures.
+     */
+    @Column(name = "evaluation_selection_id")
+    private Long evaluationSelectionId;
 
     /** Days that make up this session (1..N). Lazy-loaded by default. */
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)

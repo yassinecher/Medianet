@@ -16,5 +16,7 @@ public class JuryAssignmentDto {
     private Long juryId;
     private String juryEmail;
     private String juryName;
+    private String token;
+    private String status;
     private LocalDateTime assignedAt;
 }

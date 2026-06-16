@@ -37,12 +37,9 @@ export default function LoginPage() {
       }
       setAuth(data, data.token)
       toast.success(`Bienvenue, ${data.firstName} !`)
-      // If the user has multiple frontoffice roles, ask which one to use.
-      if (fo.length > 1) {
-        router.push('/select-role')
-      } else {
-        router.push('/dashboard')
-      }
+      // No role-picking: the layout adapts to the user's full role + permission
+      // set automatically. Everyone lands on the dashboard.
+      router.push('/dashboard')
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'Email ou mot de passe incorrect')
     } finally {

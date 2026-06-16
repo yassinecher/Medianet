@@ -50,7 +50,9 @@ import { AdminLayout } from '@/components/layout/AdminLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { TimelineNode as RichTimelineNode } from './Timeline'
-import { TimelineTab } from './TimelineTab'
+import { usePresets, type BuilderPreset } from './usePresets'
+import { FormBuilder } from '@/components/formbuilder/FormBuilder'
+import { parseSchema, type CustomFormSchema } from '@/components/formbuilder/schema'
 
 // ── Node data shapes ─────────────────────────────────────────────────────────
 
@@ -62,7 +64,7 @@ type NodeKind =
 interface ProgrammeData   extends Record<string, unknown> { kind: 'programme'; title: string; status: 'DRAFT'|'OPEN'|'IN_PROGRESS'|'EVALUATION'|'CLOSED'; type: 'PUBLIC'|'PRIVATE'; sectors: string[]; startDate?: string; endDate?: string; applicationDeadline?: string }
 interface DescriptionData extends Record<string, unknown> { kind: 'description'; description: string }
 interface VisualData      extends Record<string, unknown> { kind: 'visual'; tagline: string; logoUrl: string; bannerImageUrl: string; location: string; applicationUrl: string }
-interface FormTemplateData extends Record<string, unknown> { kind: 'formTemplate'; formTemplate: 'STANDARD'|'MINIMAL'|'FOODSTART'|'TECH'|'AGRITECH' }
+interface FormTemplateData extends Record<string, unknown> { kind: 'formTemplate'; formTemplate: 'STANDARD'|'MINIMAL'|'FOODSTART'|'TECH'|'AGRITECH'; customFormSchema: string }
 interface StatsData       extends Record<string, unknown> { kind: 'stats'; maxStartups?: number; expertCount?: number; trainingSessionsCount?: number; mentoringHoursPerMonth?: number }
 interface ObjectivesData  extends Record<string, unknown> { kind: 'objectives'; objectives: string[] }
 interface BenefitsData    extends Record<string, unknown> { kind: 'benefits'; benefits: string[] }
@@ -195,7 +197,18 @@ function BasicNode({ kind, title, subtitle, selected, hasTarget = false, hasSour
 const ProgrammeNode    = ({ data, selected }: any) => <BasicNode kind="programme"    title={data.title} subtitle={data.status} selected={selected} hasTarget hasSource />
 const DescriptionNode  = ({ data, selected }: any) => <BasicNode kind="description"  title="Description" subtitle={data.description ? `${data.description.length} car.` : 'Vide'} selected={selected} hasSource />
 const VisualNode       = ({ data, selected }: any) => <BasicNode kind="visual"       title={data.tagline || 'Présentation visuelle'} subtitle={data.location} selected={selected} hasSource />
-const FormTemplateNode = ({ data, selected }: any) => <BasicNode kind="formTemplate" title={data.formTemplate} subtitle="Squelette candidature" selected={selected} hasSource />
+const FormTemplateNode = ({ data, selected }: any) => {
+  // Subtitle reflects the custom form when one is defined (it overrides the skeleton).
+  let subtitle = 'Squelette candidature'
+  try {
+    const sch = data.customFormSchema ? JSON.parse(data.customFormSchema) : null
+    if (sch?.sections?.length) {
+      const fields = sch.sections.reduce((n: number, s: any) => n + (s.fields?.length ?? 0), 0)
+      subtitle = `Personnalisé · ${sch.sections.length} section(s), ${fields} champ(s)`
+    }
+  } catch { /* malformed schema — keep default subtitle */ }
+  return <BasicNode kind="formTemplate" title={data.formTemplate} subtitle={subtitle} selected={selected} hasSource />
+}
 const StatsNode        = ({ data, selected }: any) => <BasicNode kind="stats"        title="Chiffres clés" subtitle={`${data.maxStartups ?? 0} startups · ${data.expertCount ?? 0} experts`} selected={selected} hasSource />
 const ObjectivesNode   = ({ data, selected }: any) => <BasicNode kind="objectives"   title="Objectifs" subtitle={`${(data.objectives ?? []).length} objectifs`} selected={selected} hasSource />
 const BenefitsNode     = ({ data, selected }: any) => <BasicNode kind="benefits"     title="Bénéfices" subtitle={`${(data.benefits ?? []).length} bénéfices`} selected={selected} hasSource />
@@ -293,7 +306,7 @@ function defaultDataFor(kind: NodeKind): any {
     case 'programme':    return { kind, title: 'Nouveau programme', status: 'DRAFT', type: 'PUBLIC', sectors: [] }
     case 'description':  return { kind, description: '' }
     case 'visual':       return { kind, tagline: '', logoUrl: '', bannerImageUrl: '', location: '', applicationUrl: '' }
-    case 'formTemplate': return { kind, formTemplate: 'STANDARD' }
+    case 'formTemplate': return { kind, formTemplate: 'STANDARD', customFormSchema: '' }
     case 'stats':        return { kind, maxStartups: 0, expertCount: 0, trainingSessionsCount: 0, mentoringHoursPerMonth: 0 }
     case 'objectives':   return { kind, objectives: [] }
     case 'benefits':     return { kind, benefits: [] }
@@ -334,23 +347,11 @@ const ACTIVITY_TYPE_LABEL: Record<string, string> = {
 }
 
 /**
- * 7 predefined session presets shown in the palette. Picking one drops a
- * fully-typed session card with sane defaults; the admin can still edit
- * everything afterwards (title, description, dates, days, activities).
+ * Map a preset's normalized durationKind ('day' | 'range') onto the session
+ * node's legacy model ('day' | 'week' | 'custom'). Ranges become 'custom'.
  */
-const SESSION_PRESETS: ReadonlyArray<{
-  type: SessionType
-  title: string
-  durationKind: 'day' | 'week' | 'custom'
-}> = [
-  { type: 'CANDIDATURE_SUBMISSION', title: 'Candidature',  durationKind: 'custom' },
-  { type: 'PRESELECTION',           title: 'Présélection', durationKind: 'week'   },
-  { type: 'PITCH_DAY',              title: 'Pitch Day',    durationKind: 'day'    },
-  { type: 'ONBOARDING',             title: 'Onboarding',   durationKind: 'day'    },
-  { type: 'INCUBATION',             title: 'Incubation',   durationKind: 'custom' },
-  { type: 'DEMO_DAY',               title: 'Demo Day',     durationKind: 'day'    },
-  { type: 'TRAINING_DAY',           title: 'Formation',    durationKind: 'day'    },
-]
+const presetToSessionKind = (preset: BuilderPreset): SessionData['durationKind'] =>
+  preset.durationKind === 'day' ? 'day' : 'custom'
 
 function BuilderInner(props: BuilderProps = {}) {
   const router = useRouter()
@@ -363,8 +364,8 @@ function BuilderInner(props: BuilderProps = {}) {
   ])
   const [edges, setEdges] = useState<Edge[]>(props.initialEdges ?? [])
   const [selectedId, setSelectedId] = useState<string | null>('programme')
-  /** Two-tab visual editor: Atelier (canvas) vs Parcours (planning game). */
-  const [activeTab, setActiveTab] = useState<'atelier' | 'parcours'>('atelier')
+  /** Session presets — DB-backed, single source of truth (see usePresets). */
+  const presets = usePresets(props.existingProgrammeId)
 
   const onNodesChange = useCallback((c: NodeChange[]) => setNodes((nds) => applyNodeChanges(c, nds) as BuilderNode[]), [])
   const onEdgesChange = useCallback((c: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(c, eds)), [])
@@ -376,21 +377,18 @@ function BuilderInner(props: BuilderProps = {}) {
   // without leaving the modal.
   if (typeof window !== 'undefined') {
     (window as any).__builder_selectNode = (id: string) => setSelectedId(id)
-    ;(window as any).__builder_addSessionPreset = (presetType: SessionType, atDate?: string) => {
-      const preset = SESSION_PRESETS.find((p) => p.type === presetType)
+    ;(window as any).__builder_addSessionPreset = (presetId: number, atDate?: string) => {
+      const preset = presets.find((p) => p.id === presetId)
       if (!preset) return
       // Bypass `addNode`'s auto-inferred dates when an explicit date is given.
       if (atDate) {
         const id = `session-${Date.now()}`
         let data: any = defaultDataFor('session')
-        data = { ...data, sessionType: preset.type, title: preset.title, durationKind: preset.durationKind }
+        data = { ...data, title: preset.title, durationKind: presetToSessionKind(preset) }
         // Apply duration-driven end date
         data.startDate = atDate
         if (preset.durationKind === 'day') data.endDate = atDate
-        else if (preset.durationKind === 'week') {
-          const dt = new Date(atDate + 'T12:00:00'); dt.setDate(dt.getDate() + 6)
-          data.endDate = dt.toISOString().slice(0, 10)
-        } else {
+        else {
           const dt = new Date(atDate + 'T12:00:00'); dt.setDate(dt.getDate() + 13)
           data.endDate = dt.toISOString().slice(0, 10)
         }
@@ -474,7 +472,7 @@ function BuilderInner(props: BuilderProps = {}) {
   const addNode = (
     kind: NodeKind,
     drop?: { x: number; y: number },
-    preset?: { type: SessionType; title: string; durationKind: 'day' | 'week' | 'custom' },
+    preset?: BuilderPreset,
   ) => {
     const meta = NODE_META[kind]
     if (meta.singleton && nodes.some((n) => n.data.kind === kind)) {
@@ -484,7 +482,7 @@ function BuilderInner(props: BuilderProps = {}) {
     const id = `${kind}-${Date.now()}`
     let data = defaultDataFor(kind)
     if (kind === 'session') {
-      if (preset) data = { ...data, sessionType: preset.type, title: preset.title, durationKind: preset.durationKind }
+      if (preset) data = { ...data, title: preset.title, durationKind: presetToSessionKind(preset) }
       const dates = inferSessionDates(data.durationKind)
       data = { ...data, ...dates }
       // Day-locked: mirror endDate from startDate when duration is "day"
@@ -548,10 +546,10 @@ function BuilderInner(props: BuilderProps = {}) {
     const kind = e.dataTransfer.getData('application/builder-node') as NodeKind
     if (!kind || !NODE_META[kind]) return
     const pos = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
-    const presetType = e.dataTransfer.getData('application/session-preset') as SessionType
-    const preset = presetType ? SESSION_PRESETS.find((p) => p.type === presetType) : undefined
+    const presetId = e.dataTransfer.getData('application/session-preset')
+    const preset = presetId ? presets.find((p) => p.id === Number(presetId)) : undefined
     addNode(kind, pos, preset)
-  }, [addNode, rf])
+  }, [addNode, rf, presets])
 
   const removeSelected = () => {
     if (!selectedId) return
@@ -592,6 +590,8 @@ function BuilderInner(props: BuilderProps = {}) {
         type: prog.data.type,
         sectors: prog.data.sectors,
         formTemplate: ft?.data.formTemplate ?? 'STANDARD',
+        // Custom form schema (JSON string) — '' clears it so the skeleton applies.
+        customFormSchema: ft?.data.customFormSchema ?? '',
       }
       if (prog.data.startDate)            payload.startDate = prog.data.startDate
       if (prog.data.endDate)              payload.endDate = prog.data.endDate
@@ -653,56 +653,10 @@ function BuilderInner(props: BuilderProps = {}) {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  /** Programme node — used to grab the live title for the Parcours tab. */
-  const programmeNode = nodes.find((n): n is Node<ProgrammeData, 'programme'> => n.data.kind === 'programme')
-
   return (
     <div className="flex flex-col h-[calc(100vh-7rem)] gap-3">
-      {/* ─── TAB BAR — Atelier (canvas) / Parcours (planning) ────────── */}
-      <div className="flex items-center gap-1 rounded-2xl border border-border bg-card p-1.5 shrink-0">
-        {([
-          ['atelier',  '🛠️ Atelier',  'Structure : programme, métadonnées, critères'],
-          ['parcours', '🗺️ Parcours', 'Planning : timeline + sessions'],
-        ] as const).map(([key, label, hint]) => {
-          const active = activeTab === key
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActiveTab(key)}
-              title={hint}
-              className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold transition-all ${
-                active
-                  ? 'bg-gradient-to-r from-brand-500/15 to-purple-500/15 text-foreground shadow-inner'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-              }`}>
-              {label}
-            </button>
-          )
-        })}
-        <div className="ml-auto pr-2 text-[10px] text-muted-foreground hidden md:block">
-          {activeTab === 'atelier'
-            ? 'Construisez la structure → puis basculez sur Parcours.'
-            : 'Glissez les sessions sur la rivière — autosauvegarde.'}
-        </div>
-      </div>
-
-      {/* ─── PARCOURS tab — full-width planning game ────────────────── */}
-      {activeTab === 'parcours' && (
-        <div className="flex-1 min-h-0 rounded-2xl border border-border bg-card overflow-hidden">
-          <TimelineTab
-            programmeId={props.existingProgrammeId}
-            programme={programmeNode ? {
-              title: programmeNode.data.title,
-              startDate: programmeNode.data.startDate ?? null,
-              endDate:   programmeNode.data.endDate ?? null,
-            } : null}
-          />
-        </div>
-      )}
-
-      {/* ─── ATELIER tab — the React Flow canvas ────────────────────── */}
-      {activeTab === 'atelier' && (
+      {/* ─── ATELIER — the React Flow canvas. The Parcours is its own full
+           page at /programmes/[id]/timeline (separate from the canvas). ─── */}
       <div className="flex-1 min-h-0 grid grid-cols-[230px_1fr_360px] gap-3">
       {/* PALETTE */}
       <div className="rounded-2xl border border-border bg-card p-3 flex flex-col gap-2 overflow-y-auto">
@@ -751,29 +705,28 @@ function BuilderInner(props: BuilderProps = {}) {
                           <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">
                             Presets
                           </p>
-                          {SESSION_PRESETS.map((p) => {
-                            const tone = SESSION_TYPE_TONE[p.type]
-                            return (
-                              <button key={p.type} type="button"
-                                onClick={() => addNode('session', undefined, p)}
-                                draggable
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData('application/builder-node', 'session')
-                                  e.dataTransfer.setData('application/session-preset', p.type)
-                                  e.dataTransfer.effectAllowed = 'move'
-                                }}
-                                title={`Ajouter une session "${p.title}"`}
-                                className={`group w-full text-left rounded-md border px-2 py-1 transition-all ${tone} hover:scale-[1.02] active:scale-[0.98] cursor-grab active:cursor-grabbing`}>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] font-bold flex-1 truncate">{p.title}</span>
-                                  <span className="text-[8px] font-semibold opacity-70">
-                                    {p.durationKind === 'day' ? '1j' : p.durationKind === 'week' ? '7j' : '…'}
-                                  </span>
-                                  <Plus className="h-2.5 w-2.5 opacity-50" />
-                                </div>
-                              </button>
-                            )
-                          })}
+                          {presets.map((p, i) => (
+                            <button key={p.id ?? i} type="button"
+                              onClick={() => addNode('session', undefined, p)}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData('application/builder-node', 'session')
+                                if (p.id != null) e.dataTransfer.setData('application/session-preset', String(p.id))
+                                e.dataTransfer.effectAllowed = 'move'
+                              }}
+                              title={`Ajouter une session "${p.title}"`}
+                              className="group w-full text-left rounded-md border border-border bg-card px-2 py-1 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-grab active:cursor-grabbing"
+                              style={{ borderLeft: `3px solid ${p.color}` }}>
+                              <div className="flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full shrink-0" style={{ background: p.color }} />
+                                <span className="text-[10px] font-bold flex-1 truncate">{p.title}</span>
+                                <span className="text-[8px] font-semibold opacity-70">
+                                  {p.durationKind === 'day' ? '1j' : '…'}
+                                </span>
+                                <Plus className="h-2.5 w-2.5 opacity-50" />
+                              </div>
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -840,9 +793,14 @@ function BuilderInner(props: BuilderProps = {}) {
 
           <Panel position="top-right" className="!m-3">
             <div className="flex gap-2">
-              <Button onClick={() => setActiveTab('parcours')} variant="outline"
+              <Button
+                onClick={() => {
+                  if (props.existingProgrammeId) router.push(`/programmes/${props.existingProgrammeId}/timeline`)
+                  else toast.error('Enregistrez d’abord le programme pour ouvrir le Parcours')
+                }}
+                variant="outline"
                 className="gap-1.5 shadow-md backdrop-blur bg-card/95 border-amber-500/40 text-amber-700 dark:text-amber-300"
-                title="Basculer sur le Parcours pour gérer les sessions">
+                title="Ouvrir le Parcours (page séparée)">
                 <Calendar className="h-4 w-4" />Voir le Parcours
               </Button>
               <Button onClick={autoArrange} variant="outline" className="gap-1.5 shadow-md backdrop-blur bg-card/95"
@@ -877,7 +835,6 @@ function BuilderInner(props: BuilderProps = {}) {
         )}
       </div>
       </div>
-      )}
     </div>
   )
 }
@@ -1017,6 +974,12 @@ function VisualInspector({ d, onChange }: { d: VisualData; onChange: (p: any) =>
 }
 
 function FormTemplateInspector({ d, onChange }: { d: FormTemplateData; onChange: (p: any) => void }) {
+  const [formModal, setFormModal] = useState(false)
+  const customSchema = parseSchema(d.customFormSchema)
+  const hasCustom = !!customSchema && customSchema.sections.length > 0
+  const fieldCount = hasCustom
+    ? customSchema!.sections.reduce((n, s) => n + s.fields.length, 0)
+    : 0
   const templates = [
     { v: 'STANDARD',  label: 'Standard',      desc: 'Formulaire officiel Medianet — 4 sections' },
     { v: 'MINIMAL',   label: 'Minimaliste',   desc: 'Idéal pour hackathons — projet + motivation' },
@@ -1025,17 +988,82 @@ function FormTemplateInspector({ d, onChange }: { d: FormTemplateData; onChange:
     { v: 'AGRITECH',  label: 'Agritech',      desc: 'Partenariats agricoles + impact' },
   ]
   return (
-    <Field label="Squelette de formulaire">
-      <div className="space-y-1.5">
-        {templates.map((t) => (
-          <button type="button" key={t.v} onClick={() => onChange({ formTemplate: t.v })}
-            className={`w-full text-left rounded-lg border-2 p-2 transition-colors ${d.formTemplate === t.v ? 'border-indigo-500 bg-indigo-500/5' : 'border-border bg-card hover:border-indigo-400'}`}>
-            <p className="text-sm font-bold text-foreground">{t.label}</p>
-            <p className="text-[10px] text-muted-foreground">{t.desc}</p>
-          </button>
-        ))}
-      </div>
-    </Field>
+    <>
+      {/* Custom form — overrides the skeleton when defined */}
+      <Field label="Formulaire personnalisé">
+        <div className="space-y-1.5">
+          {hasCustom ? (
+            <div className="rounded-lg border-2 border-indigo-500 bg-indigo-500/5 p-2">
+              <p className="text-sm font-bold text-foreground">Personnalisé actif</p>
+              <p className="text-[10px] text-muted-foreground">
+                {customSchema!.sections.length} section(s) · {fieldCount} champ(s) — remplace le squelette ci-dessous.
+              </p>
+            </div>
+          ) : (
+            <p className="text-[10px] text-muted-foreground">
+              Aucun formulaire personnalisé — les porteurs verront le squelette sélectionné ci-dessous.
+            </p>
+          )}
+          <div className="flex gap-1.5">
+            <Button type="button" variant="outline" size="sm" className="flex-1 gap-1 h-8 text-xs"
+              onClick={() => setFormModal(true)}>
+              <FormInput className="h-3 w-3" />{hasCustom ? 'Éditer le formulaire' : 'Créer un formulaire'}
+            </Button>
+            {hasCustom && (
+              <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive"
+                onClick={() => { if (confirm('Supprimer le formulaire personnalisé ? Le squelette reprendra la main.')) onChange({ customFormSchema: '' }) }}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </Field>
+
+      <Field label={`Squelette de formulaire${hasCustom ? ' (inactif — personnalisé prioritaire)' : ''}`}>
+        <div className={`space-y-1.5 ${hasCustom ? 'opacity-50' : ''}`}>
+          {templates.map((t) => (
+            <button type="button" key={t.v} onClick={() => onChange({ formTemplate: t.v })}
+              className={`w-full text-left rounded-lg border-2 p-2 transition-colors ${d.formTemplate === t.v ? 'border-indigo-500 bg-indigo-500/5' : 'border-border bg-card hover:border-indigo-400'}`}>
+              <p className="text-sm font-bold text-foreground">{t.label}</p>
+              <p className="text-[10px] text-muted-foreground">{t.desc}</p>
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      {/* Centered modal hosting the full FormBuilder (the inspector is too narrow) */}
+      {formModal && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setFormModal(false)} />
+          <div className="relative z-10 w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3 shrink-0">
+              <div>
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                  <FormInput className="h-4 w-4 text-indigo-500" />Formulaire de candidature personnalisé
+                </h3>
+                <p className="text-[11px] text-muted-foreground">
+                  Sections + champs vus par les porteurs. Enregistré avec le programme (bouton Enregistrer du builder).
+                </p>
+              </div>
+              <button type="button" onClick={() => setFormModal(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <FormBuilder
+                value={customSchema}
+                onChange={(next: CustomFormSchema | null) =>
+                  onChange({ customFormSchema: next && next.sections.length ? JSON.stringify(next) : '' })}
+              />
+            </div>
+            <div className="border-t border-border px-4 py-2.5 shrink-0 flex justify-end">
+              <Button type="button" size="sm" onClick={() => setFormModal(false)}>Terminé</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 

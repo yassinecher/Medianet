@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Calendar, Users, ArrowRight, Trophy, MapPin } from 'lucide-react'
+import { Calendar, Users, ArrowRight, Trophy, MapPin, Timer } from 'lucide-react'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { cn, formatDate, statusColor } from '@/lib/utils'
 import type { Programme } from '@/types'
@@ -9,8 +9,25 @@ const statusLabel: Record<string, string> = {
   IN_PROGRESS: 'En cours', EVALUATION: 'Évaluation', CANCELLED: 'Annulé',
 }
 
+/** Days until the candidature deadline (synced with the Candidature session). */
+function daysLeft(programme: Programme): number | null {
+  const raw = (programme as any).candidatureDeadline ?? programme.applicationDeadline
+  if (!raw) return null
+  const d = new Date(raw + 'T23:59:59')
+  if (isNaN(d.getTime())) return null
+  return Math.ceil((d.getTime() - Date.now()) / 86_400_000)
+}
+
 export function ProgrammeCard({ programme }: { programme: Programme }) {
   const title = programme.title ?? programme.name ?? ''
+  const accepting = (programme as any).acceptingApplications
+  const left = daysLeft(programme)
+  // Countdown chip: urgent (≤7j) = amber pulse, open = emerald, closed = muted.
+  const countdown = accepting && left != null && left >= 0
+    ? { label: left === 0 ? 'Dernier jour !' : `Clôture dans ${left} j`, urgent: left <= 7 }
+    : accepting === false && left != null
+      ? { label: 'Candidatures fermées', urgent: false }
+      : null
 
   return (
     <Link href={`/programmes/${programme.id}`} className="group block h-full">
@@ -75,6 +92,20 @@ export function ProgrammeCard({ programme }: { programme: Programme }) {
                 </span>
               )}
             </div>
+          )}
+
+          {/* Candidature countdown — deadline is auto-synced with the session */}
+          {countdown && (
+            <span className={cn(
+              'inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold border',
+              countdown.label === 'Candidatures fermées'
+                ? 'bg-muted text-muted-foreground border-border'
+                : countdown.urgent
+                  ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-400/50 animate-pulse'
+                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-400/40',
+            )}>
+              <Timer className="h-3 w-3" />{countdown.label}
+            </span>
           )}
 
           {/* Meta */}

@@ -11,6 +11,8 @@ public class UpdateSessionActivityRequest {
     private String       title;
     private String       description;
     private String       type;
+    /** Optional — change the activity block color (hex). */
+    private String       color;
     private LocalTime    startTime;
     private LocalTime    endTime;
     private String       location;

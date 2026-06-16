@@ -24,7 +24,7 @@ public class NotificationController {
      * Create and immediately send one invitation email — ADMIN only.
      */
     @PostMapping("/invitations")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update')")
     public ResponseEntity<InvitationDto> invite(
             @Valid @RequestBody CreateInvitationRequest req,
             @RequestAttribute("userId") Long adminId,
@@ -40,7 +40,7 @@ public class NotificationController {
      * Send the same invitation to a list of recipients — ADMIN only.
      */
     @PostMapping("/invitations/bulk")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update')")
     public ResponseEntity<List<InvitationDto>> bulkInvite(
             @Valid @RequestBody BulkInviteRequest req,
             @RequestAttribute("userId") Long adminId,
@@ -56,7 +56,7 @@ public class NotificationController {
      * Send a freeform email — ADMIN only.
      */
     @PostMapping("/email/send")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update')")
     public ResponseEntity<Void> sendEmail(@Valid @RequestBody SendEmailRequest req) {
         notificationService.sendEmail(req);
         return ResponseEntity.ok().build();
@@ -65,19 +65,19 @@ public class NotificationController {
     // ── Read ──────────────────────────────────────────────────────────────────
 
     @GetMapping("/invitations")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update') or hasAuthority('notifications:read')")
     public ResponseEntity<List<InvitationDto>> getAll() {
         return ResponseEntity.ok(notificationService.getAll());
     }
 
     @GetMapping("/invitations/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update') or hasAuthority('notifications:read')")
     public ResponseEntity<InvitationDto> getById(@PathVariable Long id) {
         return ResponseEntity.ok(notificationService.getById(id));
     }
 
     @GetMapping("/invitations/programme/{programmeId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update') or hasAuthority('notifications:read')")
     public ResponseEntity<List<InvitationDto>> getByProgramme(
             @PathVariable Long programmeId,
             @RequestParam(required = false) String type,
@@ -86,20 +86,26 @@ public class NotificationController {
     }
 
     @GetMapping("/invitations/phase/{phaseId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update') or hasAuthority('notifications:read')")
     public ResponseEntity<List<InvitationDto>> getByPhase(@PathVariable Long phaseId) {
         return ResponseEntity.ok(notificationService.getByPhase(phaseId));
     }
 
+    @GetMapping("/invitations/activity/{activityId}")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update') or hasAuthority('notifications:read')")
+    public ResponseEntity<List<InvitationDto>> getByActivity(@PathVariable Long activityId) {
+        return ResponseEntity.ok(notificationService.getByActivity(activityId));
+    }
+
     @GetMapping("/invitations/programme/{programmeId}/stats")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update') or hasAuthority('notifications:read')")
     public ResponseEntity<Map<String, Long>> getStats(@PathVariable Long programmeId) {
         return ResponseEntity.ok(notificationService.getStats(programmeId));
     }
 
     /** Global stats across all invitations — ADMIN. */
     @GetMapping("/invitations/stats")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update') or hasAuthority('notifications:read')")
     public ResponseEntity<Map<String, Long>> getGlobalStats() {
         return ResponseEntity.ok(notificationService.getGlobalStats());
     }
@@ -111,7 +117,7 @@ public class NotificationController {
      * the recipient says they can't find the original message.
      */
     @PostMapping("/invitations/{id}/resend")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update')")
     public ResponseEntity<InvitationDto> resend(@PathVariable Long id) {
         return ResponseEntity.ok(notificationService.resend(id));
     }
@@ -120,7 +126,7 @@ public class NotificationController {
      * Delete an invitation row (cancels it). The token is invalidated immediately.
      */
     @DeleteMapping("/invitations/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         notificationService.delete(id);
         return ResponseEntity.noContent().build();

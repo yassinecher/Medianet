@@ -39,6 +39,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String email  = claims.getSubject();
 
                 List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+                // Permission slugs (e.g. "programmes:update") become raw authorities so
+                // endpoints can use hasAuthority('module:action') for limited admins.
+                Object permsObj = claims.get("permissions");
+                if (permsObj instanceof List<?> permList) {
+                    for (Object p : permList) {
+                        if (p != null) authorities.add(new SimpleGrantedAuthority(String.valueOf(p)));
+                    }
+                }
                 Object rolesObj = claims.get("roles");
                 if (rolesObj instanceof List<?> roleList && !roleList.isEmpty()) {
                     for (Object r : roleList) {

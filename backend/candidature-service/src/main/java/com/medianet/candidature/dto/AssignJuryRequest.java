@@ -9,4 +9,7 @@ import java.util.List;
 public class AssignJuryRequest {
     @NotEmpty
     private List<JuryAssignmentItem> juryAssignments;
+
+    /** Optional: the evaluating (préselection) session id whose criteria apply. */
+    private Long phaseId;
 }

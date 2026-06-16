@@ -85,6 +85,7 @@ public class SessionDayService {
         if (req.getTitle()         != null) a.setTitle(req.getTitle());
         if (req.getDescription()   != null) a.setDescription(req.getDescription());
         if (req.getType()          != null) a.setType(parseActivityType(req.getType()));
+        if (req.getColor()         != null) a.setColor(req.getColor());
         if (req.getStartTime()     != null) a.setStartTime(req.getStartTime());
         if (req.getEndTime()       != null) a.setEndTime(req.getEndTime());
         if (req.getLocation()      != null) a.setLocation(req.getLocation());
@@ -121,6 +122,7 @@ public class SessionDayService {
                 .title(a.getTitle())
                 .description(a.getDescription())
                 .type(a.getType() != null ? a.getType().name() : ActivityType.ACTIVITY.name())
+                .color(a.getColor())
                 .startTime(a.getStartTime())
                 .endTime(a.getEndTime())
                 .location(a.getLocation())
@@ -138,6 +140,7 @@ public class SessionDayService {
                 .title(req.getTitle())
                 .description(req.getDescription())
                 .type(parseActivityType(req.getType()))
+                .color(req.getColor())
                 .startTime(req.getStartTime())
                 .endTime(req.getEndTime())
                 .location(req.getLocation())

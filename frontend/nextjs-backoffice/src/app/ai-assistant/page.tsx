@@ -55,6 +55,8 @@ interface Turn {
   steps: Step[]
   /** True while we're still waiting for the backend to return. */
   pending?: boolean
+  /** Live activity label while streaming ("🔍 Recherche programmes…"). */
+  liveStatus?: string
   /** Pending action ids referenced by this turn (so we can highlight them in the right panel). */
   pendingActionIds?: number[]
   /** Quick-reply chips suggested by the backend for the last turn. */
@@ -317,38 +319,102 @@ export default function AdminAiPage() {
     setLoading(true)
     // Fresh abort controller so the user can stop a slow request
     abortRef.current = new AbortController()
+
+    // Mutate the live (last, pending) turn immutably — used by stream events.
+    const patchLive = (fn: (t: Turn) => void) =>
+      setTurns((prev) => {
+        const next = [...prev]
+        const last = next[next.length - 1]
+        if (last?.pending) {
+          const copy = { ...last, steps: [...last.steps] }
+          fn(copy)
+          next[next.length - 1] = copy
+        }
+        return next
+      })
+
     try {
-      const r = await adminAiApi.chat({ conversationId, message: text }, abortRef.current.signal)
-      setConversationId(r.data.conversationId)
+      // ── 1. Live SSE stream (preferred) — fall back to blocking POST ────────
+      let done: any = null
+      let streamError: string | null = null
+      let gotAnyEvent = false
+      try {
+        await adminAiApi.chatStream({ conversationId, message: text }, (type, payload) => {
+          gotAnyEvent = true
+          switch (type) {
+            case 'status':
+              patchLive((t) => { t.liveStatus = payload?.label })
+              break
+            case 'tool_start':
+              patchLive((t) => {
+                t.liveStatus = payload?.label
+                t.steps.push({ kind: 'tool_call', tool: payload?.tool })
+              })
+              break
+            case 'tool_end':
+              patchLive((t) => {
+                t.liveStatus = undefined
+                t.steps.push({ kind: 'tool_result', tool: payload?.tool, result: payload?.preview, isError: payload?.ok === false })
+              })
+              break
+            case 'action_proposed':
+              patchLive((t) => { t.liveStatus = `📋 ${payload?.title ?? 'Action proposée'}` })
+              break
+            case 'text':
+              patchLive((t) => { t.finalText = payload?.content ?? '' })
+              break
+            case 'done':
+              done = payload
+              break
+            case 'error':
+              streamError = payload?.message ?? 'Erreur du flux'
+              break
+          }
+        }, abortRef.current.signal)
+      } catch (streamErr: any) {
+        if (streamErr?.name === 'AbortError') throw streamErr
+        // Endpoint unreachable before any event → silent fallback to blocking chat
+        if (!gotAnyEvent) {
+          const r = await adminAiApi.chat({ conversationId, message: text }, abortRef.current.signal)
+          done = r.data
+        } else if (!done) {
+          throw streamErr
+        }
+      }
+      if (!done && streamError) throw new Error(streamError)
+      if (!done) throw new Error('Le flux s\'est terminé sans réponse.')
+
+      // ── 2. Post-processing — identical to the blocking path ────────────────
+      setConversationId(done.conversationId)
       // Reload conversation to get the full thread
-      const msgs = await adminAiApi.messages(r.data.conversationId)
+      const msgs = await adminAiApi.messages(done.conversationId)
       const raw = (msgs.data ?? []).map((m: any) => {
         try { return JSON.parse(m.contentJson) } catch { return null }
       }).filter(Boolean) as RawMessage[]
       const rebuilt = buildTurns(raw)
       // Mark the last turn's pending action ids + suggestions + clarification so the UI highlights them
       if (rebuilt.length > 0) {
-        if ((r.data.pendingActionIds ?? []).length > 0) {
-          rebuilt[rebuilt.length - 1].pendingActionIds = r.data.pendingActionIds
+        if ((done.pendingActionIds ?? []).length > 0) {
+          rebuilt[rebuilt.length - 1].pendingActionIds = done.pendingActionIds
         }
-        if ((r.data.suggestions ?? []).length > 0) {
-          rebuilt[rebuilt.length - 1].suggestions = r.data.suggestions
+        if ((done.suggestions ?? []).length > 0) {
+          rebuilt[rebuilt.length - 1].suggestions = done.suggestions
         }
-        if (r.data.clarification) {
-          rebuilt[rebuilt.length - 1].clarification = r.data.clarification
+        if (done.clarification) {
+          rebuilt[rebuilt.length - 1].clarification = done.clarification
         }
-        if (r.data.plan) {
-          rebuilt[rebuilt.length - 1].plan = r.data.plan
+        if (done.plan) {
+          rebuilt[rebuilt.length - 1].plan = done.plan
         }
       }
       setTurns(rebuilt)
-      if ((r.data.pendingActionIds ?? []).length > 0) {
-        toast.success(`${r.data.pendingActionIds.length} action(s) à confirmer →`)
+      if ((done.pendingActionIds ?? []).length > 0) {
+        toast.success(`${done.pendingActionIds.length} action(s) à confirmer →`)
         refreshActions()
       }
       refreshConversations()
     } catch (err: any) {
-      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED' || err?.name === 'AbortError') {
         setTurns((prev) => {
           const next = [...prev]
           const last = next[next.length - 1]
@@ -714,9 +780,16 @@ function TurnView({ turn, isLast, stillLoading, pendingActions, onConfirm, onCan
           <Bot className={`h-4 w-4 text-white ${turn.pending ? 'animate-pulse' : ''}`} />
         </div>
         <div className="flex-1 min-w-0 space-y-2">
-          {/* Pending: thinking indicator */}
+          {/* Pending: thinking indicator with live activity */}
           {turn.pending && (
-            <ThinkingBubble />
+            <ThinkingBubble label={turn.liveStatus} />
+          )}
+
+          {/* Partial streamed text — visible while the agent is still working */}
+          {turn.pending && turn.finalText && (
+            <div className="rounded-2xl rounded-bl-md bg-muted px-4 py-2.5 text-sm leading-relaxed text-foreground">
+              <MarkdownText text={turn.finalText} />
+            </div>
           )}
 
           {/* Plan wizard — when the AI proposed a multi-step plan */}
@@ -1181,7 +1254,7 @@ function PhotoCard({ photo }: { photo: PhotoResult }) {
 
 // ── Thinking bubble (pending) ────────────────────────────────────────────────
 
-function ThinkingBubble() {
+function ThinkingBubble({ label }: { label?: string }) {
   return (
     <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-md bg-muted px-4 py-2.5 text-sm text-muted-foreground">
       <div className="flex gap-1">
@@ -1189,7 +1262,13 @@ function ThinkingBubble() {
         <span className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-bounce" style={{ animationDelay: '150ms' }} />
         <span className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-bounce" style={{ animationDelay: '300ms' }} />
       </div>
-      <span>Réflexion…</span>
+      {/* Live activity from the SSE stream — falls back to the generic label */}
+      <AnimatePresence mode="wait">
+        <motion.span key={label ?? 'default'} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }}>
+          {label ?? 'Réflexion…'}
+        </motion.span>
+      </AnimatePresence>
     </div>
   )
 }

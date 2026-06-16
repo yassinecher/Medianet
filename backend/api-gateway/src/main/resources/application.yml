@@ -15,6 +15,10 @@ spring:
           uri: lb://auth-service
           predicates:
             - Path=/api/auth/**
+        - id: auth-service-organizations
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/organizations/**
         - id: candidature-service
           uri: lb://candidature-service
           predicates:
@@ -39,6 +43,18 @@ spring:
           uri: lb://programme-service
           predicates:
             - Path=/api/landing-page/**
+        - id: programme-service-presets
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/session-presets/**
+        - id: programme-service-form-templates
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/form-templates/**
+        - id: programme-service-parcours-templates
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/parcours-templates/**
         - id: admin-ai-service
           uri: lb://admin-ai-service
           predicates:

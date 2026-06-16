@@ -33,6 +33,16 @@ public class ProgrammePhaseDto {
     /** Swimlane (e.g. "Principal", "Cohorte A") — drives row grouping on the timeline. */
     private String          lane;
 
+    /** Hex color of the session bar — first-class (sessions are type-free). */
+    private String          color;
+
+    /** Parent (range) session this day-session nests inside; null = top-level. */
+    private Long            parentSessionId;
+
+    /** Évaluation sessions: saved candidature-selection (shortlist) the jury
+     *  evaluates; null = all candidatures. */
+    private Long            evaluationSelectionId;
+
     /** Days that make up this session (1..N). */
     private List<SessionDayDto> days;
 }

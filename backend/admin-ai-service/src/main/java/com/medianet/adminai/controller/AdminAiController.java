@@ -51,6 +51,59 @@ public class AdminAiController {
         return ResponseEntity.ok(service.chat(req, adminId, adminName, adminToken));
     }
 
+    /** Dedicated executor for streaming chats — the agent loop can run for minutes. */
+    private static final java.util.concurrent.ExecutorService CHAT_STREAM_POOL =
+            java.util.concurrent.Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, "ai-chat-stream");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /**
+     * Live variant of /chat — Server-Sent Events. Emits progress while the agent
+     * loop runs: {@code status} (thinking phase), {@code tool_start}/{@code tool_end}
+     * (each read tool), {@code action_proposed} (write queued), {@code text}
+     * (partial visible text), then a final {@code done} event carrying the same
+     * ChatResponse JSON the blocking endpoint returns. {@code error} on failure.
+     */
+    @PostMapping(value = "/chat/stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter chatStream(
+            @Valid @RequestBody ChatRequest req,
+            HttpServletRequest http) {
+        Long   adminId    = (Long) http.getAttribute("userId");
+        String adminName  = (String) http.getAttribute("userFirstName");
+        String adminToken = (String) http.getAttribute("token");
+
+        // No timeout — the agent loop can legitimately take several minutes
+        // (LLM calls are capped at 4-10 min internally).
+        var emitter = new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(0L);
+        var jsonMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        CHAT_STREAM_POOL.submit(() -> {
+            try {
+                ChatResponse resp = service.chat(req, adminId, adminName, adminToken, (type, data) -> {
+                    try {
+                        emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+                                .event().name(type).data(jsonMapper.writeValueAsString(data)));
+                    } catch (Exception ignored) {
+                        // Client disconnected — chat keeps running; everything is persisted.
+                    }
+                });
+                emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+                        .event().name("done").data(jsonMapper.writeValueAsString(resp)));
+                emitter.complete();
+            } catch (Exception e) {
+                try {
+                    emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+                            .event().name("error").data(jsonMapper.writeValueAsString(
+                                    Map.of("message", e.getMessage() == null ? "Erreur inconnue" : e.getMessage()))));
+                } catch (Exception ignored) {}
+                emitter.complete();
+            }
+        });
+        return emitter;
+    }
+
     // ── Conversations ─────────────────────────────────────────────────────────
 
     @GetMapping("/conversations")

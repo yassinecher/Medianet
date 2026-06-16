@@ -4,72 +4,81 @@ import com.medianet.programme.entity.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * Derives a {@link ProgrammeStatus} from the current set of sessions
- * (a.k.a. phases) and their statuses. The rules are intentionally simple
- * and forgiving — they nudge the programme forward, never lock it back.
+ * Derives a {@link ProgrammeStatus} from the programme's session flow.
  *
- * <p>Rules (evaluated top-to-bottom; first match wins):
+ * <p>Sessions are type-free, so the flow is purely <b>order + date</b> based: the
+ * top-level sessions, sorted by start date, form a pipeline (e.g. Candidature →
+ * Présélection → Pitch Day → Incubation → Demo Day). The "current stage" is the
+ * one whose date window contains today.
  *
- * <ol>
- *   <li>No sessions yet → keep current status (default {@code DRAFT}).</li>
- *   <li>Any session ACTIVE of type CANDIDATURE_SUBMISSION → {@code OPEN}.</li>
- *   <li>Any session ACTIVE of type PRESELECTION or PITCH_DAY → {@code EVALUATION}.</li>
- *   <li>Any session ACTIVE of type ONBOARDING / INCUBATION / TRAINING_DAY → {@code IN_PROGRESS}.</li>
- *   <li>Any session ACTIVE of type DEMO_DAY → {@code IN_PROGRESS} (final stretch).</li>
- *   <li>All sessions COMPLETED and at least one DEMO_DAY exists → {@code CLOSED}.</li>
- *   <li>All sessions COMPLETED → {@code CLOSED}.</li>
- *   <li>Otherwise keep the current status.</li>
- * </ol>
- *
- * <p>If the programme was manually moved to {@code CANCELLED} we never override
- * it from session activity.
+ * <p>Mapping (forgiving; never moves backward off CANCELLED):
+ * <ul>
+ *   <li>No dated top-level sessions → keep current status.</li>
+ *   <li>Today before the first stage starts → {@code OPEN} (accepting / not started).</li>
+ *   <li>Today after the last stage ends → {@code CLOSED}.</li>
+ *   <li>On the first stage → {@code OPEN}; on any later stage → {@code IN_PROGRESS}.</li>
+ * </ul>
  */
 @Component
 @Slf4j
 public class ProgrammeLifecycle {
 
-    /**
-     * Inspect the programme's sessions and update {@link Programme#setStatus}
-     * if a transition is implied. Returns true if the status was changed.
-     */
     public boolean recompute(Programme p) {
         if (p == null) return false;
-        if (p.getStatus() == ProgrammeStatus.CANCELLED) return false;
+        // Manual "hold" statuses the admin set explicitly — never auto-override:
+        //   DRAFT (not yet published), EVALUATION (manual evaluation phase), CANCELLED.
+        // The auto-flow only manages the running states OPEN ↔ IN_PROGRESS ↔ CLOSED.
+        ProgrammeStatus cur = p.getStatus();
+        if (cur == ProgrammeStatus.CANCELLED || cur == ProgrammeStatus.DRAFT
+                || cur == ProgrammeStatus.EVALUATION || cur == ProgrammeStatus.ARCHIVED) return false;
 
-        List<ProgrammePhase> sessions = p.getPhases();
-        if (sessions == null || sessions.isEmpty()) return false;
+        List<ProgrammePhase> all = p.getPhases();
+        if (all == null || all.isEmpty()) return false;
 
-        ProgrammeStatus target = p.getStatus();
+        // Top-level, dated sessions ordered chronologically = the parcours pipeline.
+        List<ProgrammePhase> stages = all.stream()
+                .filter(s -> s.getParentSessionId() == null)
+                .filter(s -> s.getStartDate() != null)
+                .sorted(Comparator.comparing(ProgrammePhase::getStartDate))
+                .collect(Collectors.toList());
+        if (stages.isEmpty()) return false;
 
-        boolean candidatureActive = sessions.stream().anyMatch(s ->
-                s.getStatus() == PhaseStatus.ACTIVE && s.getSessionType() == SessionType.CANDIDATURE_SUBMISSION);
-        boolean evalActive = sessions.stream().anyMatch(s ->
-                s.getStatus() == PhaseStatus.ACTIVE
-                && (s.getSessionType() == SessionType.PRESELECTION
-                    || s.getSessionType() == SessionType.PITCH_DAY));
-        boolean runActive = sessions.stream().anyMatch(s ->
-                s.getStatus() == PhaseStatus.ACTIVE
-                && (s.getSessionType() == SessionType.ONBOARDING
-                    || s.getSessionType() == SessionType.INCUBATION
-                    || s.getSessionType() == SessionType.TRAINING_DAY
-                    || s.getSessionType() == SessionType.DEMO_DAY));
+        LocalDate today = LocalDate.now();
+        ProgrammePhase first = stages.get(0);
+        ProgrammePhase last  = stages.get(stages.size() - 1);
+        LocalDate firstStart = first.getStartDate();
+        LocalDate lastEnd    = endOf(last);
 
-        boolean allCompleted = sessions.stream().allMatch(s -> s.getStatus() == PhaseStatus.COMPLETED);
-
-        if (candidatureActive)      target = ProgrammeStatus.OPEN;
-        else if (evalActive)        target = ProgrammeStatus.EVALUATION;
-        else if (runActive)         target = ProgrammeStatus.IN_PROGRESS;
-        else if (allCompleted)      target = ProgrammeStatus.CLOSED;
+        ProgrammeStatus target;
+        if (today.isBefore(firstStart)) {
+            target = ProgrammeStatus.OPEN;
+        } else if (today.isAfter(lastEnd)) {
+            target = ProgrammeStatus.CLOSED;
+        } else {
+            // Current stage = first session whose end is not before today.
+            int idx = stages.size() - 1;
+            for (int i = 0; i < stages.size(); i++) {
+                if (!endOf(stages.get(i)).isBefore(today)) { idx = i; break; }
+            }
+            target = (idx == 0) ? ProgrammeStatus.OPEN : ProgrammeStatus.IN_PROGRESS;
+        }
 
         if (target != p.getStatus()) {
-            log.info("Programme {} status {} → {} (driven by session progression)",
+            log.info("Programme {} status {} → {} (driven by session flow)",
                     p.getId(), p.getStatus(), target);
             p.setStatus(target);
             return true;
         }
         return false;
+    }
+
+    private static LocalDate endOf(ProgrammePhase s) {
+        return s.getEndDate() != null ? s.getEndDate() : s.getStartDate();
     }
 }
