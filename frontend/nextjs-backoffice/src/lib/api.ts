@@ -329,8 +329,8 @@ export const candidaturesApi = {
     api.post(`/api/candidatures/${id}/assign-jury`, data),
   /** Change the jury: remove a single assignment (others keep their links). */
   removeJury: (id: number, assignmentId: number) => api.delete(`/api/candidatures/${id}/jury/${assignmentId}`),
-  aiScore: (id: number) => api.post(`/api/ai/score/${id}`),
-  aiMatch: (candidatureId: number) => api.post(`/api/ai/match/${candidatureId}`),
+  /** Medi (LLM) scoring — full-context candidature evaluation (programme + org + team + responses). */
+  mediScore: (id: number) => api.post(`/api/admin-ai/score/${id}`),
   /** Saved candidature-list versions (shortlists) for the Présélection session */
   listSelections:  (programmeId: number) => api.get(`/api/candidatures/programme/${programmeId}/selections`),
   createSelection: (programmeId: number, data: { name: string; candidatureIds: number[] }) =>

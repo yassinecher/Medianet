@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Loader2, FileText, Trophy, Calendar } from 'lucide-react'
+import { ArrowLeft, Loader2, FileText, Trophy, Calendar, Layers } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { candidaturesApi } from '@/lib/api'
 import { AppShell } from '@/components/layout/AppShell'
@@ -79,7 +79,11 @@ export default function CandidatureDetailPage() {
             <div className="min-w-0">
               <h1 className="text-xl font-bold text-foreground">{cand.projectName || cand.companyName || `Candidature #${cand.id}`}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                {cand.programmeName && <span>{cand.programmeName}</span>}
+                {cand.programmeId ? (
+                  <Link href={`/programmes/${cand.programmeId}`} className="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 font-medium text-brand-600 hover:bg-brand-500/20 dark:text-brand-400">
+                    <Layers className="h-3 w-3" />{cand.programmeName ?? 'Programme'}
+                  </Link>
+                ) : cand.programmeName && <span>{cand.programmeName}</span>}
                 {cand.submittedAt && <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{formatRelativeDate(cand.submittedAt)}</span>}
               </div>
             </div>

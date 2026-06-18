@@ -27,6 +27,33 @@ public class CandidatureService {
     @org.springframework.beans.factory.annotation.Value("${PROGRAMME_SERVICE_URL:http://programme-service:8086}")
     private String programmeServiceUrl;
 
+    /** Small in-memory cache of programmeId → title so a candidature list does not
+     *  fan out one programme-service call per row. Fail-open: null name on error. */
+    private final java.util.concurrent.ConcurrentHashMap<Long, String> programmeNameCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    @SuppressWarnings("unchecked")
+    private String resolveProgrammeName(Long programmeId) {
+        if (programmeId == null) return null;
+        String cached = programmeNameCache.get(programmeId);
+        if (cached != null) return cached.isEmpty() ? null : cached;
+        String name = null;
+        try {
+            Map<String, Object> prog = restTemplate.getForObject(
+                    programmeServiceUrl + "/api/programmes/" + programmeId, Map.class);
+            if (prog != null) {
+                Object t = prog.get("title");
+                if (t == null) t = prog.get("name");
+                if (t != null) name = t.toString();
+            }
+        } catch (Exception e) {
+            log.debug("Could not resolve programme {} name: {}", programmeId, e.getMessage());
+        }
+        // Cache even a null result (as "") to avoid hammering on missing programmes.
+        programmeNameCache.put(programmeId, name == null ? "" : name);
+        return name;
+    }
+
     // ── Submit ────────────────────────────────────────────────────────────────
 
     @Transactional
@@ -178,11 +205,15 @@ public class CandidatureService {
 
         for (JuryAssignmentItem item : request.getJuryAssignments()) {
             String email = item.getJuryEmail();
+            // Match per (email, session): the same jury can be assigned to the same
+            // candidature in several evaluation sessions — each assignment is its own
+            // evaluation round. Same email + same phase = refresh; different phase = new.
             JuryAssignment match = existing.stream()
-                    .filter(a -> a.getJuryEmail() != null && a.getJuryEmail().equalsIgnoreCase(email))
+                    .filter(a -> a.getJuryEmail() != null && a.getJuryEmail().equalsIgnoreCase(email)
+                            && java.util.Objects.equals(a.getPhaseId(), request.getPhaseId()))
                     .findFirst().orElse(null);
             if (match != null) {
-                // Already assigned — refresh identity, keep the existing token/status.
+                // Already assigned to THIS session — refresh identity, keep token/status.
                 if (item.getJuryId() != null)   match.setJuryId(item.getJuryId());
                 if (item.getJuryName() != null) match.setJuryName(item.getJuryName());
                 if (request.getPhaseId() != null) match.setPhaseId(request.getPhaseId());
@@ -237,7 +268,18 @@ public class CandidatureService {
 
     @Transactional
     public CandidatureDto evaluateCandidature(Long candidatureId, Long juryId, EvaluationRequest req) {
-        upsertEvaluation(candidatureId, juryId, req.getJuryEmail(), req.getJuryName(), req);
+        // Scope the evaluation to a session. The request may carry the phaseId
+        // (front-office jury page passes ?phase=, admin picks a session); otherwise
+        // derive it from this jury's assignment so a jury assigned to a new
+        // evaluation session produces a fresh, separate evaluation.
+        Long phaseId = req.getPhaseId();
+        if (phaseId == null && juryId != null) {
+            phaseId = juryAssignmentRepository.findByCandidatureId(candidatureId).stream()
+                    .filter(a -> juryId.equals(a.getJuryId()) && a.getPhaseId() != null)
+                    .map(JuryAssignment::getPhaseId)
+                    .findFirst().orElse(null);
+        }
+        upsertEvaluation(candidatureId, juryId, req.getJuryEmail(), req.getJuryName(), phaseId, req);
         Candidature candidature = candidatureRepository.findById(candidatureId)
                 .orElseThrow(() -> new RuntimeException("Candidature not found"));
         return toDtoWithRelations(candidature);
@@ -249,35 +291,42 @@ public class CandidatureService {
      * evaluation and recomputes the candidature's average totalScore.
      */
     private void upsertEvaluation(Long candidatureId, Long juryId,
-                                  String juryEmail, String juryName, EvaluationRequest req) {
+                                  String juryEmail, String juryName, Long phaseId, EvaluationRequest req) {
         Candidature candidature = candidatureRepository.findById(candidatureId)
                 .orElseThrow(() -> new RuntimeException("Candidature not found"));
 
         Evaluation evaluation;
         if (juryId != null) {
-            evaluation = evaluationRepository.findByCandidatureIdAndJuryId(candidatureId, juryId)
+            // One evaluation per jury PER SESSION — a candidature added to a new
+            // evaluation session gets a fresh evaluation instead of overwriting.
+            evaluation = evaluationRepository.findByCandidatureIdAndJuryIdAndPhaseId(candidatureId, juryId, phaseId)
                     .orElse(Evaluation.builder()
                             .candidatureId(candidatureId)
                             .juryId(juryId)
+                            .phaseId(phaseId)
                             .criteriaScores(new ArrayList<>())
                             .build());
         } else {
-            // Token path — match the (account-less) jury by email.
+            // Token path — match the (account-less) jury by email AND session.
             final String email = juryEmail;
             evaluation = evaluationRepository.findByCandidatureId(candidatureId).stream()
                     .filter(e -> e.getJuryId() == null && email != null
-                            && email.equalsIgnoreCase(e.getJuryEmail()))
+                            && email.equalsIgnoreCase(e.getJuryEmail())
+                            && java.util.Objects.equals(phaseId, e.getPhaseId()))
                     .findFirst()
                     .orElse(Evaluation.builder()
                             .candidatureId(candidatureId)
+                            .phaseId(phaseId)
                             .criteriaScores(new ArrayList<>())
                             .build());
         }
 
         evaluation.setJuryEmail(juryEmail);
         evaluation.setJuryName(juryName);
+        evaluation.setPhaseId(phaseId);
         evaluation.setComment(req.getComment());
 
+        if (evaluation.getCriteriaScores() == null) evaluation.setCriteriaScores(new ArrayList<>());
         if (req.getCriteriaScores() != null && !req.getCriteriaScores().isEmpty()) {
             // Dynamic mode — build CriteriaScore entities from request
             List<CriteriaScore> scores = req.getCriteriaScores().stream()
@@ -288,7 +337,12 @@ public class CandidatureService {
                             .weight(r.getWeight())
                             .build())
                     .collect(Collectors.toList());
-            evaluation.setCriteriaScores(scores);
+            // Mutate the @ElementCollection in place. On an existing evaluation,
+            // flush the cleared collection (deletes old rows) BEFORE re-adding so
+            // the row-by-row delete+insert can't collide on update.
+            evaluation.getCriteriaScores().clear();
+            if (evaluation.getId() != null) evaluationRepository.saveAndFlush(evaluation);
+            evaluation.getCriteriaScores().addAll(scores);
             // Clear legacy fields when using dynamic mode
             evaluation.setInnovationScore(null);
             evaluation.setFeasibilityScore(null);
@@ -300,7 +354,8 @@ public class CandidatureService {
             evaluation.setFeasibilityScore(req.getFeasibilityScore());
             evaluation.setMarketImpactScore(req.getMarketImpactScore());
             evaluation.setTeamQualityScore(req.getTeamQualityScore());
-            evaluation.setCriteriaScores(new ArrayList<>());
+            evaluation.getCriteriaScores().clear();
+            if (evaluation.getId() != null) evaluationRepository.saveAndFlush(evaluation);
         }
 
         evaluation.calculateWeightedScore();
@@ -329,7 +384,8 @@ public class CandidatureService {
 
         EvaluationDto existing = evaluationRepository.findByCandidatureId(c.getId()).stream()
                 .filter(e -> e.getJuryId() == null && ja.getJuryEmail() != null
-                        && ja.getJuryEmail().equalsIgnoreCase(e.getJuryEmail()))
+                        && ja.getJuryEmail().equalsIgnoreCase(e.getJuryEmail())
+                        && java.util.Objects.equals(ja.getPhaseId(), e.getPhaseId()))
                 .findFirst().map(this::toEvaluationDto).orElse(null);
 
         return TokenEvaluationDto.builder()
@@ -351,7 +407,7 @@ public class CandidatureService {
     public TokenEvaluationDto submitEvaluationByToken(String token, EvaluationRequest req) {
         JuryAssignment ja = juryAssignmentRepository.findByToken(token)
                 .orElseThrow(() -> new IllegalArgumentException("Lien d'évaluation invalide ou expiré"));
-        upsertEvaluation(ja.getCandidatureId(), null, ja.getJuryEmail(), ja.getJuryName(), req);
+        upsertEvaluation(ja.getCandidatureId(), null, ja.getJuryEmail(), ja.getJuryName(), ja.getPhaseId(), req);
         ja.setStatus("SUBMITTED");
         juryAssignmentRepository.save(ja);
         return getEvaluationByToken(token);
@@ -415,6 +471,7 @@ public class CandidatureService {
                 .id(c.getId())
                 .sessionId(c.getSessionId())
                 .programmeId(c.getProgrammeId())
+                .programmeName(resolveProgrammeName(c.getProgrammeId()))
                 .companyId(c.getCompanyId())
                 .organizationId(c.getOrganizationId())
                 .phaseId(c.getPhaseId())
@@ -483,6 +540,7 @@ public class CandidatureService {
                 .id(e.getId())
                 .candidatureId(e.getCandidatureId())
                 .juryId(e.getJuryId())
+                .phaseId(e.getPhaseId())
                 .juryEmail(e.getJuryEmail())
                 .juryName(e.getJuryName())
                 .criteriaScores(scores)

@@ -8,10 +8,10 @@
  *   • the read-only view of every jury's submitted scores + comments.
  * Admins don't submit scores here (evaluation is the jury's job) — this is a review.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   X, Sparkles, Loader2, Trophy, Users, Plus, Mail, Trash2, CheckCircle2, Clock,
-  ClipboardList, MessageSquare, Star,
+  ClipboardList, MessageSquare, Star, Send,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { candidaturesApi, contactsApi, usersApi, notificationsApi } from '@/lib/api'
@@ -57,20 +57,54 @@ export function CandidatureReview({ candidature, criteria = [], phaseId, phaseTi
   const [busy, setBusy] = useState(false)
   const [contacts, setContacts] = useState<Contact[]>([])
   const [pickOpen, setPickOpen] = useState(false)
+  // Admin's own scoring (like a jury)
+  const [myScores, setMyScores] = useState<Record<number, number>>({})
+  const [myComment, setMyComment] = useState('')
+  const [mySaving, setMySaving] = useState(false)
 
   useEffect(() => { setC(candidature) }, [candidature])
   useEffect(() => { contactsApi.list().then(r => setContacts(r.data ?? [])).catch(() => {}) }, [])
 
-  const reloadCand = useCallback(async () => {
-    try { const r = await candidaturesApi.get(c.id); setC(r.data) } catch { /* keep */ }
-    onChanged?.()
-  }, [c.id, onChanged])
-
   const runAi = async () => {
     setAiLoading(true)
-    try { const r = await candidaturesApi.aiScore(c.id); setAi(r.data) }
-    catch (e: any) { toast.error(e?.response?.data?.error ?? e?.response?.data?.message ?? "Échec de l'évaluation IA") }
+    try {
+      const r = await candidaturesApi.mediScore(c.id)
+      if (r.data?.aiEnhanced === false) toast.error(r.data?.error ?? "L'évaluation Medi a échoué")
+      setAi(r.data)
+    }
+    catch (e: any) { toast.error(e?.response?.data?.error ?? e?.response?.data?.message ?? "Échec de l'évaluation Medi") }
     finally { setAiLoading(false) }
+  }
+
+  // Prefill the admin's sliders from Medi (match criterion by name).
+  const applyAiToMine = () => {
+    const aic: any[] = ai?.criteria ?? []
+    if (!aic.length) return
+    const norm = (s: string) => (s ?? '').toLowerCase().trim()
+    setMyScores((prev) => {
+      const next = { ...prev }
+      for (const cr of criteria) {
+        const hit = aic.find((x) => norm(x.name) === norm(cr.name))
+        if (hit && hit.score != null) next[cr.id] = Math.round(Number(hit.score))
+      }
+      return next
+    })
+    toast.success('Notes Medi appliquées')
+  }
+
+  // Submit the admin's own evaluation (admin scores like a jury).
+  const submitMyEval = async () => {
+    setMySaving(true)
+    try {
+      const r = await candidaturesApi.evaluate(c.id, {
+        phaseId,
+        comment: myComment,
+        criteriaScores: criteria.map((cr) => ({ criteriaId: cr.id, criteriaName: cr.name, score: myScores[cr.id] ?? 0, weight: cr.weight ?? 0 })),
+      })
+      setC(r.data); onChanged?.()
+      toast.success('Votre évaluation a été enregistrée')
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? "Échec de l'enregistrement") }
+    finally { setMySaving(false) }
   }
 
   const removeJury = async (a: any) => {
@@ -78,6 +112,21 @@ export function CandidatureReview({ candidature, criteria = [], phaseId, phaseTi
     setBusy(true)
     try { const r = await candidaturesApi.removeJury(c.id, a.id); setC(r.data); onChanged?.(); toast.success('Jury retiré') }
     catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+    finally { setBusy(false) }
+  }
+
+  /** Re-send the evaluation link to an assigned jury who hasn't evaluated yet. */
+  const resendJury = async (a: any) => {
+    if (!a?.token || !a?.juryEmail) { toast.error('Aucun lien d’évaluation pour ce jury.'); return }
+    setBusy(true)
+    try {
+      await notificationsApi.sendEmail({
+        toEmail: a.juryEmail, toName: a.juryName || '', html: true,
+        subject: `Rappel — évaluation de candidature${phaseTitle ? ` — ${phaseTitle}` : ''}`,
+        body: evalEmailHtml(a.juryName || '', phaseTitle, `${FRONTOFFICE_URL}/evaluate/${a.token}`),
+      })
+      toast.success(`Relance envoyée à ${a.juryName || a.juryEmail}`)
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Échec de l’envoi de la relance') }
     finally { setBusy(false) }
   }
 
@@ -108,16 +157,11 @@ export function CandidatureReview({ candidature, criteria = [], phaseId, phaseTi
 
   const assignments: any[] = c.juryAssignments ?? []
   const evals: any[] = c.evaluations ?? []
-  const evalOf = (a: any) => evals.find((e) => (e.juryEmail || '').toLowerCase() === (a.juryEmail || '').toLowerCase())
+  const evalOf = (a: any) => evals.find((e) =>
+    (e.juryEmail || '').toLowerCase() === (a.juryEmail || '').toLowerCase()
+    && (e.phaseId ?? null) === (a.phaseId ?? null))
   const score = c.totalScore
-  const aiCrits = ai ? (ai.dynamicMode
-    ? (ai.dynamicScores ?? []).map((d: any) => ({ name: d.criterionName ?? d.name, score: d.score, comment: d.comment }))
-    : [
-        { name: 'Innovation', ...(ai.innovation ?? {}) },
-        { name: 'Faisabilité', ...(ai.feasibility ?? {}) },
-        { name: 'Impact marché', ...(ai.marketImpact ?? {}) },
-        { name: "Qualité de l'équipe", ...(ai.teamQuality ?? {}) },
-      ]) : []
+  const aiCrits: any[] = ai?.criteria ?? []
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -188,6 +232,42 @@ export function CandidatureReview({ candidature, criteria = [], phaseId, phaseTi
               )}
             </div>
 
+            {/* Admin's own evaluation (scores like a jury) */}
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-foreground"><Star className="h-4 w-4 text-amber-500" />Mon évaluation</h3>
+                {ai && (ai.criteria ?? []).length > 0 && (
+                  <button onClick={applyAiToMine} className="inline-flex items-center gap-1 rounded-md border border-purple-400/50 px-2 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-500/10 dark:text-purple-300">
+                    <Sparkles className="h-3 w-3" />Utiliser les notes IA
+                  </button>
+                )}
+              </div>
+              {criteria.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">Aucun critère défini pour ce programme — ajoutez-en dans l&apos;onglet « Critères ».</p>
+              ) : (
+                <div className="space-y-2">
+                  {criteria.map((cr) => (
+                    <div key={cr.id}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-foreground">{cr.name}{cr.weight != null && cr.weight > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({Math.round(cr.weight * 100)}%)</span>}</span>
+                        <span className="text-xs font-bold text-brand-600">{myScores[cr.id] ?? 0}/10</span>
+                      </div>
+                      <input type="range" min={0} max={10} step={1} value={myScores[cr.id] ?? 0}
+                        onChange={(e) => setMyScores((s) => ({ ...s, [cr.id]: Number(e.target.value) }))}
+                        className="w-full accent-brand-500" />
+                    </div>
+                  ))}
+                  <textarea value={myComment} onChange={(e) => setMyComment(e.target.value)} rows={2}
+                    placeholder="Commentaire / appréciation globale…"
+                    className="w-full rounded-lg border border-input bg-background p-2 text-xs outline-none focus:border-brand-500" />
+                  <button onClick={submitMyEval} disabled={mySaving}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-60">
+                    {mySaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Enregistrer mon évaluation
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Jury management */}
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -212,6 +292,10 @@ export function CandidatureReview({ candidature, criteria = [], phaseId, phaseTi
                           <p className="text-[10px] text-muted-foreground truncate">{a.juryEmail}</p>
                         </div>
                         {ev?.weightedScore != null && <span className={`text-xs font-bold ${scoreColor(Number(ev.weightedScore))}`}>{Number(ev.weightedScore).toFixed(1)}</span>}
+                        {!submitted && a.token && (
+                          <button onClick={() => resendJury(a)} disabled={busy} title="Renvoyer le lien d’évaluation"
+                            className="rounded p-1 text-muted-foreground hover:bg-brand-500/10 hover:text-brand-600 disabled:opacity-50"><Send className="h-3.5 w-3.5" /></button>
+                        )}
                         <button onClick={() => removeJury(a)} disabled={busy} title="Retirer ce jury"
                           className="rounded p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /></button>
                       </div>

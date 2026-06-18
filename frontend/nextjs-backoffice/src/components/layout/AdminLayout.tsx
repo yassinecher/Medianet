@@ -5,8 +5,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, FolderKanban, FileText, CheckSquare,
-  Bell, Bot, Users, Settings, LogOut, Moon, Sun,
-  ChevronRight, Menu, X, Trophy, Shield, Home, Sparkles, Building2, Tags,
+  Bell, Users, Settings, LogOut, Moon, Sun,
+  ChevronRight, Menu, X, Shield, Home, Sparkles, Building2, Tags,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuthStore, useUser } from '@/store/auth.store'
@@ -20,8 +20,6 @@ const navItems = [
   { label: 'Programmes', href: '/programmes', icon: FolderKanban, module: 'programmes' },
   { label: 'Candidatures', href: '/candidatures', icon: FileText, module: 'candidatures' },
   { label: 'Tâches', href: '/tasks', icon: CheckSquare, module: 'tasks' },
-  { label: 'Évaluation IA', href: '/ai-scoring', icon: Bot, module: 'ai' },
-  { label: 'Matching IA', href: '/ai-matching', icon: Trophy, module: 'ai' },
   { label: 'Invitations', href: '/notifications', icon: Bell, module: 'notifications' },
   { label: 'Utilisateurs', href: '/users', icon: Users, module: 'users' },
   { label: 'Organisations', href: '/organizations', icon: Building2, module: 'organizations' },

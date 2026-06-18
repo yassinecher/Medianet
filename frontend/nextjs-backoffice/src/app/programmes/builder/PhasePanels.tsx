@@ -8,9 +8,9 @@
  * Reuses existing endpoints — no backend change. The no-login token evaluation
  * page + full criteria/note eval form are a later phase.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { FileText, Users, Mail, Plus, ExternalLink, Loader2, Check, ClipboardList, Trophy, CheckCircle2, XCircle, Clock, Save, Wand2, ChevronUp, ChevronDown, ListChecks, Send, Download } from 'lucide-react'
+import { FileText, Users, Mail, Plus, ExternalLink, Loader2, ClipboardList, Trophy, CheckCircle2, XCircle, Clock, Save, Wand2, ChevronUp, ChevronDown, ListChecks, Send, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { candidaturesApi, contactsApi, notificationsApi, programmesApi, usersApi, formTemplatesApi } from '@/lib/api'
 import { FormBuilder } from '@/components/formbuilder/FormBuilder'
@@ -50,6 +50,18 @@ interface PhaseSession {
   evaluationSelectionId?: number | null
 }
 interface Contact { id: number; name: string; email: string }
+
+/** A person who can be invited to evaluate — anyone in the directory, with roles. */
+interface Person { id?: number; name: string; email: string; roles: string[]; source: 'user' | 'contact' }
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: 'Admin', JURY: 'Jury', PORTEUR: 'Porteur', MEMBER: 'Membre',
+  INVESTOR: 'Investisseur', PARTNER: 'Partenaire', COACH: 'Coach', USER: 'Utilisateur',
+}
+const ROLE_CLS: Record<string, string> = {
+  ADMIN: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
+  JURY: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  INVESTOR: 'bg-purple-500/15 text-purple-700 dark:text-purple-300',
+}
 interface Criterion { id: number; name: string; weight?: number }
 
 const CAND_STATUS: Record<string, { label: string; cls: string }> = {
@@ -281,6 +293,8 @@ export function PreselectionPhasePanel({ programmeId, session, onUpdateSession }
 }) {
   const [cands, setCands] = useState<any[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
+  const [users, setUsers] = useState<any[]>([])
+  const [pickSearch, setPickSearch] = useState('')
   const [criteria, setCriteria] = useState<Criterion[]>([])
   const [loading, setLoading] = useState(true)
   const [pickFor, setPickFor] = useState<number | null>(null)
@@ -307,6 +321,7 @@ export function PreselectionPhasePanel({ programmeId, session, onUpdateSession }
     reload()
     reloadVersions()
     contactsApi.list().then(r => setContacts(r.data ?? [])).catch(() => {})
+    usersApi.list().then(r => setUsers(r.data?.content ?? r.data ?? [])).catch(() => {})
     programmesApi.criteria(programmeId).then(r => {
       const all: Criterion[] = r.data ?? []
       const focus = session.focusCriteriaIds ?? []
@@ -335,9 +350,10 @@ export function PreselectionPhasePanel({ programmeId, session, onUpdateSession }
       // 2) Create assignments — tag with this (préselection) session so the eval
       //    grid scopes to its criteria; the server generates a per-jury token.
       const res = await candidaturesApi.assignJury(candId, { juryAssignments: items, phaseId: session.id })
-      const assignments: { juryEmail?: string; token?: string }[] = res.data?.juryAssignments ?? []
+      const assignments: { juryEmail?: string; token?: string; phaseId?: number }[] = res.data?.juryAssignments ?? []
       const tokenFor = (email: string) =>
-        assignments.find(a => (a.juryEmail || '').toLowerCase() === email.toLowerCase())?.token
+        assignments.find(a => (a.juryEmail || '').toLowerCase() === email.toLowerCase() && (a.phaseId ?? null) === session.id)?.token
+        ?? assignments.find(a => (a.juryEmail || '').toLowerCase() === email.toLowerCase())?.token
 
       // 3) Email each jury a no-login evaluation link (no "create account").
       let sent = 0
@@ -422,20 +438,50 @@ export function PreselectionPhasePanel({ programmeId, session, onUpdateSession }
         body: evalEmailHtml(a.juryName || '', session.title, `${FRONTOFFICE_URL}/evaluate/${a.token}`),
       })
       toast.success(`Relance envoyée à ${a.juryName || a.juryEmail}`)
-    } catch { toast.error('Échec de l’envoi de la relance') } finally { setBusy(false) }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Échec de l’envoi de la relance') } finally { setBusy(false) }
   }
 
-  /** Submitted-evaluations count for a candidature (status OR matched eval). */
-  const submittedOf = (c: any): number =>
-    (c.juryAssignments ?? []).filter((a: any) =>
-      a.status === 'SUBMITTED' ||
-      (c.evaluations ?? []).some((ev: any) => (ev.juryEmail || '').toLowerCase() === (a.juryEmail || '').toLowerCase())).length
+  // ── Everything below is scoped to THIS evaluation session (session.id) so a
+  //    candidature evaluated in several sessions shows only this session's jurys
+  //    and score — it is (re)evaluated independently here. ───────────────────
+  /** Jury assignments belonging to this session. */
+  const sessionAssigns = (c: any): any[] =>
+    (c.juryAssignments ?? []).filter((a: any) => (a.phaseId ?? null) === session.id)
+  /** This session's evaluation by a given jury (matched by email + session). */
+  const sessionEval = (c: any, a: any) =>
+    (c.evaluations ?? []).find((ev: any) =>
+      (ev.juryEmail || '').toLowerCase() === (a.juryEmail || '').toLowerCase()
+      && (ev.phaseId ?? null) === session.id)
 
-  /** Average weighted score across submitted evaluations (null when none). */
+  /** Submitted-evaluations count for a candidature, in this session. */
+  const submittedOf = (c: any): number =>
+    sessionAssigns(c).filter((a: any) => a.status === 'SUBMITTED' || !!sessionEval(c, a)).length
+
+  /** Average weighted score across this session's submitted evaluations (null when none). */
   const avgOf = (c: any): number | null => {
-    const xs = (c.evaluations ?? []).map((ev: any) => ev.weightedScore).filter((x: any) => x != null).map(Number)
+    const xs = (c.evaluations ?? [])
+      .filter((ev: any) => (ev.phaseId ?? null) === session.id)
+      .map((ev: any) => ev.weightedScore).filter((x: any) => x != null).map(Number)
     return xs.length ? xs.reduce((a: number, b: number) => a + b, 0) / xs.length : null
   }
+
+  // Everyone who can be invited as a jury: all directory users (with their roles)
+  // merged with any standalone contacts — so even when no jury was invited yet, the
+  // picker always shows people to choose from.
+  const pickPeople = useMemo<Person[]>(() => {
+    const byEmail = new Map<string, Person>()
+    for (const u of users) {
+      const email = (u.email || '').toLowerCase(); if (!email) continue
+      const name = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email
+      byEmail.set(email, { id: u.id, name, email: u.email, roles: u.roles ?? (u.role ? [u.role] : []), source: 'user' })
+    }
+    for (const ct of contacts) {
+      const email = (ct.email || '').toLowerCase(); if (!email || byEmail.has(email)) continue
+      byEmail.set(email, { id: ct.id, name: ct.name, email: ct.email, roles: [], source: 'contact' })
+    }
+    const rank = (p: Person) => (p.roles.includes('JURY') ? 0 : p.roles.includes('INVESTOR') ? 1 : 2)
+    return Array.from(byEmail.values()).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+  }, [users, contacts])
 
   // ── Selection manipulation ────────────────────────────────────────────────
   const selectedSet = new Set(selectedIds)
@@ -526,8 +572,8 @@ export function PreselectionPhasePanel({ programmeId, session, onUpdateSession }
     const head = ['ID', 'Projet', 'Porteur', 'Email', 'Statut', 'Score', 'Évaluations', 'Soumise le']
     const rows = shownCands.map((c: any) => [
       c.id, c.projectName || c.companyName || '', c.porteurName || c.founderName || '',
-      c.porteurEmail || '', c.status, c.totalScore ?? '',
-      `${submittedOf(c)}/${(c.juryAssignments ?? []).length}`, c.submittedAt ?? c.createdAt ?? '',
+      c.porteurEmail || '', c.status, avgOf(c)?.toFixed(1) ?? '',
+      `${submittedOf(c)}/${sessionAssigns(c).length}`, c.submittedAt ?? c.createdAt ?? '',
     ])
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const csv = '﻿' + [head, ...rows].map(r => r.map(esc).join(';')).join('\r\n')
@@ -673,8 +719,8 @@ export function PreselectionPhasePanel({ programmeId, session, onUpdateSession }
                     <p className="text-sm font-bold text-foreground truncate">{c.projectName || c.companyName || `Candidature #${c.id}`}</p>
                     <p className="text-[11px] text-muted-foreground truncate">{c.porteurName || c.founderName || ''}{c.porteurEmail ? ` · ${c.porteurEmail}` : ''}</p>
                   </div>
-                  {c.totalScore != null && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600"><Trophy className="h-3 w-3" />{Number(c.totalScore).toFixed(1)}</span>
+                  {avgOf(c) != null && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600" title="Score moyen dans cette session"><Trophy className="h-3 w-3" />{avgOf(c)!.toFixed(1)}</span>
                   )}
                   <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold shrink-0 ${st.cls}`}>{st.label}</span>
                   <button onClick={() => setPickFor(pickFor === c.id ? null : c.id)}
@@ -683,22 +729,22 @@ export function PreselectionPhasePanel({ programmeId, session, onUpdateSession }
                   </button>
                 </div>
 
-                {(c.juryAssignments?.length ?? 0) > 0 && (
+                {sessionAssigns(c).length > 0 && (
                   <>
-                    {/* Évaluation progress: « 2/3 jurys · moy 7.4 » */}
+                    {/* Évaluation progress (this session): « 2/3 jurys · moy 7.4 » */}
                     <div className="mt-2 flex items-center gap-2">
                       <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
                         <div className="h-full rounded-full bg-emerald-500 transition-all"
-                          style={{ width: `${(submittedOf(c) / Math.max(1, c.juryAssignments.length)) * 100}%` }} />
+                          style={{ width: `${(submittedOf(c) / Math.max(1, sessionAssigns(c).length)) * 100}%` }} />
                       </div>
                       <span className="text-[10px] font-bold text-muted-foreground whitespace-nowrap tabular-nums">
-                        {submittedOf(c)}/{c.juryAssignments.length} jury{c.juryAssignments.length > 1 ? 's' : ''}
+                        {submittedOf(c)}/{sessionAssigns(c).length} jury{sessionAssigns(c).length > 1 ? 's' : ''}
                         {avgOf(c) != null ? ` · moy ${avgOf(c)!.toFixed(1)}` : ''}
                       </span>
                     </div>
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {c.juryAssignments.map((a: any) => {
-                        const ev = (c.evaluations ?? []).find((e: any) => (e.juryEmail || '').toLowerCase() === (a.juryEmail || '').toLowerCase())
+                      {sessionAssigns(c).map((a: any) => {
+                        const ev = sessionEval(c, a)
                         const submitted = a.status === 'SUBMITTED' || !!ev
                         return (
                           <span key={a.id ?? a.juryEmail} title={a.juryEmail}
@@ -733,23 +779,46 @@ export function PreselectionPhasePanel({ programmeId, session, onUpdateSession }
                   </div>
                 )}
 
-                {pickFor === c.id && (
-                  <div className="mt-2 rounded-lg border border-border bg-muted/20 p-2 space-y-1">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Demander une évaluation à…</p>
-                    {contacts.length === 0 && (
-                      <p className="text-[11px] text-muted-foreground italic px-1">Aucun contact. Ajoutez-en dans l&apos;onglet « Invitations » du programme.</p>
-                    )}
-                    {contacts.map(ct => (
-                      <button key={ct.id} disabled={busy} onClick={() => requestEvaluation(c.id, [ct])}
-                        className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-accent text-left disabled:opacity-50">
-                        <Mail className="h-3 w-3 text-muted-foreground shrink-0" />
-                        <span className="truncate">{ct.name}</span>
-                        <span className="text-[10px] text-muted-foreground truncate">{ct.email}</span>
-                        <Check className="h-3 w-3 ml-auto opacity-0" />
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {pickFor === c.id && (() => {
+                  // Already assigned to THIS session → don't offer them again.
+                  const assignedEmails = new Set(sessionAssigns(c).map((a: any) => (a.juryEmail || '').toLowerCase()))
+                  const q = pickSearch.trim().toLowerCase()
+                  const list = pickPeople.filter((p) =>
+                    !assignedEmails.has(p.email.toLowerCase()) &&
+                    (!q || p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q)))
+                  return (
+                    <div className="mt-2 rounded-lg border border-border bg-muted/20 p-2 space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Demander une évaluation à…</p>
+                      <input value={pickSearch} onChange={(e) => setPickSearch(e.target.value)}
+                        placeholder="Rechercher une personne…"
+                        className="mb-1 w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] outline-none focus:border-brand-500" />
+                      {pickPeople.length === 0 ? (
+                        <p className="text-[11px] text-muted-foreground italic px-1">Aucune personne dans l&apos;annuaire. Ajoutez des utilisateurs (module Utilisateurs) ou des contacts.</p>
+                      ) : list.length === 0 ? (
+                        <p className="text-[11px] text-muted-foreground italic px-1">Toutes les personnes correspondantes sont déjà assignées à cette session.</p>
+                      ) : (
+                        <div className="max-h-56 overflow-y-auto space-y-0.5">
+                          {list.map((p) => (
+                            <button key={p.email} disabled={busy}
+                              onClick={() => requestEvaluation(c.id, [{ id: p.id ?? 0, name: p.name, email: p.email }])}
+                              className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-accent text-left disabled:opacity-50">
+                              <Mail className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <span className="truncate font-medium">{p.name}</span>
+                              <span className="text-[10px] text-muted-foreground truncate">{p.email}</span>
+                              <span className="ml-auto flex shrink-0 gap-1">
+                                {(p.roles.length ? p.roles : ['USER']).slice(0, 3).map((r) => (
+                                  <span key={r} className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${ROLE_CLS[r] ?? 'bg-muted text-muted-foreground'}`}>
+                                    {ROLE_LABEL[r] ?? r}
+                                  </span>
+                                ))}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}

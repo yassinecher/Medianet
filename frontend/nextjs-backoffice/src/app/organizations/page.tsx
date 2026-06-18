@@ -9,10 +9,11 @@
  * INTERNAL or EXTERNAL. Filters in the toolbar narrow by type/internal.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Plus, Trash2, Edit2, Save, Building2, ChevronDown, ChevronRight, Loader2,
-  Users, Globe2, Mail, Phone, MapPin, Search, X, UserPlus,
+  Users, Globe2, Mail, Phone, MapPin, Search, X, UserPlus, ArrowUpRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { organizationsApi, ORGANIZATION_TYPES, MEMBER_TYPES } from '@/lib/api'
@@ -405,6 +406,11 @@ function OrgCard({
             )}
           </div>
           <div className="flex gap-1">
+            {org.id && (
+              <Link href={`/organizations/${org.id}`} title="Ouvrir la fiche">
+                <Button variant="outline" size="sm" className="gap-1 text-xs"><ArrowUpRight className="h-3.5 w-3.5" />Ouvrir</Button>
+              </Link>
+            )}
             <Button variant="ghost" size="icon" onClick={onEdit} title="Modifier"><Edit2 className="h-4 w-4" /></Button>
             <Button variant="ghost" size="icon" onClick={onDelete} title="Supprimer">
               <Trash2 className="h-4 w-4 text-destructive" />

@@ -51,6 +51,19 @@ public class AdminAiController {
         return ResponseEntity.ok(service.chat(req, adminId, adminName, adminToken));
     }
 
+    /**
+     * Medi candidature scoring — grounded in the programme, organisation, team
+     * members and candidature responses. Open to ADMIN and JURY (front + back);
+     * the method-level rule overrides the class-level ADMIN-only.
+     */
+    @PostMapping("/score/{candidatureId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('JURY')")
+    public ResponseEntity<Map<String, Object>> score(
+            @PathVariable Long candidatureId, HttpServletRequest http) {
+        String token = (String) http.getAttribute("token");
+        return ResponseEntity.ok(service.scoreCandidature(candidatureId, token));
+    }
+
     /** Dedicated executor for streaming chats — the agent loop can run for minutes. */
     private static final java.util.concurrent.ExecutorService CHAT_STREAM_POOL =
             java.util.concurrent.Executors.newCachedThreadPool(r -> {

@@ -23,8 +23,12 @@ import { statusColor, scoreColor } from '@/lib/utils'
 
 interface Phase { id?: number; title?: string; sessionType?: string; focusCriteriaIds?: number[]; criterionWeightsJson?: string }
 interface CriteriaScore { criteriaId?: number; criteriaName?: string; score?: number; weight?: number }
-interface Evaluation { juryId?: number; juryEmail?: string; juryName?: string; weightedScore?: number; comment?: string; criteriaScores?: CriteriaScore[] }
-interface JuryAssignment { id?: number; juryId?: number; juryEmail?: string; juryName?: string; status?: string }
+interface Evaluation { juryId?: number; phaseId?: number; juryEmail?: string; juryName?: string; weightedScore?: number; comment?: string; criteriaScores?: CriteriaScore[] }
+interface JuryAssignment { id?: number; juryId?: number; phaseId?: number; juryEmail?: string; juryName?: string; status?: string }
+
+/** Session types whose purpose is jury/admin evaluation — a candidature is scored
+ *  afresh in each of these sessions. */
+const EVAL_SESSION_TYPES = ['PRESELECTION', 'PITCH_DAY']
 interface Cand {
   id: number; projectName?: string; companyName?: string; porteurName?: string; porteurEmail?: string
   sector?: string; status?: string; totalScore?: number
@@ -154,8 +158,10 @@ export function EvaluationDashboard({ programmeId, criteria: criteriaProp, phase
 
   useEffect(() => { load() }, [load])
 
-  // Préselection phases (for scoping the per-criterion detail).
-  const evalPhases = (phases ?? []).filter((p) => p.sessionType === 'PRESELECTION')
+  // Evaluation sessions (présélection, pitch day…). Selecting one scopes the
+  // whole dashboard so each candidature is shown/scored PER SESSION — a candidature
+  // with no score in the selected session must be (re)evaluated there.
+  const evalPhases = (phases ?? []).filter((p) => EVAL_SESSION_TYPES.includes(p.sessionType ?? ''))
 
   // The criteria (with weights) used for the per-criterion detail, scoped to the
   // selected phase when one is chosen.
@@ -173,31 +179,39 @@ export function EvaluationDashboard({ programmeId, criteria: criteriaProp, phase
     return list
   }, [criteria, evalPhases, phaseId])
 
-  // Distinct jury columns across the whole programme.
+  // Phase-scoped views of a candidature's evaluations/assignments. When a session
+  // is selected, only that session's data counts — so the dashboard reflects the
+  // (re)evaluation happening in THAT session.
+  const evalsOf = useCallback((c: Cand) =>
+    (c.evaluations ?? []).filter((e) => phaseId === '' || (e.phaseId ?? null) === phaseId), [phaseId])
+  const assignsOf = useCallback((c: Cand) =>
+    (c.juryAssignments ?? []).filter((a) => phaseId === '' || (a.phaseId ?? null) === phaseId), [phaseId])
+
+  // Distinct jury columns across the (scoped) programme.
   const juryCols = useMemo(() => {
     const map = new Map<string, string>()
     for (const c of cands) {
-      for (const a of c.juryAssignments ?? []) { const k = juryKey(a); if (k) map.set(k, juryLabel(a)) }
-      for (const e of c.evaluations ?? []) { const k = juryKey(e); if (k) map.set(k, juryLabel(e)) }
+      for (const a of assignsOf(c)) { const k = juryKey(a); if (k) map.set(k, juryLabel(a)) }
+      for (const e of evalsOf(c)) { const k = juryKey(e); if (k) map.set(k, juryLabel(e)) }
     }
     return Array.from(map.entries()).map(([key, label]) => ({ key, label }))
-  }, [cands])
+  }, [cands, assignsOf, evalsOf])
 
-  // Helpers per candidature.
-  const evalOf = (c: Cand, key: string) => (c.evaluations ?? []).find((e) => juryKey(e) === key)
-  const assignOf = (c: Cand, key: string) => (c.juryAssignments ?? []).find((a) => juryKey(a) === key)
+  // Helpers per candidature (scoped to the selected session).
+  const evalOf = (c: Cand, key: string) => evalsOf(c).find((e) => juryKey(e) === key)
+  const assignOf = (c: Cand, key: string) => assignsOf(c).find((a) => juryKey(a) === key)
   const submittedCount = (c: Cand) =>
-    (c.juryAssignments ?? []).filter((a) => a.status === 'SUBMITTED' || !!evalOf(c, juryKey(a))).length
+    assignsOf(c).filter((a) => a.status === 'SUBMITTED' || !!evalOf(c, juryKey(a))).length
   const avgOf = (c: Cand): number | null => {
-    const xs = (c.evaluations ?? []).map((e) => e.weightedScore).filter((x): x is number => x != null)
+    const xs = evalsOf(c).map((e) => e.weightedScore).filter((x): x is number => x != null)
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null
   }
 
-  // KPIs.
-  const totalAssignments = cands.reduce((n, c) => n + (c.juryAssignments?.length ?? 0), 0)
+  // KPIs (scoped to the selected session when one is chosen).
+  const totalAssignments = cands.reduce((n, c) => n + assignsOf(c).length, 0)
   const totalSubmitted = cands.reduce((n, c) => n + submittedCount(c), 0)
   const evaluatedCands = cands.filter((c) => submittedCount(c) > 0).length
-  const noJury = cands.filter((c) => (c.juryAssignments?.length ?? 0) === 0).length
+  const noJury = cands.filter((c) => assignsOf(c).length === 0).length
   const activeJurys = juryCols.filter((j) => cands.some((c) => !!evalOf(c, j.key))).length
   const scoredCands = cands.map(avgOf).filter((x): x is number => x != null)
   const globalAvg = scoredCands.length ? scoredCands.reduce((a, b) => a + b, 0) / scoredCands.length : null
@@ -215,13 +229,14 @@ export function EvaluationDashboard({ programmeId, criteria: criteriaProp, phase
     return ['0–2', '2–4', '4–6', '6–8', '8–10'].map((label, i) => ({ label, n: buckets[i] }))
   }, [scoredCands])
 
-  // Leaderboard.
-  const leaderboard = useMemo(() =>
-    [...cands].sort((a, b) => (b.totalScore ?? avgOf(b) ?? -1) - (a.totalScore ?? avgOf(a) ?? -1)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cands])
+  // Per-session score when a session is selected; otherwise the global total.
+  const scoreFor = (c: Cand) => (phaseId === '' ? (c.totalScore ?? avgOf(c)) : avgOf(c))
 
-  const scoreFor = (c: Cand) => c.totalScore ?? avgOf(c)
+  // Leaderboard (ranked by the scoped score).
+  const leaderboard = useMemo(() =>
+    [...cands].sort((a, b) => (scoreFor(b) ?? -1) - (scoreFor(a) ?? -1)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cands, phaseId])
 
   const exportCsv = () => {
     const head = ['Rang', 'Projet', 'Porteur', 'Email', 'Statut', 'Score', ...juryCols.map((j) => j.label)]
@@ -250,8 +265,29 @@ export function EvaluationDashboard({ programmeId, criteria: criteriaProp, phase
     )
   }
 
+  const selectedPhase = evalPhases.find((p) => p.id === phaseId)
+
   return (
     <div className="space-y-5">
+      {/* Evaluation-session scope — pick a session to (re)evaluate its candidatures */}
+      {evalPhases.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-muted/10 p-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+            <ListChecks className="h-4 w-4 text-amber-500" />Session d&apos;évaluation
+          </div>
+          <select value={phaseId} onChange={(e) => setPhaseId(e.target.value ? Number(e.target.value) : '')}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-sm">
+            <option value="">Toutes les sessions (global)</option>
+            {evalPhases.map((p) => <option key={p.id} value={p.id}>{p.title || `Session ${p.id}`}</option>)}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            {phaseId === ''
+              ? 'Vue cumulée de toutes les évaluations.'
+              : 'Scores, jurys et classement de cette session uniquement — chaque candidature y est évaluée à nouveau.'}
+          </p>
+        </div>
+      )}
+
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi icon={Users} label="Candidatures" value={cands.length} tone="bg-brand-500/15 text-brand-600 dark:text-brand-400" />
@@ -305,7 +341,7 @@ export function EvaluationDashboard({ programmeId, criteria: criteriaProp, phase
                   <Link href={`/candidatures?programme=${programmeId}`} className="text-sm font-semibold text-foreground truncate hover:text-brand-600">{c.projectName || c.companyName || `Candidature #${c.id}`}</Link>
                   <p className="text-[11px] text-muted-foreground truncate">{c.porteurName || ''}{c.porteurEmail ? ` · ${c.porteurEmail}` : ''}</p>
                 </div>
-                <span className="text-[11px] text-muted-foreground whitespace-nowrap">{submittedCount(c)}/{c.juryAssignments?.length ?? 0} jury</span>
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">{submittedCount(c)}/{assignsOf(c).length} jury</span>
                 <span className={`inline-flex items-center gap-1 text-sm font-bold tabular-nums ${s != null ? scoreColor(s) : 'text-muted-foreground'}`}>
                   <Star className="h-3.5 w-3.5" />{s != null ? s.toFixed(1) : '—'}
                 </span>
@@ -373,18 +409,12 @@ export function EvaluationDashboard({ programmeId, criteria: criteriaProp, phase
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-2 text-sm font-bold text-foreground"><ClipboardList className="h-4 w-4 text-brand-500" />Détail par critère & commentaires</h3>
-          {evalPhases.length > 0 && (
-            <select value={phaseId} onChange={(e) => setPhaseId(e.target.value ? Number(e.target.value) : '')}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs">
-              <option value="">Critères du programme</option>
-              {evalPhases.map((p) => <option key={p.id} value={p.id}>Critères de « {p.title || `session ${p.id}`} »</option>)}
-            </select>
-          )}
+          {selectedPhase && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">Session : {selectedPhase.title || `#${selectedPhase.id}`}</span>}
         </div>
         <div className="space-y-2">
           {leaderboard.map((c) => {
             const open = openCand === c.id
-            const evals = (c.evaluations ?? [])
+            const evals = evalsOf(c)
             return (
               <div key={c.id} className="rounded-xl border border-border">
                 <button onClick={() => setOpenCand(open ? null : c.id)}
@@ -458,7 +488,7 @@ export function EvaluationDashboard({ programmeId, criteria: criteriaProp, phase
           candidature={reviewCand}
           criteria={scopedCriteria}
           phaseId={typeof phaseId === 'number' ? phaseId : undefined}
-          phaseTitle={evalPhases.find((p) => p.id === phaseId)?.title}
+          phaseTitle={selectedPhase?.title}
           onClose={() => setReviewCand(null)}
           onChanged={load}
         />

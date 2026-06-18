@@ -16,6 +16,7 @@ public class CandidatureDto {
     private Long id;
     private Long sessionId;
     private Long programmeId;
+    private String programmeName;
     private Long companyId;
     private Long organizationId;
     private Long phaseId;

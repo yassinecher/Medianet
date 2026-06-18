@@ -12,4 +12,8 @@ public interface EvaluationRepository extends JpaRepository<Evaluation, Long> {
     List<Evaluation> findByCandidatureId(Long candidatureId);
     Optional<Evaluation> findByCandidatureIdAndJuryId(Long candidatureId, Long juryId);
     boolean existsByCandidatureIdAndJuryId(Long candidatureId, Long juryId);
+
+    /** Per-session lookup. A null phaseId is translated to IS NULL by Spring Data,
+     *  matching the global/legacy (session-less) evaluation. */
+    Optional<Evaluation> findByCandidatureIdAndJuryIdAndPhaseId(Long candidatureId, Long juryId, Long phaseId);
 }

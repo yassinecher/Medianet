@@ -26,6 +26,15 @@ public class Evaluation {
     private String juryEmail;
     private String juryName;
 
+    /**
+     * The evaluation session (ProgrammePhase) this evaluation belongs to. A
+     * candidature added to a new evaluation session gets a FRESH evaluation per
+     * jury per session — so a jury can score the same candidature in PRESELECTION
+     * and again in PITCH_DAY without overwriting. Null = global/legacy evaluation
+     * (not tied to a specific session, e.g. an admin/Medi one-off score).
+     */
+    private Long phaseId;
+
     // ── Legacy fixed-weight scores (kept for backward compatibility) ──────────
     // Weights: Innovation 30%, Feasibility 25%, MarketImpact 25%, TeamQuality 20%
     private Integer innovationScore;    // 0-10

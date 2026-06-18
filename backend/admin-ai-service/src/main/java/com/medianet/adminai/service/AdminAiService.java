@@ -354,6 +354,7 @@ public class AdminAiService {
     private final com.medianet.adminai.repository.AiMemoryRepository memoryRepo;
     private final OpenRouterClient         llm;
     private final ToolExecutor             toolExecutor;
+    private final com.medianet.adminai.client.UpstreamClient upstream;
     private final ObjectMapper             json = new ObjectMapper();
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -958,6 +959,146 @@ public class AdminAiService {
             return Map.of("error", "Génération échouée — le modèle a produit un format inattendu. Réessaie ou précise ta demande.");
         }
     }
+
+    // ── Medi candidature scoring (one-shot, full context, no tool loop) ───────
+
+    /**
+     * Score a candidature with Medi (the LLM), grounded in the full context:
+     * the programme + its criteria, the linked organisation + team members, and the
+     * candidature responses. Returns a JSON map:
+     * {criteria:[{name,score,comment}], weightedScore, recommendation, globalCommentary,
+     *  candidatureId, projectName, aiEnhanced}. Used by ADMIN and JURY, front + back.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> scoreCandidature(Long candidatureId, String callerToken) {
+        // 1. Fetch the candidature (caller's token — admin or jury).
+        Map<String, Object> cand;
+        try {
+            cand = (Map<String, Object>) upstream.get(
+                    upstream.candidature() + "/api/candidatures/" + candidatureId, callerToken);
+        } catch (Exception e) {
+            throw new RuntimeException("Candidature introuvable ou inaccessible.");
+        }
+
+        Object programmeIdObj = cand.get("programmeId");
+        Long programmeId = programmeIdObj == null ? null : Long.valueOf(String.valueOf(programmeIdObj));
+
+        // 2. Programme criteria (public) — defines what to score on.
+        List<Map<String, Object>> criteria = new ArrayList<>();
+        if (programmeId != null) {
+            try {
+                Object cr = upstream.get(upstream.programme() + "/api/programmes/" + programmeId + "/criteria", callerToken);
+                if (cr instanceof List<?> l) for (Object o : l) if (o instanceof Map) criteria.add((Map<String, Object>) o);
+            } catch (Exception ignored) { /* none → generic criteria below */ }
+        }
+
+        // 3. Linked organisation + team members (when present).
+        Map<String, Object> org = null;
+        Object orgIdObj = cand.get("organizationId");
+        if (orgIdObj != null) {
+            try { org = (Map<String, Object>) upstream.get(upstream.auth() + "/api/organizations/" + orgIdObj, callerToken); }
+            catch (Exception ignored) { /* org optional */ }
+        }
+
+        // 4. Build the prompt context.
+        StringBuilder ctx = new StringBuilder();
+        ctx.append("# PROGRAMME\n");
+        ctx.append("Titre: ").append(str(cand.get("programmeName"))).append("\n");
+        ctx.append("\n# CRITÈRES D'ÉVALUATION\n");
+        List<String> critNames = new ArrayList<>();
+        if (!criteria.isEmpty()) {
+            for (Map<String, Object> c : criteria) {
+                String n = str(c.get("name"));
+                critNames.add(n);
+                ctx.append("- ").append(n);
+                if (c.get("weight") != null) ctx.append(" (poids ").append(c.get("weight")).append(")");
+                if (c.get("description") != null) ctx.append(" : ").append(str(c.get("description")));
+                ctx.append("\n");
+            }
+        } else {
+            critNames = List.of("Innovation", "Faisabilité", "Impact marché", "Qualité de l'équipe");
+            ctx.append("- Innovation\n- Faisabilité\n- Impact marché\n- Qualité de l'équipe\n");
+        }
+
+        if (org != null) {
+            ctx.append("\n# ORGANISATION\n");
+            ctx.append("Nom: ").append(str(org.get("name"))).append("\n");
+            ctx.append("Type: ").append(str(org.get("type"))).append("  Secteur: ").append(str(org.get("sector"))).append("\n");
+            if (org.get("description") != null) ctx.append("Description: ").append(str(org.get("description"))).append("\n");
+            Object members = org.get("members");
+            if (members instanceof List<?> ml && !ml.isEmpty()) {
+                ctx.append("Équipe:\n");
+                for (Object mo : ml) if (mo instanceof Map<?, ?> m) {
+                    ctx.append("  - ").append(str(m.get("fullName")));
+                    if (m.get("role") != null) ctx.append(" — ").append(str(m.get("role")));
+                    if (m.get("headline") != null) ctx.append(" (").append(str(m.get("headline"))).append(")");
+                    Object exp = m.get("expertise");
+                    if (exp instanceof List<?> el && !el.isEmpty()) ctx.append(" • compétences: ").append(String.join(", ", el.stream().map(String::valueOf).toList()));
+                    ctx.append("\n");
+                }
+            }
+        }
+
+        ctx.append("\n# CANDIDATURE\n");
+        String[] fields = {"projectName","projectDescription","problemStatement","solutionDescription",
+                "competitiveAdvantage","technologyDescription","sector","currentStage","targetMarket",
+                "businessModel","teamBackground","motivation","supportNeeds","programmeExpectations"};
+        for (String f : fields) if (cand.get(f) != null && !str(cand.get(f)).isBlank())
+            ctx.append("- ").append(f).append(": ").append(str(cand.get(f))).append("\n");
+        // Parsed custom form answers
+        Object ca = cand.get("customAnswers");
+        if (ca != null && !str(ca).isBlank()) {
+            try {
+                Map<String, Object> answers = json.readValue(str(ca), Map.class);
+                if (!answers.isEmpty()) {
+                    ctx.append("- Réponses au formulaire:\n");
+                    answers.forEach((k, v) -> { if (v != null && !String.valueOf(v).isBlank()) ctx.append("    • ").append(k).append(": ").append(v).append("\n"); });
+                }
+            } catch (Exception ignored) { /* not JSON */ }
+        }
+
+        String critList = String.join(", ", critNames);
+        String systemPrompt = "Tu es Medi, un évaluateur expert d'un incubateur de startups. "
+                + "Évalue la candidature ci-dessous de façon rigoureuse et bienveillante, en te basant sur le "
+                + "programme, l'organisation, l'équipe et les réponses fournies. "
+                + "Note CHAQUE critère sur 10 (nombre, 1 décimale possible) avec un commentaire court et concret en français. "
+                + "Critères à noter exactement: " + critList + ". "
+                + "Calcule weightedScore (0-10) et donne une recommandation parmi ACCEPT, REVIEW, REJECT, plus une synthèse globale. "
+                + "RÉPONDS UNIQUEMENT avec un objet JSON brut (pas de markdown), de la forme: "
+                + "{\"criteria\":[{\"name\":\"...\",\"score\":0,\"comment\":\"...\"}],\"weightedScore\":0,\"recommendation\":\"ACCEPT|REVIEW|REJECT\",\"globalCommentary\":\"...\"}. "
+                + "Commence par { et termine par }.";
+
+        List<Map<String, Object>> messages = List.of(Map.of("role", "user", "content", ctx.toString()));
+
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("candidatureId", candidatureId);
+        out.put("projectName", cand.get("projectName"));
+        try {
+            Map<String, Object> response = llm.chat(messages, List.of(), systemPrompt, "none");
+            List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
+            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+            String content = String.valueOf(message.get("content"))
+                    .replaceAll("(?s)```\\w*", "").replaceAll("```", "").trim();
+            int s = content.indexOf('{'), e = content.lastIndexOf('}');
+            if (s >= 0 && e > s) content = content.substring(s, e + 1);
+            Map<String, Object> parsed = json.readValue(content, Map.class);
+            out.putAll(parsed);
+            // Backfill weightedScore if the model omitted it.
+            if (out.get("weightedScore") == null && parsed.get("criteria") instanceof List<?> cl && !cl.isEmpty()) {
+                double sum = 0; int n = 0;
+                for (Object o : cl) if (o instanceof Map<?, ?> m && m.get("score") != null) { sum += Double.parseDouble(String.valueOf(m.get("score"))); n++; }
+                if (n > 0) out.put("weightedScore", Math.round((sum / n) * 10.0) / 10.0);
+            }
+            out.put("aiEnhanced", true);
+        } catch (Exception ex) {
+            log.warn("Medi scoring failed for candidature {}: {}", candidatureId, ex.getMessage());
+            out.put("aiEnhanced", false);
+            out.put("error", "L'évaluation IA a échoué — réessaie dans un instant.");
+        }
+        return out;
+    }
+
+    private static String str(Object o) { return o == null ? "" : String.valueOf(o); }
 
     // ── Plan execution (batch from a propose_plan wizard submission) ─────
 

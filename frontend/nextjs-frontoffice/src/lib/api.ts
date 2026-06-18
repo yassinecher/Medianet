@@ -95,6 +95,11 @@ export const evaluationApi = {
     api.post(`/api/candidatures/evaluate/${token}`, data),
 }
 
+/** Medi (AI) scoring — full-context candidature evaluation. ADMIN + JURY. */
+export const mediApi = {
+  score: (candidatureId: number) => api.post(`/api/admin-ai/score/${candidatureId}`),
+}
+
 /** Logged-in jury (JURY role): candidatures assigned to me + submit a score. */
 export const juryApi = {
   myAssignments: () => api.get('/api/candidatures/my-jury-assignments'),

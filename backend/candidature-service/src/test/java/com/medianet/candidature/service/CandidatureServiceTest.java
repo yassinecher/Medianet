@@ -213,7 +213,7 @@ class CandidatureServiceTest {
                 .build();
 
         when(candidatureRepository.findById(1L)).thenReturn(Optional.of(baseCandidature));
-        when(evaluationRepository.findByCandidatureIdAndJuryId(1L, 20L)).thenReturn(Optional.empty());
+        when(evaluationRepository.findByCandidatureIdAndJuryIdAndPhaseId(1L, 20L, null)).thenReturn(Optional.empty());
         when(evaluationRepository.save(any())).thenReturn(savedEval);
         when(evaluationRepository.findByCandidatureId(1L)).thenReturn(List.of(savedEval));
         when(candidatureRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -245,7 +245,7 @@ class CandidatureServiceTest {
         req.setCriteriaScores(List.of());
 
         when(candidatureRepository.findById(1L)).thenReturn(Optional.of(baseCandidature));
-        when(evaluationRepository.findByCandidatureIdAndJuryId(1L, 20L)).thenReturn(Optional.of(existingEval));
+        when(evaluationRepository.findByCandidatureIdAndJuryIdAndPhaseId(1L, 20L, null)).thenReturn(Optional.of(existingEval));
         when(evaluationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(evaluationRepository.findByCandidatureId(1L)).thenReturn(List.of(existingEval));
         when(candidatureRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));

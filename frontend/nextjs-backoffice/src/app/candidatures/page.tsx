@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Search, Brain, Star, ChevronDown, Eye } from 'lucide-react'
+import { Search, Brain, Star, Eye, Layers } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { candidaturesApi, programmesApi } from '@/lib/api'
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -41,10 +42,11 @@ export default function CandidaturesPage() {
   const handleAiScore = async (id: number) => {
     setScoring(id)
     try {
-      await candidaturesApi.aiScore(id)
-      toast.success('Score IA lancé')
-      candidaturesApi.all().then((r) => setCandidatures(r.data?.content ?? r.data ?? []))
-    } catch { toast.error('Échec du scoring IA') } finally { setScoring(null) }
+      const r = await candidaturesApi.mediScore(id)
+      const ws = r.data?.weightedScore
+      setCandidatures((prev) => prev.map((c) => c.id === id ? { ...c, aiScore: ws != null ? Number(ws) : c.aiScore } : c))
+      toast.success(ws != null ? `Évaluation Medi : ${Number(ws).toFixed(1)}/10` : 'Évaluation Medi terminée')
+    } catch { toast.error("Échec de l'évaluation Medi") } finally { setScoring(null) }
   }
 
   const handleAccept = async (id: number) => {
@@ -126,7 +128,13 @@ export default function CandidaturesPage() {
                           </span>
                         )}
                       </div>
-                      <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-muted-foreground">
+                        {c.programmeId && (
+                          <Link href={`/programmes/${c.programmeId}`} onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 font-medium text-brand-600 hover:bg-brand-500/20 dark:text-brand-400">
+                            <Layers className="h-3 w-3" />{c.programmeName ?? programmes.find((p) => p.id === c.programmeId)?.name ?? `Programme #${c.programmeId}`}
+                          </Link>
+                        )}
                         {c.applicant && <span>{c.applicant.firstName} {c.applicant.lastName}</span>}
                         {c.applicant?.email && <span>· {c.applicant.email}</span>}
                         <span>· {formatDate(c.submittedAt ?? c.createdAt)}</span>
@@ -134,6 +142,9 @@ export default function CandidaturesPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                      <Link href={`/candidatures/${c.id}`}>
+                        <Button variant="outline" size="sm" className="text-xs gap-1"><Eye className="h-3.5 w-3.5" />Détails</Button>
+                      </Link>
                       <Button variant="ghost" size="sm" className="text-xs gap-1"
                         onClick={() => handleAiScore(c.id)} disabled={scoring === c.id}>
                         <Brain className="h-3.5 w-3.5" />

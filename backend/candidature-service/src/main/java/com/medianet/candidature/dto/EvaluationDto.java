@@ -16,6 +16,7 @@ public class EvaluationDto {
     private Long id;
     private Long candidatureId;
     private Long juryId;
+    private Long phaseId;
     private String juryEmail;
     private String juryName;
 

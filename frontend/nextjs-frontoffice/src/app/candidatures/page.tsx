@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Plus } from 'lucide-react'
+import { Plus, Layers } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { candidaturesApi } from '@/lib/api'
 import { AppShell } from '@/components/layout/AppShell'
@@ -56,9 +56,13 @@ export default function CandidaturesPage() {
                     <div className="flex items-center justify-between gap-4">
                       <div className="min-w-0">
                         <h3 className="font-semibold text-foreground">{c.projectName}</h3>
-                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                          {c.programmeName && <span>{c.programmeName}</span>}
-                          {c.submittedAt && <span>· {formatRelativeDate(c.submittedAt)}</span>}
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          {c.programmeName && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 font-medium text-brand-600 dark:text-brand-400">
+                              <Layers className="h-3 w-3" />{c.programmeName}
+                            </span>
+                          )}
+                          {c.submittedAt && <span>{formatRelativeDate(c.submittedAt)}</span>}
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">

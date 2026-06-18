@@ -104,7 +104,7 @@ public class CandidatureController {
     // ── Evaluate ──────────────────────────────────────────────────────────────
 
     @PostMapping("/{id}/evaluate")
-    @PreAuthorize("hasRole('JURY')")
+    @PreAuthorize("hasRole('JURY') or hasRole('ADMIN') or hasAuthority('candidatures:update')")
     public ResponseEntity<CandidatureDto> evaluate(
             @PathVariable Long id,
             @Valid @RequestBody EvaluationRequest request,

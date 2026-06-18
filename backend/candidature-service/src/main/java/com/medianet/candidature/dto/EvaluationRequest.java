@@ -13,6 +13,10 @@ public class EvaluationRequest {
     private String juryEmail;
     private String juryName;
 
+    /** Evaluation session this score belongs to. When omitted for a logged-in jury,
+     *  the server derives it from the jury's assignment. */
+    private Long phaseId;
+
     // ── Dynamic criteria scores (programme-defined, preferred) ────────────────
     /** When provided, these take priority over the legacy 4 fields below. */
     @Valid
