@@ -6,6 +6,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -37,13 +39,24 @@ public class OrganizationController {
     public ResponseEntity<List<OrganizationDto>> list(
             @RequestParam(required = false) String type,
             @RequestParam(required = false) Boolean internal,
-            @RequestParam(required = false) Long createdByUserId) {
-        return ResponseEntity.ok(service.list(type, internal, createdByUserId));
+            @RequestParam(required = false) Long createdByUserId,
+            @RequestParam(required = false) Long memberUserId) {
+        return ResponseEntity.ok(service.list(type, internal, createdByUserId, memberUserId));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<OrganizationDto> get(@PathVariable Long id) {
-        return ResponseEntity.ok(service.get(id));
+    public ResponseEntity<OrganizationDto> get(
+            @PathVariable Long id,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        return ResponseEntity.ok(service.get(id, userId, isPrivileged()));
+    }
+
+    /** ADMIN and JURY are trusted reviewers (jury opens the org from an evaluation). */
+    private boolean isPrivileged() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream().map(a -> a.getAuthority())
+                .anyMatch(a -> a.equals("ROLE_ADMIN") || a.equals("ROLE_JURY"));
     }
 
     @PostMapping
@@ -70,8 +83,10 @@ public class OrganizationController {
     // ── Members ──────────────────────────────────────────────────────────────
 
     @GetMapping("/{id}/members")
-    public ResponseEntity<List<OrganizationMemberDto>> listMembers(@PathVariable Long id) {
-        return ResponseEntity.ok(service.listMembers(id));
+    public ResponseEntity<List<OrganizationMemberDto>> listMembers(
+            @PathVariable Long id,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        return ResponseEntity.ok(service.listMembers(id, userId, isPrivileged()));
     }
 
     @PostMapping("/{id}/members")

@@ -51,27 +51,29 @@ export default function CandidaturesPage() {
           <div className="space-y-3">
             {candidatures.map((c, i) => (
               <motion.div key={c.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}>
-                <MagicCard className="p-5">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <h3 className="font-semibold text-foreground">{c.projectName}</h3>
-                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        {c.programmeName && <span>{c.programmeName}</span>}
-                        {c.submittedAt && <span>· {formatRelativeDate(c.submittedAt)}</span>}
+                <Link href={`/candidatures/${c.id}`} className="block">
+                  <MagicCard className="p-5 transition-shadow hover:shadow-md">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-foreground">{c.projectName}</h3>
+                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          {c.programmeName && <span>{c.programmeName}</span>}
+                          {c.submittedAt && <span>· {formatRelativeDate(c.submittedAt)}</span>}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColor(c.status)}`}>
+                          {statusLabel[c.status]}
+                        </span>
+                        {c.evaluation?.weightedScore !== undefined && (
+                          <span className={`text-xs font-medium ${scoreColor(c.evaluation.weightedScore)}`}>
+                            Score: {c.evaluation.weightedScore.toFixed(1)}/10
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColor(c.status)}`}>
-                        {statusLabel[c.status]}
-                      </span>
-                      {c.evaluation?.weightedScore !== undefined && (
-                        <span className={`text-xs font-medium ${scoreColor(c.evaluation.weightedScore)}`}>
-                          Score: {c.evaluation.weightedScore.toFixed(1)}/10
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </MagicCard>
+                  </MagicCard>
+                </Link>
               </motion.div>
             ))}
             {candidatures.length === 0 && (

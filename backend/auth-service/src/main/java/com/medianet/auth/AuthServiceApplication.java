@@ -56,11 +56,26 @@ public class AuthServiceApplication {
                 frontofficeReads.add(perm(permissionRepository, m + ":read"));
             }
 
+            // Non-admin roles now get the WRITE perms their front-office pages use,
+            // not just :read — so a porteur can apply + manage their organisation, a
+            // mentor can advance tasks, and a jury can evaluate. (Back-office write
+            // endpoints stay ADMIN-gated; these drive FO visibility + the limited-
+            // admin checks.)
             Set<Permission> porteurPerms = new HashSet<>(frontofficeReads);
+            porteurPerms.add(perm(permissionRepository, "candidatures:create")); // postuler
+            porteurPerms.add(perm(permissionRepository, "organizations:create")); // créer son organisation
+            porteurPerms.add(perm(permissionRepository, "tasks:update"));         // avancer ses tâches
+            // NB: NOT organizations:update — that authority also unlocks the org
+            // DELETE endpoint (cross-tenant). Editing uses the open PUT endpoint.
+
             Set<Permission> mentorPerms  = new HashSet<>(frontofficeReads);
+            mentorPerms.add(perm(permissionRepository, "tasks:update"));          // suivi des tâches
+
             Set<Permission> juryPerms    = new HashSet<>(frontofficeReads);
             juryPerms.add(perm(permissionRepository, "candidatures:evaluate"));
+
             Set<Permission> candidatPerms = new HashSet<>(Arrays.asList(
+                perm(permissionRepository, "programmes:read"),
                 perm(permissionRepository, "sessions:read")
             ));
 
@@ -115,6 +130,11 @@ public class AuthServiceApplication {
                     userRepository.save(u);
                 }
             }
+
+            // NB: porteur organisations are created ONLY on genuine porteur
+            // registration (self-register / invitation-as-porteur). Being added
+            // as a MEMBER of someone else's organisation never spawns an owned
+            // org — so there is no blanket backfill here on purpose.
         };
     }
 

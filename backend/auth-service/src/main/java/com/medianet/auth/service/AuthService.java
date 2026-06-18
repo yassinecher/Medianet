@@ -27,6 +27,9 @@ public class AuthService {
     private final PorteurProfileRepository porteurProfileRepository;
     private final JuryProfileRepository    juryProfileRepository;
     private final CompanyRepository        companyRepository;
+    private final OrganizationRepository   organizationRepository;
+    private final OrganizationMemberRepository memberRepository;
+    private final OrgMemberInvitationRepository orgInvitationRepository;
     private final PasswordEncoder          passwordEncoder;
     private final JwtService               jwtService;
     private final NotificationClient       notificationClient;
@@ -57,9 +60,84 @@ public class AuthService {
 
         // Auto-create role profile placeholders
         ensureProfiles(user, roles);
+        // Every porteur owns an organisation (their startup) from day one.
+        ensurePorteurOrganization(user);
 
         String token = jwtService.generateToken(user);
         return buildAuthResponse(token, user);
+    }
+
+    // ── Org member invitations (token → account linked to the organisation) ────
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getOrgInvitation(String token) {
+        OrgMemberInvitation inv = orgInvitationRepository.findByToken(token)
+                .orElseThrow(() -> new IllegalArgumentException("Invitation introuvable ou expirée"));
+        Map<String, Object> m = new HashMap<>();
+        m.put("organizationName", inv.getOrganizationName());
+        m.put("email", inv.getEmail());
+        m.put("memberName", inv.getMemberName());
+        m.put("status", inv.getStatus());
+        m.put("alreadyAccepted", "ACCEPTED".equalsIgnoreCase(inv.getStatus()));
+        return m;
+    }
+
+    /** Accept an org-member invitation: create the member's account (PORTEUR) and
+     *  link it to the organisation member row. */
+    public AuthResponse acceptOrgInvitation(String token, String firstName, String lastName, String password) {
+        OrgMemberInvitation inv = orgInvitationRepository.findByToken(token)
+                .orElseThrow(() -> new IllegalArgumentException("Invitation introuvable ou expirée"));
+        if ("ACCEPTED".equalsIgnoreCase(inv.getStatus())) {
+            throw new IllegalStateException("Cette invitation a déjà été utilisée. Connectez-vous.");
+        }
+        String email = inv.getEmail().toLowerCase();
+        if (userRepository.existsByEmail(email)) {
+            throw new IllegalStateException("Un compte existe déjà pour " + email + ". Connectez-vous.");
+        }
+        User user = User.builder()
+                .email(email)
+                .firstName(firstName)
+                .lastName(lastName)
+                .password(passwordEncoder.encode(password))
+                .roles(resolveRoles(Set.of("PORTEUR")))
+                .directPermissions(new HashSet<>())
+                .active(true)
+                .build();
+        userRepository.save(user);
+        ensureProfiles(user, user.getRoles());
+
+        // Link the organisation member row to the new account.
+        if (inv.getMemberId() != null) {
+            memberRepository.findById(inv.getMemberId()).ifPresent(mem -> {
+                mem.setUserId(user.getId());
+                // The member fills their own identity on accept — the porteur only
+                // ever supplied an email, so set the real name now.
+                mem.setFullName((firstName + " " + lastName).trim());
+                memberRepository.save(mem);
+            });
+        }
+        inv.setStatus("ACCEPTED");
+        orgInvitationRepository.save(inv);
+
+        return buildAuthResponse(jwtService.generateToken(user), user);
+    }
+
+    /**
+     * Guarantee a porteur has at least one organisation. Called on registration
+     * (self + invitation) so a porteur can immediately attach their startup to a
+     * candidature. No-op for non-porteurs or porteurs who already own one.
+     */
+    private void ensurePorteurOrganization(User user) {
+        if (!user.hasRole("PORTEUR")) return;
+        if (!organizationRepository.findByCreatedByUserId(user.getId()).isEmpty()) return;
+        String first = user.getFirstName();
+        String name = (first != null && !first.isBlank()) ? "Organisation de " + first : "Mon organisation";
+        organizationRepository.save(Organization.builder()
+                .name(name)
+                .type("STARTUP")
+                .createdByUserId(user.getId())
+                .internal(false)
+                .build());
     }
 
     /**
@@ -105,6 +183,8 @@ public class AuthService {
                 .build();
         userRepository.save(user);
         ensureProfiles(user, roles);
+        // A porteur invited in also gets their organisation.
+        ensurePorteurOrganization(user);
 
         // Optionally save the phone number on the role profile.
         if (req.getPhone() != null && !req.getPhone().isBlank()) {
@@ -198,6 +278,7 @@ public class AuthService {
         user.getRoles().addAll(newRoles);
         userRepository.save(user);
         ensureProfiles(user, newRoles);
+        ensurePorteurOrganization(user);
         return toDto(user);
     }
 
@@ -209,6 +290,7 @@ public class AuthService {
         user.getRoles().addAll(newRoles);
         userRepository.save(user);
         ensureProfiles(user, newRoles);
+        ensurePorteurOrganization(user);
         return toDto(user);
     }
 
@@ -219,6 +301,7 @@ public class AuthService {
         user.getRoles().addAll(toAdd);
         userRepository.save(user);
         ensureProfiles(user, toAdd);
+        ensurePorteurOrganization(user);
         return toDto(user);
     }
 
@@ -314,6 +397,9 @@ public class AuthService {
         if (req.getPhoneNumber() != null) p.setPhoneNumber(req.getPhoneNumber());
         if (req.getWebsite()     != null) p.setWebsite(req.getWebsite());
         if (req.getLinkedInUrl() != null) p.setLinkedInUrl(req.getLinkedInUrl());
+        if (req.getAvatarUrl()   != null) p.setAvatarUrl(req.getAvatarUrl());
+        if (req.getHeadline()    != null) p.setHeadline(req.getHeadline());
+        if (req.getTwitterUrl()  != null) p.setTwitterUrl(req.getTwitterUrl());
         if (req.getBio()         != null) p.setBio(req.getBio());
         return toPorteurDto(porteurProfileRepository.save(p));
     }
@@ -488,6 +574,7 @@ public class AuthService {
                 .id(p.getId()).company(p.getCompany()).sector(p.getSector())
                 .city(p.getCity()).phoneNumber(p.getPhoneNumber())
                 .website(p.getWebsite()).linkedInUrl(p.getLinkedInUrl())
+                .avatarUrl(p.getAvatarUrl()).headline(p.getHeadline()).twitterUrl(p.getTwitterUrl())
                 .bio(p.getBio()).candidatureCount(p.getCandidatureCount()).build();
     }
 

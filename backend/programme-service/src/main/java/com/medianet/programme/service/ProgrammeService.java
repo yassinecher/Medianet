@@ -37,6 +37,7 @@ public class ProgrammeService {
                 .applicationDeadline(req.getApplicationDeadline())
                 .maxApplications(req.getMaxApplications())
                 .sectors(req.getSectors() != null ? req.getSectors() : new ArrayList<>())
+                .eligibleOrgTypes(req.getEligibleOrgTypes() != null ? req.getEligibleOrgTypes() : new ArrayList<>())
                 .tagline(req.getTagline())
                 .logoUrl(req.getLogoUrl())
                 .bannerImageUrl(req.getBannerImageUrl())
@@ -88,6 +89,7 @@ public class ProgrammeService {
         if (req.getApplicationDeadline() != null) p.setApplicationDeadline(req.getApplicationDeadline());
         if (req.getMaxApplications()     != null) p.setMaxApplications(req.getMaxApplications());
         if (req.getSectors()             != null) p.setSectors(req.getSectors());
+        if (req.getEligibleOrgTypes()    != null) p.setEligibleOrgTypes(req.getEligibleOrgTypes());
         if (req.getTagline()             != null) p.setTagline(req.getTagline());
         if (req.getLogoUrl()             != null) p.setLogoUrl(req.getLogoUrl());
         if (req.getBannerImageUrl()      != null) p.setBannerImageUrl(req.getBannerImageUrl());
@@ -309,6 +311,7 @@ public class ProgrammeService {
                 .createdAt(p.getCreatedAt())
                 .updatedAt(p.getUpdatedAt())
                 .sectors(p.getSectors() != null ? new ArrayList<>(p.getSectors()) : new ArrayList<>())
+                .eligibleOrgTypes(p.getEligibleOrgTypes() != null ? new ArrayList<>(p.getEligibleOrgTypes()) : new ArrayList<>())
                 .criteria(p.getCriteria().stream().map(this::toCriteriaDto).collect(Collectors.toList()))
                 .phases(p.getPhases().stream().map(this::toPhaseDto).collect(Collectors.toList()))
                 .partners(p.getPartners().stream().map(this::toPartnerDto).collect(Collectors.toList()))

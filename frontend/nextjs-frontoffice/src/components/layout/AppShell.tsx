@@ -46,6 +46,7 @@ const NAV: NavItem[] = [
   { label: 'Tableau de bord',  href: '/dashboard',     icon: Home },
   { label: 'Programmes',       href: '/programmes',    icon: FolderKanban, perm: 'programmes:read' },
   { label: 'Mes candidatures', href: '/candidatures',  icon: FileText,     perm: 'candidatures:read' },
+  { label: 'Mes évaluations',  href: '/evaluations',   icon: GraduationCap, roles: ['JURY'], perm: 'candidatures:evaluate' },
   { label: 'Mes organisations', href: '/organizations', icon: Building2,   perm: 'organizations:read' },
   { label: 'Mes tâches',       href: '/tasks',         icon: CheckSquare,  perm: 'tasks:read' },
 ]
@@ -329,6 +330,15 @@ function AvatarMenu({ user, roles, onLogout }: {
               </div>
             )}
           </div>
+
+          {/* Profile (porteurs) */}
+          {roles.includes('PORTEUR') && (
+            <Link href="/profile" onClick={() => setOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors">
+              <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
+              Mon profil
+            </Link>
+          )}
 
           {/* Account */}
           <Link href="/account" onClick={() => setOpen(false)}

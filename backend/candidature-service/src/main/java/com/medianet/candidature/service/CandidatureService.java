@@ -214,6 +214,25 @@ public class CandidatureService {
         return toDto(candidature, evals, assignmentDtos);
     }
 
+    /** Remove a single jury assignment (change the jury) without touching the
+     *  others' tokens/links. Their account and any submitted evaluation remain. */
+    public CandidatureDto removeJuryAssignment(Long candidatureId, Long assignmentId) {
+        Candidature candidature = candidatureRepository.findById(candidatureId)
+                .orElseThrow(() -> new RuntimeException("Candidature not found"));
+        JuryAssignment ja = juryAssignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new RuntimeException("Jury assignment not found"));
+        if (!candidatureId.equals(ja.getCandidatureId())) {
+            throw new IllegalArgumentException("Assignment does not belong to this candidature");
+        }
+        juryAssignmentRepository.delete(ja);
+
+        List<EvaluationDto> evals = evaluationRepository.findByCandidatureId(candidatureId)
+                .stream().map(this::toEvaluationDto).collect(Collectors.toList());
+        List<JuryAssignmentDto> assignmentDtos = juryAssignmentRepository.findByCandidatureId(candidatureId)
+                .stream().map(this::toJuryAssignmentDto).collect(Collectors.toList());
+        return toDto(candidature, evals, assignmentDtos);
+    }
+
     // ── Evaluate ──────────────────────────────────────────────────────────────
 
     @Transactional
@@ -486,6 +505,7 @@ public class CandidatureService {
                 .juryName(ja.getJuryName())
                 .token(ja.getToken())
                 .status(ja.getStatus())
+                .phaseId(ja.getPhaseId())
                 .assignedAt(ja.getAssignedAt())
                 .build();
     }

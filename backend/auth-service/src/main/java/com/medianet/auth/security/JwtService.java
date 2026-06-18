@@ -45,6 +45,26 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * Mint a short-lived ADMIN service token for trusted server-to-server calls
+     * (e.g. auth-service → notification-service email send). Same signing key as
+     * user tokens, so downstream services validate it identically.
+     */
+    public String generateServiceToken() {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("roles", List.of("ADMIN"));
+        claims.put("role",  "ADMIN");
+        claims.put("permissions", List.of());
+        claims.put("firstName", "Système");
+        return Jwts.builder()
+                .claims(claims)
+                .subject("system@medianet.dz")
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 120_000)) // 2 min
+                .signWith(getSigningKey(), Jwts.SIG.HS256)
+                .compact();
+    }
+
     public Claims extractAllClaims(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())

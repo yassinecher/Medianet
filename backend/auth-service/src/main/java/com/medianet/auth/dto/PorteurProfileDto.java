@@ -11,6 +11,9 @@ public class PorteurProfileDto {
     private String phoneNumber;
     private String website;
     private String linkedInUrl;
+    private String avatarUrl;
+    private String headline;
+    private String twitterUrl;
     private String bio;
     private Integer candidatureCount;
 }

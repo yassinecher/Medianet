@@ -18,5 +18,7 @@ public class JuryAssignmentDto {
     private String juryName;
     private String token;
     private String status;
+    /** Évaluation session this assignment scopes to (for per-session criteria). */
+    private Long phaseId;
     private LocalDateTime assignedAt;
 }

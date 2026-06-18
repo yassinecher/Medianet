@@ -92,6 +92,15 @@ public class CandidatureController {
         return ResponseEntity.ok(candidatureService.assignJury(id, request));
     }
 
+    /** Change the jury: remove a single assignment (others keep their tokens). */
+    @DeleteMapping("/{id}/jury/{assignmentId}")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('candidatures:update')")
+    public ResponseEntity<CandidatureDto> removeJury(
+            @PathVariable Long id,
+            @PathVariable Long assignmentId) {
+        return ResponseEntity.ok(candidatureService.removeJuryAssignment(id, assignmentId));
+    }
+
     // ── Evaluate ──────────────────────────────────────────────────────────────
 
     @PostMapping("/{id}/evaluate")

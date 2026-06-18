@@ -6,10 +6,12 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Building2, Plus, Loader2, Globe2, MapPin, Pencil, Check, X } from 'lucide-react'
+import { Building2, Plus, Loader2, Globe2, MapPin, Check, X, Users, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { organizationsApi, ORGANIZATION_TYPES } from '@/lib/api'
+import { organizationsApi, ORGANIZATION_TYPES, CATALOG_CATEGORIES } from '@/lib/api'
+import { useCatalog } from '@/hooks/useCatalog'
 import { useUser, useAuthStore } from '@/store/auth.store'
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
@@ -28,6 +30,8 @@ interface Org {
   description?: string
   contactEmail?: string
   contactPhone?: string
+  members?: { id: number }[]
+  _role?: 'owner' | 'member'
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -48,11 +52,14 @@ export default function OrganizationsPage() {
   const [hydrated, setHydrated] = useState(false)
   useEffect(() => { setHydrated(true) }, [])
 
+  const orgTypes = useCatalog(CATALOG_CATEGORIES.ORGANIZATION_TYPE,
+    ORGANIZATION_TYPES.map((t) => ({ value: t, label: TYPE_LABEL[t] })))
   const [orgs, setOrgs] = useState<Org[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  // null = closed; 'new' = create form; number = editing that org id
-  const [editing, setEditing] = useState<'new' | number | null>(null)
+  // null = closed; 'new' = create form. Editing an existing org happens on its
+  // profile page (/organizations/[id]).
+  const [editing, setEditing] = useState<'new' | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY)
 
   // Redirect anonymous visitors to login (this is an authenticated module).
@@ -61,25 +68,30 @@ export default function OrganizationsPage() {
   }, [hydrated, isAuthenticated, router])
 
   useEffect(() => {
-    if (!user?.id) return
+    if (!hydrated) return
+    // Wait until the persisted user is available; once hydrated without a user
+    // the redirect-to-login effect handles it, so stop the spinner regardless.
+    if (!user) { setLoading(false); return }
+    if (!user.id) { setLoading(false); return }
     let cancelled = false
     setLoading(true)
-    organizationsApi.list({ createdByUserId: user.id })
-      .then((r) => { if (!cancelled) setOrgs(r.data ?? []) })
-      .catch(() => toast.error('Impossible de charger vos organisations'))
-      .finally(() => { if (!cancelled) setLoading(false) })
+    // Owned organisations + ones I'm a member of (read-only). Tag each row's role.
+    Promise.all([
+      organizationsApi.list({ createdByUserId: user.id }).then((r) => r.data ?? []).catch(() => []),
+      organizationsApi.list({ memberUserId: user.id }).then((r) => r.data ?? []).catch(() => []),
+    ]).then(([owned, memberOf]) => {
+      if (cancelled) return
+      const ownedIds = new Set(owned.map((o: Org) => o.id))
+      const tagged: Org[] = [
+        ...owned.map((o: Org) => ({ ...o, _role: 'owner' as const })),
+        ...memberOf.filter((o: Org) => !ownedIds.has(o.id)).map((o: Org) => ({ ...o, _role: 'member' as const })),
+      ]
+      setOrgs(tagged)
+    }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [user?.id])
+  }, [hydrated, user?.id])
 
   const startCreate = () => { setDraft(EMPTY); setEditing('new') }
-  const startEdit = (o: Org) => {
-    setDraft({
-      name: o.name ?? '', type: o.type ?? 'STARTUP', sector: o.sector ?? '',
-      city: o.city ?? '', country: o.country ?? '', website: o.website ?? '',
-      description: o.description ?? '',
-    })
-    setEditing(o.id)
-  }
   const cancel = () => { setEditing(null); setDraft(EMPTY) }
 
   const save = async () => {
@@ -95,16 +107,11 @@ export default function OrganizationsPage() {
       description: draft.description || undefined,
     }
     try {
-      if (editing === 'new') {
-        const r = await organizationsApi.create(payload)
-        setOrgs((arr) => [r.data, ...arr])
-        toast.success('Organisation créée')
-      } else if (typeof editing === 'number') {
-        const r = await organizationsApi.update(editing, payload)
-        setOrgs((arr) => arr.map((o) => (o.id === editing ? { ...o, ...r.data } : o)))
-        toast.success('Organisation mise à jour')
-      }
+      const r = await organizationsApi.create(payload)
+      // Open the new org's profile so the porteur can add their team next.
+      toast.success('Organisation créée')
       cancel()
+      router.push(`/organizations/${r.data.id}`)
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Erreur')
     } finally { setSaving(false) }
@@ -116,13 +123,13 @@ export default function OrganizationsPage() {
         <div className="space-y-1 sm:col-span-2">
           <label className="text-xs font-medium text-muted-foreground">Type</label>
           <div className="flex flex-wrap gap-1.5">
-            {ORGANIZATION_TYPES.map((t) => (
-              <button key={t} type="button" onClick={() => setDraft((d) => ({ ...d, type: t }))}
+            {orgTypes.map((t) => (
+              <button key={t.value} type="button" onClick={() => setDraft((d) => ({ ...d, type: t.value }))}
                 className={`rounded-full px-3 py-1 text-xs font-semibold border transition-all ${
-                  draft.type === t
+                  draft.type === t.value
                     ? 'border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-300'
                     : 'border-border text-muted-foreground hover:border-brand-400'}`}>
-                {TYPE_LABEL[t]}
+                {t.label}
               </button>
             ))}
           </div>
@@ -160,7 +167,7 @@ export default function OrganizationsPage() {
         <Button variant="ghost" size="sm" onClick={cancel}><X className="h-3.5 w-3.5" />Annuler</Button>
       </div>
     </div>
-  ), [draft, saving])
+  ), [draft, saving, orgTypes])
 
   return (
     <AppShell>
@@ -198,49 +205,52 @@ export default function OrganizationsPage() {
             </Button>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             {orgs.map((o) => (
-              <div key={o.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-                {editing === o.id ? (
-                  orgForm
-                ) : (
-                  <div className="flex items-start gap-4">
-                    {o.logoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={o.logoUrl} alt={o.name} className="h-12 w-12 rounded-lg object-cover border border-border" />
-                    ) : (
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
-                        <Building2 className="h-6 w-6 text-muted-foreground" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-foreground">{o.name}</span>
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                          {TYPE_LABEL[o.type ?? 'OTHER']}
-                        </span>
-                      </div>
-                      {o.description && <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{o.description}</p>}
-                      <p className="mt-1.5 text-xs text-muted-foreground flex flex-wrap gap-3">
-                        {o.sector && <span>{o.sector}</span>}
-                        {(o.city || o.country) && (
-                          <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />
-                            {[o.city, o.country].filter(Boolean).join(', ')}
-                          </span>
-                        )}
-                        {o.website && (
-                          <span className="inline-flex items-center gap-1"><Globe2 className="h-3 w-3" />
-                            {o.website.replace(/^https?:\/\//, '').slice(0, 32)}
-                          </span>
-                        )}
-                      </p>
+              <Link key={o.id} href={`/organizations/${o.id}`}
+                className="group rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:border-brand-400 hover:shadow-md">
+                <div className="flex items-start gap-4">
+                  {o.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={o.logoUrl} alt={o.name} className="h-12 w-12 rounded-lg object-cover border border-border" />
+                  ) : (
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
+                      <Building2 className="h-6 w-6 text-muted-foreground" />
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => startEdit(o)} className="gap-1 shrink-0">
-                      <Pencil className="h-3.5 w-3.5" />Modifier
-                    </Button>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-foreground group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{o.name}</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                        {TYPE_LABEL[o.type ?? 'OTHER'] ?? o.type}
+                      </span>
+                      {o._role === 'member' && (
+                        <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
+                          Membre · lecture seule
+                        </span>
+                      )}
+                    </div>
+                    {o.description && <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{o.description}</p>}
+                    <p className="mt-1.5 text-xs text-muted-foreground flex flex-wrap gap-3">
+                      {o.sector && <span>{o.sector}</span>}
+                      {(o.city || o.country) && (
+                        <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />
+                          {[o.city, o.country].filter(Boolean).join(', ')}
+                        </span>
+                      )}
+                      {(o.members?.length ?? 0) > 0 && (
+                        <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{o.members!.length}</span>
+                      )}
+                      {o.website && (
+                        <span className="inline-flex items-center gap-1"><Globe2 className="h-3 w-3" />
+                          {o.website.replace(/^https?:\/\//, '').slice(0, 32)}
+                        </span>
+                      )}
+                    </p>
                   </div>
-                )}
-              </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-brand-500 group-hover:translate-x-0.5 transition-all" />
+                </div>
+              </Link>
             ))}
           </div>
         )}

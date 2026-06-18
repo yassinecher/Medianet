@@ -10,9 +10,12 @@ public class UpdateOrganizationRequest {
     private String  sector;
     private String  city;
     private String  country;
+    private String  address;
     private String  website;
     private String  contactEmail;
     private String  contactPhone;
+    private Integer foundedYear;
+    private String  employeeCount;
     private String  logoUrl;
     private Boolean internal;
     private Long    linkedCompanyId;

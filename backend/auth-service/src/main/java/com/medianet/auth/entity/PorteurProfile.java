@@ -32,6 +32,11 @@ public class PorteurProfile {
     private String website;
     private String linkedInUrl;
 
+    /** LinkedIn-style profile extras (medium scope). */
+    private String avatarUrl;
+    private String headline;
+    private String twitterUrl;
+
     @Column(columnDefinition = "TEXT")
     private String bio;
 

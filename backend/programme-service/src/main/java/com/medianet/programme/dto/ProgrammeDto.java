@@ -33,6 +33,7 @@ public class ProgrammeDto {
     private LocalDateTime updatedAt;
 
     private List<String>               sectors;
+    private List<String>               eligibleOrgTypes;
     private List<ProgrammeCriteriaDto> criteria;
     private List<ProgrammePhaseDto>    phases;
     private List<PartnerDto>           partners;

@@ -27,6 +27,7 @@ public class CreateProgrammeRequest {
     private LocalDate applicationDeadline;
     private Integer   maxApplications;
     private List<String> sectors;
+    private List<String> eligibleOrgTypes;
 
     // Rich presentation
     private String  tagline;

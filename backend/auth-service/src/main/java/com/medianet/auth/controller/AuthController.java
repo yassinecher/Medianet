@@ -33,6 +33,23 @@ public class AuthController {
         return ResponseEntity.ok(authService.login(request));
     }
 
+    // ── Org-member token invitations (public — the token is the authorization) ──
+
+    @GetMapping("/org-invitations/{token}")
+    public ResponseEntity<Map<String, Object>> getOrgInvitation(@PathVariable String token) {
+        return ResponseEntity.ok(authService.getOrgInvitation(token));
+    }
+
+    @PostMapping("/org-invitations/{token}")
+    public ResponseEntity<AuthResponse> acceptOrgInvitation(
+            @PathVariable String token, @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(authService.acceptOrgInvitation(
+                token,
+                body.getOrDefault("firstName", ""),
+                body.getOrDefault("lastName", ""),
+                body.getOrDefault("password", "")));
+    }
+
     /**
      * Finish account creation from an invitation email.
      * <p>Public — the invitation token itself is the proof of authorization.

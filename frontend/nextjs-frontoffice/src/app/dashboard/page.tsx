@@ -13,8 +13,8 @@ import { NumberTicker } from '@/components/magicui/number-ticker'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
-import { candidaturesApi, tasksApi, programmesApi } from '@/lib/api'
-import { useUser, useActiveRole } from '@/store/auth.store'
+import { candidaturesApi, tasksApi, programmesApi, juryApi } from '@/lib/api'
+import { useUser, useActiveRole, useIsJury } from '@/store/auth.store'
 import { formatRelativeDate, statusColor, scoreColor, formatDate } from '@/lib/utils'
 import type { Candidature, Task, Programme } from '@/types'
 
@@ -57,9 +57,11 @@ const ROLE_HERO: Record<string, { icon: any; gradient: string; tagline: string }
 export default function DashboardPage() {
   const user = useUser()
   const activeRole = useActiveRole() ?? 'PORTEUR'
+  const isJury = useIsJury()
   const [candidatures, setCandidatures] = useState<Candidature[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [programmes, setProgrammes] = useState<Programme[]>([])
+  const [juryItems, setJuryItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -67,8 +69,17 @@ export default function DashboardPage() {
       candidaturesApi.myList().then((r) => setCandidatures(r.data?.content ?? r.data ?? [])).catch(() => {}),
       tasksApi.myTasks().then((r) => setTasks(r.data?.content ?? r.data ?? [])).catch(() => {}),
       programmesApi.list({ status: 'OPEN' }).then((r) => setProgrammes(r.data?.content ?? r.data ?? [])).catch(() => {}),
+      isJury ? juryApi.myAssignments().then((r) => setJuryItems(r.data ?? [])).catch(() => {}) : Promise.resolve(),
     ]).finally(() => setLoading(false))
-  }, [])
+  }, [isJury])
+
+  // ── Jury-derived values ─────────────────────────────────────────────────
+  const myEvalOf = (c: any) => (c.evaluations ?? []).find((e: any) => e.juryId === user?.id) ?? null
+  const juryEvaluated = juryItems.filter((c) => myEvalOf(c))
+  const juryPending = juryItems.length - juryEvaluated.length
+  const juryAvg = juryEvaluated.length
+    ? juryEvaluated.reduce((sum, c) => sum + Number(myEvalOf(c)?.weightedScore ?? 0), 0) / juryEvaluated.length
+    : 0
 
   // ── Derived values ─────────────────────────────────────────────────────
   const pendingTasks = tasks.filter((t) => t.status === 'PENDING' || t.status === 'IN_PROGRESS')
@@ -114,11 +125,11 @@ export default function DashboardPage() {
     { label: 'Programmes actifs', value: programmes.length, sub: 'que je peux suivre',
       icon: FolderKanban, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10' },
   ] : [ // JURY
-    { label: 'À évaluer', value: 0, sub: 'candidatures en attente',
+    { label: 'À évaluer', value: juryPending, sub: 'candidatures en attente',
       icon: AlertCircle, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-500/10' },
-    { label: 'Évalués', value: 0, sub: 'ce mois-ci',
+    { label: 'Évalués', value: juryEvaluated.length, sub: `sur ${juryItems.length} assignée(s)`,
       icon: Award, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10' },
-    { label: 'Score moyen donné', value: 0, sub: 'sur 10',
+    { label: 'Score moyen donné', value: Math.round(juryAvg * 10) / 10, sub: 'sur 10',
       icon: Star, color: 'text-brand-600 dark:text-brand-400', bg: 'bg-brand-500/10' },
     { label: 'Programmes', value: programmes.length, sub: 'auxquels je participe',
       icon: FolderKanban, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10' },
@@ -161,6 +172,16 @@ export default function DashboardPage() {
                     <Link href="/candidatures">
                       <Button variant="outline" className="bg-white/10 border-white/30 text-white hover:bg-white/20 gap-1.5">
                         <FileText className="h-3.5 w-3.5" />Mes candidatures
+                      </Button>
+                    </Link>
+                  )}
+                  {isJury && (
+                    <Link href="/evaluations">
+                      <Button className="bg-white text-amber-700 hover:bg-white/90 gap-1.5 font-bold">
+                        <GraduationCap className="h-3.5 w-3.5" />Mes évaluations
+                        {juryPending > 0 && (
+                          <span className="ml-0.5 rounded-full bg-amber-600 px-1.5 text-[10px] font-bold text-white">{juryPending}</span>
+                        )}
                       </Button>
                     </Link>
                   )}
@@ -401,6 +422,7 @@ export default function DashboardPage() {
                 {[
                   { label: 'Programmes ouverts', href: '/programmes', icon: FolderKanban, badge: programmes.length },
                   ...(activeRole === 'PORTEUR' ? [{ label: 'Mes candidatures', href: '/candidatures', icon: FileText, badge: candidatures.length }] : []),
+                  ...(isJury ? [{ label: 'Mes évaluations', href: '/evaluations', icon: GraduationCap, badge: juryPending }] : []),
                   { label: 'Mes tâches', href: '/tasks', icon: CheckSquare, badge: pendingTasks.length },
                 ].map((q) => {
                   const Icon = q.icon

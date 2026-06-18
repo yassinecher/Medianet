@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, FolderKanban, FileText, CheckSquare,
   Bell, Bot, Users, Settings, LogOut, Moon, Sun,
-  ChevronRight, Menu, X, Trophy, Shield, Home, Sparkles, Building2,
+  ChevronRight, Menu, X, Trophy, Shield, Home, Sparkles, Building2, Tags,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuthStore, useUser } from '@/store/auth.store'
@@ -26,6 +26,7 @@ const navItems = [
   { label: 'Utilisateurs', href: '/users', icon: Users, module: 'users' },
   { label: 'Organisations', href: '/organizations', icon: Building2, module: 'organizations' },
   { label: 'Page d\'accueil', href: '/landing-page', icon: Home, module: 'landing' },
+  { label: 'Référentiels', href: '/catalogs', icon: Tags, module: 'settings' },
   { label: 'Paramètres', href: '/settings', icon: Settings, module: 'settings' },
 ] as const
 

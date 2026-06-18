@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Wand2, ChevronRight, Calendar, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { programmesApi, partnersApi } from '@/lib/api'
+import { programmesApi, partnersApi, CATALOG_CATEGORIES } from '@/lib/api'
+import { useCatalog } from '@/hooks/useCatalog'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,7 @@ import { TimelineTab } from '../builder/TimelineTab'
 import { InvitationsPanel } from './InvitationsPanel'
 import { ParcoursFlow } from './ParcoursFlow'
 import { ProgrammeDashboard } from './ProgrammeDashboard'
+import { EvaluationDashboard } from './EvaluationDashboard'
 
 const statusLabel: Record<string, string> = {
   DRAFT: 'Brouillon', OPEN: 'Ouvert', IN_PROGRESS: 'En cours',
@@ -62,13 +64,18 @@ export default function ProgrammeDetailPage() {
   const [programme, setProgramme] = useState<Programme | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'info' | 'phases' | 'criteria' | 'partners' | 'invitations'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'info' | 'phases' | 'criteria' | 'evaluations' | 'partners' | 'invitations'>('dashboard')
+  // Programme sectors + eligible organisation types come from the admin-managed
+  // catalogues (Référentiels). Fallback to the built-in lists if unreachable.
+  const { options: sectorOptions } = useCatalog(CATALOG_CATEGORIES.PROGRAMME_SECTOR, SECTORS)
+  const { options: orgTypeOptions } = useCatalog(CATALOG_CATEGORIES.ORGANIZATION_TYPE, [])
 
   // Info edit form
   const [editMode, setEditMode] = useState(false)
   const [form, setForm] = useState({
     title: '', description: '', type: '', region: '', status: '',
     applicationDeadline: '', startDate: '', endDate: '', sectors: [] as string[],
+    eligibleOrgTypes: [] as string[],
     formTemplate: 'STANDARD',
     customFormSchema: null as CustomFormSchema | null,
     // Rich fields
@@ -116,6 +123,7 @@ export default function ProgrammeDetailPage() {
           startDate: p.startDate ? p.startDate.substring(0, 10) : '',
           endDate: p.endDate ? p.endDate.substring(0, 10) : '',
           sectors: p.sectors ?? [],
+          eligibleOrgTypes: (p as any).eligibleOrgTypes ?? [],
           formTemplate: (p as any).formTemplate ?? 'STANDARD',
           customFormSchema: parseSchema((p as any).customFormSchema),
           tagline: (p as any).tagline ?? '',
@@ -148,10 +156,11 @@ export default function ProgrammeDetailPage() {
         type: form.type,
         region: form.region,
         status: form.status,
-        applicationDeadline: form.applicationDeadline || undefined,
+        // applicationDeadline NOT sent — fully derived from the candidature session.
         startDate: form.startDate || undefined,
         endDate: form.endDate || undefined,
         sectors: form.sectors,
+        eligibleOrgTypes: form.eligibleOrgTypes,
         // formTemplate / customFormSchema intentionally NOT sent — the form is
         // edited only in the Parcours candidature-session panel (single source).
         tagline: form.tagline || undefined,
@@ -355,13 +364,14 @@ export default function ProgrammeDetailPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border">
-          {(['dashboard', 'info', 'phases', 'criteria', 'partners', 'invitations'] as const).map((tab) => (
+          {(['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'partners', 'invitations'] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === tab ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
               {tab === 'dashboard' ? 'Tableau de bord'
                 : tab === 'info' ? 'Informations'
                 : tab === 'phases' ? `Sessions (${phases.length})`
                 : tab === 'criteria' ? `Critères (${criteria.length})`
+                : tab === 'evaluations' ? 'Évaluations'
                 : tab === 'partners' ? `Partenaires (${programmePartners.length})`
                 : 'Invitations'}
             </button>
@@ -484,9 +494,10 @@ export default function ProgrammeDetailPage() {
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs font-medium text-muted-foreground">Clôture candidatures</label>
-                            <Input type="date" value={form.applicationDeadline} onChange={(e) => setForm((f) => ({ ...f, applicationDeadline: e.target.value }))} />
+                            <Input type="date" value={form.applicationDeadline} disabled readOnly
+                              className="opacity-70 cursor-not-allowed" />
                             <p className="text-[10px] text-muted-foreground">
-                              ⟳ Synchronisée automatiquement avec la fin de la session « Candidature » du Parcours.
+                              🔒 Entièrement automatique — calée sur la session « Candidature » du Parcours. Modifiez ses dates pour changer la clôture.
                             </p>
                           </div>
                         </div>
@@ -494,23 +505,66 @@ export default function ProgrammeDetailPage() {
 
                       {/* ── Secteurs ── */}
                       <section className="rounded-xl border border-border bg-muted/10 p-4">
-                        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
-                          <Tag className="h-3.5 w-3.5" />Secteurs <span className="font-normal opacity-60">(optionnel)</span>
-                        </p>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                            <Tag className="h-3.5 w-3.5" />Secteurs <span className="font-normal opacity-60">(optionnel)</span>
+                          </p>
+                          <Link href="/catalogs"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 dark:text-brand-400 hover:underline">
+                            <Plus className="h-3 w-3" />Ajouter / gérer les secteurs
+                          </Link>
+                        </div>
                         <div className="flex flex-wrap gap-2">
-                          {SECTORS.map((s) => {
-                            const selected = form.sectors.includes(s)
+                          {sectorOptions.map((o) => {
+                            const selected = form.sectors.includes(o.value)
                             return (
-                              <button key={s} type="button"
+                              <button key={o.value} type="button"
                                 onClick={() => setForm((f) => ({
                                   ...f,
-                                  sectors: selected ? f.sectors.filter((x) => x !== s) : [...f.sectors, s],
+                                  sectors: selected ? f.sectors.filter((x) => x !== o.value) : [...f.sectors, o.value],
                                 }))}
                                 className={`rounded-full px-3 py-1 text-xs font-medium border transition-all ${selected ? 'border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-300' : 'border-border hover:border-brand-400 text-muted-foreground'}`}>
-                                {s}
+                                {o.label}
                               </button>
                             )
                           })}
+                        </div>
+                        <p className="mt-2 text-[10px] text-muted-foreground">
+                          Pour ajouter un nouveau secteur à la liste, ouvrez <strong>Référentiels → Secteurs de programme</strong>.
+                        </p>
+                      </section>
+
+                      {/* ── Types d'organisation éligibles ── */}
+                      <section className="rounded-xl border border-border bg-muted/10 p-4">
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                            <Building2 className="h-3.5 w-3.5" />Types d&apos;organisation éligibles
+                          </p>
+                          <Link href="/catalogs"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 dark:text-brand-400 hover:underline">
+                            <Plus className="h-3 w-3" />Gérer les types
+                          </Link>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mb-2">
+                          Choisissez les types d&apos;organisation autorisés à candidater. Aucun coché = tous les types sont éligibles.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {orgTypeOptions.map((o) => {
+                            const selected = form.eligibleOrgTypes.includes(o.value)
+                            return (
+                              <button key={o.value} type="button"
+                                onClick={() => setForm((f) => ({
+                                  ...f,
+                                  eligibleOrgTypes: selected ? f.eligibleOrgTypes.filter((x) => x !== o.value) : [...f.eligibleOrgTypes, o.value],
+                                }))}
+                                className={`rounded-full px-3 py-1 text-xs font-medium border transition-all ${selected ? 'border-brand-500 bg-brand-500/15 text-brand-700 dark:text-brand-300' : 'border-border hover:border-brand-400 text-muted-foreground'}`}>
+                                {o.label}
+                              </button>
+                            )
+                          })}
+                          {orgTypeOptions.length === 0 && (
+                            <span className="text-[11px] text-muted-foreground italic">Aucun type — ajoutez-en dans Référentiels.</span>
+                          )}
                         </div>
                       </section>
 
@@ -768,6 +822,15 @@ export default function ProgrammeDetailPage() {
                 )}
               </motion.div>
             )}
+
+            {/* EVALUATIONS TAB — consolidated evaluation dashboard */}
+            {activeTab === 'evaluations' && programme && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <EvaluationDashboard programmeId={programme.id} programme={programme}
+                  criteria={criteria as any} phases={phases as any} />
+              </motion.div>
+            )}
+
             {/* PARTNERS TAB */}
             {activeTab === 'partners' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">

@@ -53,9 +53,13 @@ export const useAuthStore = create<AuthStore>()(
       isAuthenticated: false,
       setAuth: (user, token) => {
         Cookies.set('token', token, { expires: 7, sameSite: 'Lax' })
+        // The login AuthResponse carries the id as `userId`, not `id`. Normalize
+        // so `user.id` is always populated — pages filter/match on it (e.g.
+        // /organizations by createdByUserId, jury eval matching by juryId).
+        const normalized = { ...user, id: user.id ?? (user as any).userId } as User
         // The active role is auto-derived (primary role); the user never chooses.
         // The layout shows the union of all their roles + permissions regardless.
-        set({ user, token, isAuthenticated: true, activeRole: primaryRoleOf(user) })
+        set({ user: normalized, token, isAuthenticated: true, activeRole: primaryRoleOf(normalized) })
       },
       setActiveRole: (role) => set({ activeRole: role }),
       logout: () => {
@@ -66,7 +70,14 @@ export const useAuthStore = create<AuthStore>()(
     {
       name: 'fo-auth',
       partialize: (s) => ({ user: s.user, token: s.token, activeRole: s.activeRole }),
-      onRehydrateStorage: () => (s) => { if (s) s.isAuthenticated = !!s.token },
+      onRehydrateStorage: () => (s) => {
+        if (!s) return
+        s.isAuthenticated = !!s.token
+        // Backfill id on sessions persisted before the userId→id normalization.
+        if (s.user && s.user.id == null && (s.user as any).userId != null) {
+          s.user = { ...s.user, id: (s.user as any).userId }
+        }
+      },
     }
   )
 )

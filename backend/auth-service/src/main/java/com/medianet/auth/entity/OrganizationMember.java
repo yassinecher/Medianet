@@ -40,6 +40,11 @@ public class OrganizationMember {
     private String email;
     private String phone;
 
+    /** LinkedIn-style profile extras (medium scope). */
+    private String avatarUrl;
+    private String headline;
+    private String linkedInUrl;
+
     /** Their position inside the org ("CEO", "Mentor", "Speaker", …). */
     private String role;
 

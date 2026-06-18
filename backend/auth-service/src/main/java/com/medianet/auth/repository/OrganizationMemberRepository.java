@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface OrganizationMemberRepository extends JpaRepository<OrganizationMember, Long> {
     List<OrganizationMember> findByOrganization_Id(Long organizationId);
+    List<OrganizationMember> findByUserId(Long userId);
 }

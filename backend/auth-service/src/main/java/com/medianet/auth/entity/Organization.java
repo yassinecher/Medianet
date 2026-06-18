@@ -32,10 +32,14 @@ public class Organization {
     @Column(nullable = false)
     private String name;
 
-    @Enumerated(EnumType.STRING)
+    /**
+     * Organisation type — a free string backed by the admin-managed
+     * "organization_type" catalogue (was an enum; the column is already VARCHAR,
+     * so this is a non-destructive change). Defaults to "STARTUP".
+     */
     @Column(name = "org_type", length = 32)
     @Builder.Default
-    private OrganizationType type = OrganizationType.STARTUP;
+    private String type = "STARTUP";
 
     @Column(columnDefinition = "TEXT")
     private String description;
@@ -43,9 +47,16 @@ public class Organization {
     private String sector;
     private String city;
     private String country;
+    /** Street address — also used to render the map on the org profile. */
+    private String address;
     private String website;
     private String contactEmail;
     private String contactPhone;
+
+    /** Extra profile details. */
+    private Integer foundedYear;
+    /** Employee-count range, e.g. "1-10", "11-50". */
+    private String employeeCount;
 
     @Column(columnDefinition = "TEXT")
     private String logoUrl;

@@ -11,7 +11,8 @@ export function middleware(request: NextRequest) {
   const isPublic =
     PUBLIC.some((p) => pathname === p || pathname.startsWith(p + '/')) ||
     pathname.startsWith('/invitations/') ||
-    pathname.startsWith('/evaluate/')
+    pathname.startsWith('/evaluate/') ||
+    pathname.startsWith('/join/')
 
   if (!token && !isPublic) {
     return NextResponse.redirect(new URL('/login', request.url))

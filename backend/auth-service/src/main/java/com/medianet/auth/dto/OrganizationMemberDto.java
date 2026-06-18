@@ -11,6 +11,9 @@ public class OrganizationMemberDto {
     private String       fullName;
     private String       email;
     private String       phone;
+    private String       avatarUrl;
+    private String       headline;
+    private String       linkedInUrl;
     private String       role;
     private String       responsibilities;
     private List<String> expertise;

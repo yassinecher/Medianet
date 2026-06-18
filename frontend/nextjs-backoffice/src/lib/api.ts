@@ -138,6 +138,21 @@ export const parcoursTemplatesApi = {
   delete: (id: number) => api.delete(`/api/parcours-templates/${id}`),
 }
 
+/** Admin-managed reference lists (organisation types, programme sectors, …). */
+export const catalogApi = {
+  list:   (category: string) => api.get('/api/catalog', { params: { category } }),
+  create: (data: { category: string; value: string; label?: string; sortOrder?: number }) =>
+    api.post('/api/catalog', data),
+  update: (id: number, data: { label?: string; value?: string; sortOrder?: number; active?: boolean }) =>
+    api.put(`/api/catalog/${id}`, data),
+  delete: (id: number) => api.delete(`/api/catalog/${id}`),
+}
+/** Catalogue categories. */
+export const CATALOG_CATEGORIES = {
+  ORGANIZATION_TYPE: 'organization_type',
+  PROGRAMME_SECTOR: 'programme_sector',
+} as const
+
 export const partnersApi = {
   list: () => api.get('/api/partners'),
   create: (data: { name: string; logoUrl?: string }) => api.post('/api/partners', data),
@@ -312,6 +327,8 @@ export const candidaturesApi = {
   reject: (id: number, reason: string) => api.patch(`/api/candidatures/${id}/reject`, { reason }),
   assignJury: (id: number, data: { juryAssignments: { juryId?: number; juryEmail: string; juryName: string }[]; phaseId?: number }) =>
     api.post(`/api/candidatures/${id}/assign-jury`, data),
+  /** Change the jury: remove a single assignment (others keep their links). */
+  removeJury: (id: number, assignmentId: number) => api.delete(`/api/candidatures/${id}/jury/${assignmentId}`),
   aiScore: (id: number) => api.post(`/api/ai/score/${id}`),
   aiMatch: (candidatureId: number) => api.post(`/api/ai/match/${candidatureId}`),
   /** Saved candidature-list versions (shortlists) for the Présélection session */

@@ -83,6 +83,16 @@ public class Programme {
     @Builder.Default
     private List<String> sectors = new ArrayList<>();
 
+    /**
+     * Organisation types eligible to apply (catalogue "organization_type" values,
+     * e.g. STARTUP, UNIVERSITY). Empty = all types are eligible.
+     */
+    @ElementCollection
+    @CollectionTable(name = "programme_eligible_org_types", joinColumns = @JoinColumn(name = "programme_id"))
+    @Column(name = "org_type")
+    @Builder.Default
+    private List<String> eligibleOrgTypes = new ArrayList<>();
+
     // ── Rich presentation fields ───────────────────────────────────────────
 
     /** Short catchphrase / subtitle shown on the hero (e.g. "The FoodTech Program"). */
