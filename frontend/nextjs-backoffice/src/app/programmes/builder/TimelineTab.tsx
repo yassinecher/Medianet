@@ -27,6 +27,7 @@ import { sessionsApi, sessionPresetsApi, notificationsApi, contactsApi, contactG
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { CandidaturePhasePanel, PreselectionPhasePanel } from './PhasePanels'
+import { SessionNotifyButton } from '@/app/programmes/[id]/SessionNotify'
 
 // ── Color palette ───────────────────────────────────────────────────────────
 // Sessions / presets / activities are type-free — color is their only marker.
@@ -2084,6 +2085,12 @@ function SessionOverlay({
                 showDetails ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300' : 'border-border text-muted-foreground hover:text-foreground'}`}>
               <Pencil className="h-3 w-3" />Détails
             </button>
+          )}
+          {session.id && kind === 'day' && (
+            <SessionNotifyButton
+              programmeId={programmeId} programmeName={programmeName ?? 'Programme'} session={session as any} compact
+              onSessionPatched={(patch) => onUpdate(patch as any)}
+              className="p-1 rounded hover:bg-brand-500/10 text-muted-foreground hover:text-brand-600 shrink-0" />
           )}
           <button onClick={onDuplicate} title="Dupliquer la session (avec journées + activités)"
             className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground shrink-0">

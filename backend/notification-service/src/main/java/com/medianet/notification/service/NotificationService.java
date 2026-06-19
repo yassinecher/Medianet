@@ -91,6 +91,64 @@ public class NotificationService {
         }
     }
 
+    // ── Session notification (per-type email + archived) ──────────────────────
+
+    /**
+     * Sends a session announcement, one tailored email per recipient type, and
+     * records every recipient as an Invitation row (SENT / FAILED) so the send
+     * is fully archived and queryable per programme / per session.
+     */
+    public List<InvitationDto> sessionNotify(SessionNotifyRequest req, Long adminId, String adminName) {
+        List<InvitationDto> out = new ArrayList<>();
+        if (req.getItems() == null) return out;
+        for (SessionNotifyRequest.Item item : req.getItems()) {
+            if (item.getRecipients() == null || item.getBody() == null) continue;
+            InvitationType type = mapNotifyType(item.getType());
+            for (SessionNotifyRequest.Recipient r : item.getRecipients()) {
+                if (r.getEmail() == null || r.getEmail().isBlank()) continue;
+                Invitation inv = Invitation.builder()
+                        .type(type)
+                        .programmeId(req.getProgrammeId())
+                        .programmeName(req.getProgrammeName())
+                        .phaseId(req.getPhaseId())
+                        .phaseName(req.getPhaseName())
+                        .recipientEmail(r.getEmail().toLowerCase())
+                        .recipientName(r.getName())
+                        .subject(item.getSubject())
+                        .message(item.getBody())
+                        .requiresRsvp(false)
+                        .sentByAdminId(adminId)
+                        .sentByAdminName(adminName)
+                        .build();
+                inv = invitationRepository.save(inv);
+                try {
+                    emailService.sendRaw(inv.getRecipientEmail(), inv.getRecipientName(),
+                            inv.getSubject(), item.getBody(), true);
+                    inv.setStatus(InvitationStatus.SENT);
+                    inv.setSentAt(LocalDateTime.now());
+                } catch (Exception e) {
+                    log.error("Session-notify email failed for {}: {}", inv.getRecipientEmail(), e.getMessage());
+                    inv.setStatus(InvitationStatus.FAILED);
+                    inv.setErrorMessage(e.getMessage());
+                }
+                out.add(toDto(invitationRepository.save(inv)));
+            }
+        }
+        return out;
+    }
+
+    private InvitationType mapNotifyType(String t) {
+        if (t == null) return InvitationType.GENERAL;
+        switch (t.toLowerCase()) {
+            case "jury":          return InvitationType.JURY;
+            case "porteur":       return InvitationType.PORTEUR;
+            case "member": case "membre": return InvitationType.MEMBER;
+            case "organisateur": case "responsable": return InvitationType.ORGANISATEUR;
+            case "invite": case "guest": return InvitationType.GUEST;
+            default:              return InvitationType.GENERAL;
+        }
+    }
+
     // ── RSVP (public — no auth, just the token) ───────────────────────────────
 
     @Transactional

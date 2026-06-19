@@ -379,6 +379,8 @@ export const notificationsApi = {
   byActivity: (activityId: number) => api.get(`/api/notifications/invitations/activity/${activityId}`),
   /** Freeform email to a list of addresses */
   sendEmail: (data: unknown) => api.post('/api/notifications/email/send', data),
+  /** Notify a session's participants (per-type emails) + archive each send */
+  sessionNotify: (data: unknown) => api.post('/api/notifications/email/session-notify', data),
 }
 
 /** Managed contact list — reusable invitees curated by admins. */

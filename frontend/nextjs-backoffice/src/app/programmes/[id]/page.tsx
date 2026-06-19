@@ -65,6 +65,25 @@ export default function ProgrammeDetailPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'dashboard' | 'info' | 'phases' | 'criteria' | 'evaluations' | 'partners' | 'invitations'>('dashboard')
+  type Tab = typeof activeTab
+  const TABS: Tab[] = ['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'partners', 'invitations']
+
+  // Reflect the active tab in the URL (?tab=) so the browser Back button moves
+  // between tabs and only leaves the programme once you're back on the first one.
+  useEffect(() => {
+    const readTab = () => {
+      const t = new URLSearchParams(window.location.search).get('tab') as Tab | null
+      setActiveTab(t && TABS.includes(t) ? t : 'dashboard')
+    }
+    readTab()
+    window.addEventListener('popstate', readTab)
+    return () => window.removeEventListener('popstate', readTab)
+  }, [])
+
+  const selectTab = (t: Tab) => {
+    setActiveTab(t)
+    if (typeof window !== 'undefined') window.history.pushState({ tab: t }, '', `/programmes/${id}?tab=${t}`)
+  }
   // Programme sectors + eligible organisation types come from the admin-managed
   // catalogues (Référentiels). Fallback to the built-in lists if unreachable.
   const { options: sectorOptions } = useCatalog(CATALOG_CATEGORIES.PROGRAMME_SECTOR, SECTORS)
@@ -365,7 +384,7 @@ export default function ProgrammeDetailPage() {
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border">
           {(['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'partners', 'invitations'] as const).map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
+            <button key={tab} onClick={() => selectTab(tab)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === tab ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
               {tab === 'dashboard' ? 'Tableau de bord'
                 : tab === 'info' ? 'Informations'
@@ -386,7 +405,7 @@ export default function ProgrammeDetailPage() {
             {activeTab === 'dashboard' && programme && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <ProgrammeDashboard programmeId={programme.id} programme={programme}
-                  phases={phases as any} criteria={criteria as any} onOpenTab={setActiveTab} />
+                  phases={phases as any} criteria={criteria as any} onOpenTab={selectTab} />
               </motion.div>
             )}
 

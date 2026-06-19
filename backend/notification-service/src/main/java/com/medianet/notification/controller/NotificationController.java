@@ -62,6 +62,20 @@ public class NotificationController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * Notify a session's participants — one tailored email per recipient type —
+     * and archive every send (returns the created invitation rows).
+     */
+    @PostMapping("/email/session-notify")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update')")
+    public ResponseEntity<List<InvitationDto>> sessionNotify(
+            @RequestBody SessionNotifyRequest req,
+            @RequestAttribute("userId") Long adminId,
+            @RequestAttribute(value = "userFirstName", required = false) String adminName) {
+        return ResponseEntity.ok(
+                notificationService.sessionNotify(req, adminId, adminName != null ? adminName : "Admin"));
+    }
+
     // ── Read ──────────────────────────────────────────────────────────────────
 
     @GetMapping("/invitations")

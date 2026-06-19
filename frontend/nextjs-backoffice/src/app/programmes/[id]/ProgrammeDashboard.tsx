@@ -17,6 +17,7 @@ import {
 import { candidaturesApi } from '@/lib/api'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { statusColor } from '@/lib/utils'
+import { SessionNotifier } from './SessionNotifier'
 
 interface Phase {
   id?: number; title?: string; startDate?: string; endDate?: string
@@ -143,6 +144,9 @@ export function ProgrammeDashboard({
         <Kpi icon={CalendarRange} label="Sessions" value={`${sessionsDone}/${topSessions.length}`} tone="violet" sub="terminées" />
       </div>
 
+      {/* Sessions à venir — notifier les participants */}
+      <SessionNotifier programmeId={programmeId} programmeName={programme?.title ?? programme?.name ?? 'Programme'} phases={phases as any} />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* À faire maintenant */}
         <MagicCard className="p-5 lg:col-span-2">
@@ -235,7 +239,8 @@ export function ProgrammeDashboard({
         ) : (
           <div className="space-y-2">
             {topCandidates.map((c, i) => (
-              <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+              <Link key={c.id} href={`/candidatures/${c.id}`}
+                className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-brand-400 hover:bg-accent">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-xs font-bold text-amber-600">{i + 1}</span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-foreground">{c.projectName || c.companyName || `Candidature #${c.id}`}</p>
@@ -243,7 +248,7 @@ export function ProgrammeDashboard({
                 </div>
                 {c.status && <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusColor(c.status)}`}>{STATUS_LABEL[c.status] ?? c.status}</span>}
                 <span className="shrink-0 text-sm font-bold text-amber-600">{Number(c.totalScore).toFixed(1)}</span>
-              </div>
+              </Link>
             ))}
           </div>
         )}

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Trash2, CheckCircle2, Clock, Circle, Loader2, ClipboardList, X, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -55,13 +55,24 @@ export default function TasksPage() {
     dueDate: '', priority: 'MEDIUM' as typeof PRIORITIES[number],
   })
 
+  const [formDataLoaded, setFormDataLoaded] = useState(false)
+
+  // Only the task list blocks the initial render. Users + programmes are needed
+  // exclusively by the create form, so they load lazily when it first opens —
+  // the list no longer waits on the slowest of three calls.
   useEffect(() => {
-    Promise.allSettled([
-      tasksApi.all().then((r) => setTasks(r.data?.content ?? r.data ?? [])),
-      usersApi.list().then((r) => setUsers(r.data?.content ?? r.data ?? [])),
-      programmesApi.list().then((r) => setProgrammes(r.data?.content ?? r.data ?? [])),
-    ]).finally(() => setLoading(false))
+    tasksApi.all()
+      .then((r) => setTasks(r.data?.content ?? r.data ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
+
+  const loadFormData = useCallback(() => {
+    if (formDataLoaded) return
+    setFormDataLoaded(true)
+    usersApi.list().then((r) => setUsers(r.data?.content ?? r.data ?? [])).catch(() => {})
+    programmesApi.list().then((r) => setProgrammes(r.data?.content ?? r.data ?? [])).catch(() => {})
+  }, [formDataLoaded])
 
   const reset = () => setForm({
     title: '', description: '', assignedToUserId: '', programmeId: '',
@@ -134,7 +145,7 @@ export default function TasksPage() {
             </h1>
             <p className="text-muted-foreground">{filtered.length} tâche(s)</p>
           </div>
-          <Button variant="brand" onClick={() => setShowForm(!showForm)}>
+          <Button variant="brand" onClick={() => { setShowForm(!showForm); loadFormData() }}>
             <Plus className="h-4 w-4" />Nouvelle tâche
           </Button>
         </motion.div>
@@ -225,7 +236,7 @@ export default function TasksPage() {
         ) : (
           <div className="space-y-2">
             {filtered.map((t, i) => (
-              <motion.div key={t.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}>
+              <motion.div key={t.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.03, 0.3) }}>
                 <MagicCard className="p-4">
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5">{statusIcon(t.status)}</div>

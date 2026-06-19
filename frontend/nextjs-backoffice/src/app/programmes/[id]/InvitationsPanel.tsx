@@ -27,6 +27,11 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   FAILED:   { label: 'Échec',      cls: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-300/40' },
 }
 
+const TYPE_LABEL: Record<string, string> = {
+  JURY: 'Jury', PORTEUR: 'Porteur', MEMBER: 'Membre', ORGANISATEUR: 'Organisateur',
+  GUEST: 'Invité', MENTOR: 'Mentor', GENERAL: 'Général',
+}
+
 interface Contact { id: number; name: string; email: string; organization?: string; tag?: string }
 interface Group { id: number; name: string; color?: string; contactIds: number[] }
 
@@ -94,8 +99,12 @@ export function InvitationsPanel({ programmeId }: { programmeId: number }) {
                 <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-foreground truncate">{i.recipientName || i.recipientEmail}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{i.recipientEmail}{ctx && ` · ${ctx}`}</p>
+                  {i.subject && <p className="text-[11px] text-foreground/70 truncate">{i.subject}</p>}
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {i.recipientEmail}{ctx && ` · ${ctx}`}{i.sentAt && ` · ${new Date(i.sentAt).toLocaleDateString('fr-FR')}`}
+                  </p>
                 </div>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground shrink-0">{TYPE_LABEL[i.type] ?? i.type}</span>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold shrink-0 ${m.cls}`}>{m.label}</span>
                 {i.status !== 'ACCEPTED' && i.status !== 'DECLINED' && (
                   <button onClick={() => resend(i.id)} title="Renvoyer" className="text-muted-foreground hover:text-foreground shrink-0"><Send className="h-4 w-4" /></button>
