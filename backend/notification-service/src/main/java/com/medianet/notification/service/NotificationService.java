@@ -200,6 +200,21 @@ public class NotificationService {
                 .stream().map(this::toDto).collect(Collectors.toList());
     }
 
+    /** Session (phase) ids the given email was explicitly invited to. */
+    @Transactional(readOnly = true)
+    public List<Long> getInvitedPhaseIds(String email) {
+        if (email == null || email.isBlank()) return List.of();
+        return invitationRepository.findInvitedPhaseIds(email);
+    }
+
+    /** Programme ids the caller has been invited to — used to reveal private
+     *  programmes only to their invitees. */
+    @Transactional(readOnly = true)
+    public List<Long> getInvitedProgrammeIds(String email) {
+        if (email == null || email.isBlank()) return List.of();
+        return invitationRepository.findInvitedProgrammeIds(email);
+    }
+
     @Transactional(readOnly = true)
     public List<InvitationDto> getByPhase(Long phaseId) {
         return invitationRepository.findByPhaseIdOrderByCreatedAtDesc(phaseId)

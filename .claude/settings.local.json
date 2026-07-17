@@ -57,7 +57,12 @@
       "Bash(grep -n \"^function SessionDetailCard\\\\|^}$\" \"C:/Users/EL PANDAs/Documents/Medianet/frontend/nextjs-backoffice/src/app/programmes/[id]/timeline/page.tsx\")",
       "Bash(curl -s -o /dev/null -w \"info=%{http_code}\\\\n\" http://localhost:8080/api/admin-ai/info)",
       "Bash(curl -s -o /dev/null -w \"search-photos=%{http_code} info=\" http://localhost:8080/api/admin-ai/search-photos -X POST -H \"Content-Type: application/json\" -d '{\"query\":\"test\"}')",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8080/api/admin-ai/info)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8080/api/admin-ai/info)",
+      "PowerShell(try { \\(Get-Command mvn -ErrorAction Stop\\).Source } catch { \"no mvn in PS PATH\" })",
+      "Read(//c/Program Files/**)",
+      "Bash(ls \"/c/apache-maven\"*)",
+      "Read(//c/Users/EL PANDAs//**)",
+      "Read(//c/ProgramData/chocolatey/bin/**)"
     ]
   }
 }

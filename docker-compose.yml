@@ -135,6 +135,31 @@ services:
       - medianet-network
     restart: "no"
 
+  # Self-hosted pitch video analysis: ffmpeg + faster-whisper (transcription)
+  # + Ollama vision (frame captioning). Called by admin-ai-service.
+  pitch-media-service:
+    build: ./backend/pitch-media-service
+    container_name: pitch-media-service
+    ports:
+      - "8089:8087"
+    environment:
+      MINIO_PUBLIC_URL:   http://localhost:9000
+      MINIO_INTERNAL_URL: http://minio:9000
+      OLLAMA_URL:         http://ollama:11434
+      WHISPER_MODEL:      ${WHISPER_MODEL:-base}
+      WHISPER_DEVICE:     cpu
+      WHISPER_COMPUTE:    int8
+      # Set to a pulled Ollama vision model (e.g. "moondream" or "llava") to
+      # enable body-language/visual analysis. Empty = transcription only.
+      VISION_MODEL:       ${PITCH_VISION_MODEL:-moondream}
+      # 3 frames + greedy decoding keep the analysis fast (see WHISPER_BEAM).
+      FRAME_COUNT:        "3"
+      WHISPER_BEAM:       "1"
+    volumes:
+      - whisper_models:/models
+    networks:
+      - medianet-network
+
   ollama:
     image: ollama/ollama
     container_name: ollama
@@ -297,6 +322,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: medianet2024
       JWT_SECRET: medianet-super-secret-jwt-key-2024-medianet-incubation
       EUREKA_URI: http://eureka-server:8761/eureka
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
       # MinIO / file storage
       MINIO_ENDPOINT: http://minio:9000
       MINIO_PUBLIC_URL: http://localhost:9000
@@ -304,8 +330,11 @@ services:
       MINIO_SECRET_KEY: medianet2024
       MINIO_BUCKET: medianet
       # Multipart upload limits
-      SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 10MB
-      SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 10MB
+      # Pitch videos can be large — these env vars OVERRIDE application.yml.
+      SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 2GB
+      SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 2GB
+      # Don't cap the swallowed body when a request is rejected (avoids resets).
+      SERVER_TOMCAT_MAX_SWALLOW_SIZE: "-1"
     depends_on:
       postgres-programme:
         condition: service_healthy
@@ -385,6 +414,8 @@ services:
       AUTH_SERVICE_URL:         http://auth-service:8081
       CANDIDATURE_SERVICE_URL:  http://candidature-service:8083
       NOTIFICATION_SERVICE_URL: http://notification-service:8087
+      # Self-hosted pitch media pipeline (transcription + visual analysis)
+      PITCH_MEDIA_SERVICE_URL:  http://pitch-media-service:8087
     depends_on:
       postgres-admin-ai:
         condition: service_healthy
@@ -417,12 +448,12 @@ services:
     build:
       context: ./frontend/nextjs-frontoffice
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8080
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8080}
     container_name: nextjs-frontoffice
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8080}
     depends_on:
       api-gateway:
         condition: service_started
@@ -434,12 +465,12 @@ services:
     build:
       context: ./frontend/nextjs-backoffice
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8080
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8080}
     container_name: nextjs-backoffice
     ports:
       - "3001:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8080}
     depends_on:
       api-gateway:
         condition: service_started
@@ -458,3 +489,4 @@ volumes:
   postgres_admin_ai_data:
   ollama_data:
   minio_data:
+  whisper_models:

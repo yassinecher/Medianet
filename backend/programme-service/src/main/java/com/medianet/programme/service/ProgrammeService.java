@@ -21,6 +21,8 @@ public class ProgrammeService {
     private final PartnerRepository           partnerRepository;
     private final ProgrammeLifecycle          programmeLifecycle;
     private final SessionDayService           sessionDayService;
+    private final com.medianet.programme.validation.SessionValidator sessionValidator;
+    private final InvitationLookup            invitationLookup;
 
     // ── Programme CRUD ────────────────────────────────────────────────────────
 
@@ -57,6 +59,14 @@ public class ProgrammeService {
 
     @Transactional(readOnly = true)
     public List<ProgrammeDto> getAllProgrammes(String status, String type) {
+        return getAllProgrammes(status, type, false);
+    }
+
+    /** Statuses a porteur should never see in the front-office. */
+    private static final java.util.Set<ProgrammeStatus> HIDDEN_FROM_PUBLIC =
+            java.util.EnumSet.of(ProgrammeStatus.DRAFT, ProgrammeStatus.ARCHIVED, ProgrammeStatus.CANCELLED);
+
+    public List<ProgrammeDto> getAllProgrammes(String status, String type, boolean publicOnly) {
         List<Programme> list;
         if (status != null && type != null) {
             list = programmeRepository.findByTypeAndStatus(parseType(type), parseStatus(status));
@@ -67,7 +77,38 @@ public class ProgrammeService {
         } else {
             list = programmeRepository.findAll();
         }
-        return list.stream().map(this::toDto).collect(Collectors.toList());
+        java.util.stream.Stream<Programme> stream = list.stream();
+        if (publicOnly) {
+            // Front-office: never expose draft / archived / cancelled programmes.
+            stream = stream.filter(p -> p.getStatus() == null || !HIDDEN_FROM_PUBLIC.contains(p.getStatus()));
+            // …and never expose PRIVATE programmes in the open catalogue. Invitees
+            // reach theirs through /programmes/invited (by explicit invitation).
+            stream = stream.filter(p -> p.getType() != ProgrammeType.PRIVATE);
+        }
+        return stream.map(this::toDto).collect(Collectors.toList());
+    }
+
+    /**
+     * Programmes the caller was invited to, resolved by id. Used by the front
+     * office to surface PRIVATE programmes to exactly their invitees (and no one
+     * else). DRAFT/archived are still excluded — an invitation to a draft shows
+     * nothing until it opens.
+     */
+    @Transactional(readOnly = true)
+    public List<ProgrammeDto> getInvitedProgrammes(java.util.List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        return programmeRepository.findAllById(ids).stream()
+                .filter(p -> p.getStatus() == null || !HIDDEN_FROM_PUBLIC.contains(p.getStatus()))
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
+    /** The private/other programmes the CURRENT caller was invited to. Ids are
+     *  resolved from the caller's token via notification-service, never trusted
+     *  from the client. */
+    @Transactional(readOnly = true)
+    public List<ProgrammeDto> getMyInvitedProgrammes() {
+        return getInvitedProgrammes(invitationLookup.invitedProgrammeIds());
     }
 
     @Transactional(readOnly = true)
@@ -176,7 +217,7 @@ public class ProgrammeService {
     @Transactional(readOnly = true)
     public List<ProgrammePhaseDto> getPhases(Long programmeId) {
         findOrThrow(programmeId);
-        return phaseRepository.findByProgrammeIdOrderByPhaseOrderAsc(programmeId)
+        return filterVisible(phaseRepository.findByProgrammeIdOrderByPhaseOrderAsc(programmeId))
                 .stream().map(this::toPhaseDto).collect(Collectors.toList());
     }
 
@@ -205,8 +246,15 @@ public class ProgrammeService {
                         normalizeDuration(req.getDurationKind()), req.getStartDate()))
                 .build();
         phase.setDurationKind(normalizeDuration(req.getDurationKind()));
+        // Visibility + capability flags (default VISIBLE / activities-on / no-overlap).
+        phase.setVisibility(parseVisibility(req.getVisibility()));
+        phase.setAllowActivities(req.getAllowActivities() != null ? req.getAllowActivities() : Boolean.TRUE);
+        phase.setAllowOverlap(req.getAllowOverlap() != null ? req.getAllowOverlap() : Boolean.FALSE);
+        enforceActivityPolicy(phase);
         // Enforce the date rules of the three session shapes (day / range / nested).
-        validateAndNormalizeDates(phase);
+        validateAndNormalizeDates(phase, true);
+        // Centralised domain validation (date range vs programme + overlap).
+        sessionValidator.validate(phase, p, phaseRepository.findByProgrammeIdOrderByPhaseOrderAsc(programmeId));
         phase = phaseRepository.save(phase);
 
         // Optional initial days
@@ -248,6 +296,12 @@ public class ProgrammeService {
         if (req.getEvaluationSelectionId() != null)
             phase.setEvaluationSelectionId(req.getEvaluationSelectionId() < 0 ? null : req.getEvaluationSelectionId());
         if (req.getSessionType()     != null) phase.setSessionType(parseSessionType(req.getSessionType()));
+        if (req.getVisibility()      != null) phase.setVisibility(parseVisibility(req.getVisibility()));
+        if (req.getCollectPitchVideos() != null) phase.setCollectPitchVideos(req.getCollectPitchVideos());
+        if (req.getPitchDeadline()   != null)
+            phase.setPitchDeadline(req.getPitchDeadline().isBefore(java.time.LocalDate.of(1971, 1, 1)) ? null : req.getPitchDeadline());
+        if (req.getAllowActivities() != null) phase.setAllowActivities(req.getAllowActivities());
+        if (req.getAllowOverlap()    != null) phase.setAllowOverlap(req.getAllowOverlap());
         if (req.getLane()            != null) phase.setLane(parseLane(req.getLane()));
         if (req.getColor()           != null) phase.setColor(req.getColor());
         if (req.getParentSessionId() != null) {
@@ -259,8 +313,16 @@ public class ProgrammeService {
                         phase.getDurationKind(), phase.getStartDate()));
             }
         }
-        // Enforce the date rules of the three session shapes (day / range / nested).
-        validateAndNormalizeDates(phase);
+        enforceActivityPolicy(phase);
+        // Only re-run the date/nesting checks when the edit actually changed dates
+        // — a type/visibility/flag edit must not be blocked by stale nesting.
+        boolean datesTouched = req.getStartDate() != null || req.getEndDate() != null
+                || req.getDurationKind() != null || req.getParentSessionId() != null;
+        validateAndNormalizeDates(phase, datesTouched);
+        if (datesTouched) {
+            sessionValidator.validate(phase, phase.getProgramme(),
+                    phaseRepository.findByProgrammeIdOrderByPhaseOrderAsc(programmeId));
+        }
         phase = phaseRepository.save(phase);
 
         // Status of a session may imply a programme transition
@@ -313,7 +375,7 @@ public class ProgrammeService {
                 .sectors(p.getSectors() != null ? new ArrayList<>(p.getSectors()) : new ArrayList<>())
                 .eligibleOrgTypes(p.getEligibleOrgTypes() != null ? new ArrayList<>(p.getEligibleOrgTypes()) : new ArrayList<>())
                 .criteria(p.getCriteria().stream().map(this::toCriteriaDto).collect(Collectors.toList()))
-                .phases(p.getPhases().stream().map(this::toPhaseDto).collect(Collectors.toList()))
+                .phases(filterVisible(p.getPhases()).stream().map(this::toPhaseDto).collect(Collectors.toList()))
                 .partners(p.getPartners().stream().map(this::toPartnerDto).collect(Collectors.toList()))
                 .tagline(p.getTagline())
                 .logoUrl(p.getLogoUrl())
@@ -402,6 +464,12 @@ public class ProgrammeService {
                 .criterionWeightsJson(ph.getCriterionWeightsJson())
                 .evaluationSelectionId(ph.getEvaluationSelectionId())
                 .sessionType(ph.getSessionType() != null ? ph.getSessionType().name() : SessionType.INCUBATION.name())
+                .visibility((ph.getVisibility() != null ? ph.getVisibility() : SessionVisibility.VISIBLE).name())
+                .isPublic((ph.getVisibility() == null || ph.getVisibility() == SessionVisibility.VISIBLE))
+                .collectPitchVideos(Boolean.TRUE.equals(ph.getCollectPitchVideos()))
+                .pitchDeadline(ph.getPitchDeadline())
+                .allowActivities(ph.getAllowActivities() == null ? Boolean.TRUE : ph.getAllowActivities())
+                .allowOverlap(ph.getAllowOverlap() == null ? Boolean.FALSE : ph.getAllowOverlap())
                 .lane(ph.getLane() != null && !ph.getLane().isBlank() ? ph.getLane() : "Principal")
                 .color(ph.getColor())
                 .parentSessionId(ph.getParentSessionId())
@@ -507,6 +575,53 @@ public class ProgrammeService {
         return trimmed.isEmpty() ? "Principal" : trimmed;
     }
 
+    private SessionVisibility parseVisibility(String s) {
+        if (s == null || s.isBlank()) return SessionVisibility.VISIBLE;
+        try { return SessionVisibility.valueOf(s.toUpperCase()); }
+        catch (Exception e) { throw new IllegalArgumentException("Invalid session visibility: " + s); }
+    }
+
+    /**
+     * APPLICATION/CANDIDATURE submission sessions manage candidates, never an
+     * activity agenda — force {@code allowActivities=false} regardless of input.
+     */
+    private void enforceActivityPolicy(ProgrammePhase phase) {
+        if (phase.getSessionType() == SessionType.CANDIDATURE_SUBMISSION) {
+            phase.setAllowActivities(Boolean.FALSE);
+        }
+    }
+
+    /** Visibility enforcement: non-privileged callers (startups, jurys, members)
+     *  only ever receive VISIBLE sessions; HIDDEN/PRIVATE are reserved for
+     *  admins / programme managers. Applied to every session list the API returns. */
+    private List<ProgrammePhase> filterVisible(List<ProgrammePhase> phases) {
+        if (phases == null) return new ArrayList<>();
+        if (isPrivilegedViewer()) return phases;
+        boolean hasRestricted = phases.stream()
+                .anyMatch(ph -> ph.getVisibility() != null && ph.getVisibility() != SessionVisibility.VISIBLE);
+        // Only pay the notification-service lookup when there's something to unlock.
+        final java.util.Set<Long> invited = hasRestricted
+                ? new java.util.HashSet<>(invitationLookup.invitedPhaseIds())
+                : java.util.Collections.emptySet();
+        return phases.stream()
+                .filter(ph -> ph.getVisibility() == null
+                        || ph.getVisibility() == SessionVisibility.VISIBLE
+                        // HIDDEN/PRIVATE: visible to users explicitly invited to that session.
+                        || (ph.getId() != null && invited.contains(ph.getId())))
+                .collect(Collectors.toList());
+    }
+
+    /** True when the caller may see HIDDEN/PRIVATE sessions (admin / programme manager). */
+    private boolean isPrivilegedViewer() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        for (var a : auth.getAuthorities()) {
+            String s = a.getAuthority();
+            if ("ROLE_ADMIN".equals(s) || "programmes:update".equals(s) || "programmes:read".equals(s)) return true;
+        }
+        return false;
+    }
+
     /**
      * Collapse the loose legacy duration values to the two-kind model.
      * "day" stays "day"; anything else ("range", "week", "custom", null) → "range".
@@ -533,7 +648,7 @@ public class ProgrammeService {
      *       journée, which is rejected with a clear message.</li>
      * </ul>
      */
-    private void validateAndNormalizeDates(ProgrammePhase phase) {
+    private void validateAndNormalizeDates(ProgrammePhase phase, boolean datesTouched) {
         String kind = normalizeDuration(phase.getDurationKind());
         java.time.LocalDate start = phase.getStartDate();
         java.time.LocalDate end   = phase.getEndDate();
@@ -555,6 +670,11 @@ public class ProgrammeService {
                         "La date de début (" + start + ") doit précéder la date de fin (" + end + ") de la plage.");
             }
         }
+
+        // The containment checks below only matter when the dates actually change.
+        // A non-date edit (e.g. switching the session type) must never be blocked
+        // by a pre-existing nesting that drifted out of window.
+        if (!datesTouched) return;
 
         // Nested session → must remain entirely within the parent range window.
         if (phase.getParentSessionId() != null) {

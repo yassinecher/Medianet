@@ -2,17 +2,19 @@ package com.medianet.auth;
 
 import com.medianet.auth.entity.*;
 import com.medianet.auth.repository.*;
+import com.medianet.auth.service.ModuleCatalog;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @SpringBootApplication
+@EnableScheduling   // SSE heartbeat (AuthEventService)
 public class AuthServiceApplication {
 
     public static void main(String[] args) {
@@ -29,21 +31,28 @@ public class AuthServiceApplication {
 
         return args -> {
 
-            // ── 1. Seed Permissions — CRUD per back-office module ─────────────
-            String[] modules = { "dashboard", "programmes", "candidatures", "tasks",
-                    "notifications", "users", "organizations", "landing", "ai",
-                    "reports", "settings", "sessions" };
-            String[][] actions = {
-                { "read", "Voir" }, { "create", "Créer" }, { "update", "Modifier" }, { "delete", "Supprimer" }
-            };
-            for (String m : modules) {
-                for (String[] a : actions) {
-                    seedPermission(permissionRepository, m + ":" + a[0], a[1] + " — " + m, m);
+            // ── 1. Seed Permissions from the ModuleCatalog (single source of
+            //       truth for labels, descriptions and GENERAL/ADMIN scopes).
+            //       Labels + scopes are re-synced on every boot so catalog
+            //       changes reach existing rows.
+            for (ModuleCatalog.ModuleDef mod : ModuleCatalog.MODULES) {
+                for (String action : mod.actions()) {
+                    upsertPermission(permissionRepository,
+                            mod.key() + ":" + action,
+                            ModuleCatalog.ACTION_LABELS.get(action) + " — " + mod.label(),
+                            mod.key(), mod.scope());
                 }
             }
-            // Special candidature actions (jury evaluation / admin decision).
-            seedPermission(permissionRepository, "candidatures:evaluate", "Évaluer les candidatures", "candidatures");
-            seedPermission(permissionRepository, "candidatures:decide",   "Accepter / rejeter les candidatures", "candidatures");
+            // Special (non-CRUD) permissions, e.g. jury evaluation / admin decision.
+            for (ModuleCatalog.SpecialDef sp : ModuleCatalog.SPECIALS) {
+                upsertPermission(permissionRepository, sp.slug(), sp.label(),
+                        sp.slug().split(":")[0], sp.scope());
+            }
+            // The ModuleCatalog is authoritative: prune any permission row it does
+            // not define (old modules like "reports", stale one-off slugs, …) —
+            // unlink from every role/user first, then delete.
+            pruneUnknownPermissions(permissionRepository, roleRepository, userRepository,
+                    ModuleCatalog.expectedSlugs());
 
             // ── 2. Seed Roles with default permissions ────────────────────────
             // Front-office (non-admin) modules — the ONLY ones a non-admin may hold.
@@ -85,13 +94,17 @@ public class AuthServiceApplication {
             seedRole(roleRepository, "MENTOR",   "Mentor",               "Accompagne les startups incubées",              mentorPerms);
             seedRole(roleRepository, "CANDIDAT", "Candidat",             "Utilisateur enregistré sans rôle attribué",     candidatPerms);
 
-            // Re-sync role → permissions every boot so existing rows pick up changes.
-            // ADMIN holds ALL permissions; non-admin roles hold only their FO set.
-            syncRolePerms(roleRepository, "ADMIN",    new HashSet<>(permissionRepository.findAll()));
-            syncRolePerms(roleRepository, "PORTEUR",  porteurPerms);
-            syncRolePerms(roleRepository, "JURY",     juryPerms);
-            syncRolePerms(roleRepository, "MENTOR",   mentorPerms);
-            syncRolePerms(roleRepository, "CANDIDAT", candidatPerms);
+            // Role permissions are now admin-editable (see RoleController), so the
+            // boot no longer overwrites them — except ADMIN, which always holds
+            // every permission (including any newly seeded ones).
+            syncRolePerms(roleRepository, "ADMIN", new HashSet<>(permissionRepository.findAll()));
+
+            // Mark the built-in roles as system roles (undeletable, name locked).
+            for (String name : new String[]{ "ADMIN", "PORTEUR", "JURY", "MENTOR", "CANDIDAT" }) {
+                roleRepository.findByName(name).ifPresent(r -> {
+                    if (!r.isSystemRole()) { r.setSystemRole(true); roleRepository.save(r); }
+                });
+            }
 
             // ── 3. Seed admin user ────────────────────────────────────────────
             if (userRepository.findByEmail("admin@medianet.dz").isEmpty()) {
@@ -117,19 +130,9 @@ public class AuthServiceApplication {
                         .build());
             }
 
-            // ── 4. Enforce: non-admin users may hold only FRONT-OFFICE direct
-            //       permissions. Strip any admin-module direct perms left over.
-            Set<String> foModules = new HashSet<>(Arrays.asList(frontofficeReadModules));
-            for (User u : userRepository.findAll()) {
-                if (u.hasRole("ADMIN")) continue;
-                Set<Permission> kept = u.getDirectPermissions().stream()
-                        .filter(p -> foModules.contains(p.getSlug().split(":")[0]))
-                        .collect(Collectors.toCollection(HashSet::new));
-                if (kept.size() != u.getDirectPermissions().size()) {
-                    u.setDirectPermissions(kept);
-                    userRepository.save(u);
-                }
-            }
+            // NB: direct permissions are no longer restricted to front-office
+            // modules — an admin may grant ANY permission to ANY user from the
+            // back-office, and those grants must survive restarts.
 
             // NB: porteur organisations are created ONLY on genuine porteur
             // registration (self-register / invitation-as-porteur). Being added
@@ -138,15 +141,39 @@ public class AuthServiceApplication {
         };
     }
 
-    private void seedPermission(PermissionRepository repo, String slug,
-                                 String displayName, String category) {
-        if (!repo.existsBySlug(slug)) {
-            repo.save(Permission.builder()
-                    .slug(slug)
-                    .displayName(displayName)
-                    .category(category)
-                    .build());
+    /** Create the permission if missing; otherwise re-sync label/category/scope. */
+    private void upsertPermission(PermissionRepository repo, String slug,
+                                  String displayName, String category, String scope) {
+        Permission p = repo.findBySlug(slug).orElseGet(() ->
+                Permission.builder().slug(slug).displayName(displayName).build());
+        p.setDisplayName(displayName);
+        p.setCategory(category);
+        p.setScope(scope);
+        repo.save(p);
+    }
+
+    /** Remove every permission the catalog does not define (unlink from roles/users first). */
+    private void pruneUnknownPermissions(PermissionRepository permissionRepository,
+                                         RoleRepository roleRepository,
+                                         UserRepository userRepository,
+                                         Set<String> expectedSlugs) {
+        List<Permission> obsolete = permissionRepository.findAll().stream()
+                .filter(p -> !expectedSlugs.contains(p.getSlug()))
+                .toList();
+        if (obsolete.isEmpty()) return;
+        Set<String> slugs = new HashSet<>();
+        obsolete.forEach(p -> slugs.add(p.getSlug()));
+        for (Role r : roleRepository.findAll()) {
+            if (r.getPermissions() != null && r.getPermissions().removeIf(p -> slugs.contains(p.getSlug()))) {
+                roleRepository.save(r);
+            }
         }
+        for (User u : userRepository.findAll()) {
+            if (u.getDirectPermissions() != null && u.getDirectPermissions().removeIf(p -> slugs.contains(p.getSlug()))) {
+                userRepository.save(u);
+            }
+        }
+        permissionRepository.deleteAll(obsolete);
     }
 
     private Permission perm(PermissionRepository repo, String slug) {
@@ -162,6 +189,7 @@ public class AuthServiceApplication {
                     .displayName(displayName)
                     .description(description)
                     .permissions(permissions)
+                    .systemRole(true)
                     .build());
         }
     }

@@ -1,7 +1,8 @@
 import axios from 'axios'
 import Cookies from 'js-cookie'
+import toast from 'react-hot-toast'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
 export const api = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'application/json' } })
 
 api.interceptors.request.use((c) => {
@@ -13,9 +14,20 @@ api.interceptors.request.use((c) => {
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err.response?.status === 401 && typeof window !== 'undefined') {
-      Cookies.remove('admin_token')
-      window.location.href = '/login'
+    if (typeof window !== 'undefined') {
+      if (err.response?.status === 401) {
+        Cookies.remove('admin_token')
+        window.location.href = '/login'
+      }
+      if (err.response?.status === 403) {
+        // Backend 403s carry the missing permission ("Accès refusé — permission
+        // requise : users:update"). Toast it globally (deduped) and normalize
+        // `data.message` so page-level catch blocks show the same reason.
+        const data = err.response.data ?? {}
+        const msg: string = data.message ?? data.error ?? 'Accès refusé : permission insuffisante.'
+        err.response.data = { ...data, message: msg }
+        toast.error(msg, { id: 'forbidden' })
+      }
     }
     return Promise.reject(err)
   }
@@ -23,6 +35,78 @@ api.interceptors.response.use(
 
 export const authApi = {
   login: (email: string, password: string) => api.post('/api/auth/login', { email, password }),
+  /** Current account (UserDto — includes allPermissions + directPermissions). */
+  me: () => api.get('/api/auth/me'),
+  /** Re-issue the JWT with fresh roles/permissions (same payload as login). */
+  refresh: () => api.post('/api/auth/refresh'),
+}
+
+/**
+ * Live auth events (SSE): `permissions-changed`, `account-disabled`, `connected`.
+ * Fetch-based (EventSource can't send the Authorization header). Resolves when
+ * the stream closes; throws on connection failure — callers reconnect.
+ */
+export async function streamAuthEvents(
+  onEvent: (type: string, payload: any) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const token = Cookies.get('admin_token')
+  if (!token) throw new Error('not authenticated')
+  const res = await fetch(`${API_URL}/api/auth/events/stream`, {
+    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
+    signal,
+  })
+  if (!res.ok || !res.body) throw new Error(`auth events HTTP ${res.status}`)
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let idx: number
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, idx)
+      buf = buf.slice(idx + 2)
+      let eventName = 'message'
+      const dataLines: string[] = []
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim()
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+      }
+      if (dataLines.length === 0) continue
+      let payload: any = dataLines.join('\n')
+      try { payload = JSON.parse(payload) } catch { /* keep raw string */ }
+      onEvent(eventName, payload)
+    }
+  }
+}
+
+/** Role definitions (dynamic RBAC): admins create roles and pick their permissions. */
+export interface RoleDto {
+  id: number
+  name: string
+  displayName: string
+  description?: string
+  /** Built-in role: not renamable/deletable (ADMIN: permission set locked too). */
+  systemRole: boolean
+  /** Permissions OWNED by the role (excluding inherited). */
+  permissions: string[]
+  /** Parent role this one inherits from (live: parent edits propagate). */
+  parentName?: string | null
+  /** Permissions inherited from the parent chain. */
+  inheritedPermissions: string[]
+  userCount: number
+}
+export const rolesApi = {
+  list:   () => api.get<RoleDto[]>('/api/auth/roles'),
+  create: (data: { name: string; displayName: string; description?: string; permissions?: string[]; parentName?: string }) =>
+    api.post<RoleDto>('/api/auth/roles', data),
+  /** parentName: undefined = unchanged, '' = remove inheritance. */
+  update: (id: number, data: Partial<{ name: string; displayName: string; description: string; permissions: string[]; parentName: string }>) =>
+    api.put<RoleDto>(`/api/auth/roles/${id}`, data),
+  delete: (id: number) => api.delete(`/api/auth/roles/${id}`),
 }
 
 export const programmesApi = {
@@ -151,6 +235,7 @@ export const catalogApi = {
 export const CATALOG_CATEGORIES = {
   ORGANIZATION_TYPE: 'organization_type',
   PROGRAMME_SECTOR: 'programme_sector',
+  SESSION_TYPE: 'session_type',
 } as const
 
 export const partnersApi = {
@@ -195,6 +280,10 @@ export const filesApi = {
 export const adminAiApi = {
   info:  () => api.get<{ backend: string; model: string; configured: boolean }>('/api/admin-ai/info'),
   debug: () => api.get('/api/admin-ai/debug'),
+  /** Generate or improve a single form field. mode: 'generate' | 'enhance'.
+   *  60s client timeout so a saturated provider never leaves the UI spinning. */
+  fieldSuggest: (data: { field: string; mode?: 'generate' | 'enhance'; current?: string; context?: string; locale?: string }) =>
+    api.post<{ value?: string; values?: string[]; error?: string }>('/api/admin-ai/field-suggest', data, { timeout: 60000 }),
   // ── Settings ────────────────────────────────────────────────────────────
   getSettings: () => api.get('/api/admin-ai/settings'),
   updateSettings: (data: {
@@ -305,6 +394,62 @@ export const adminAiApi = {
   confirm: (id: number) => api.post(`/api/admin-ai/actions/${id}/confirm`),
   cancel:  (id: number) => api.post(`/api/admin-ai/actions/${id}/cancel`),
   revert:  (id: number) => api.post(`/api/admin-ai/actions/${id}/revert`),
+}
+
+/** Pitch / presentation-day submissions. */
+export interface PitchSubmissionDto {
+  id: number
+  programmeId: number
+  sessionId?: number | null
+  kind?: 'TRAINING' | 'FINAL'
+  porteurId: number
+  porteurName?: string
+  companyName?: string
+  projectName?: string
+  title?: string
+  videoUrl?: string
+  videoFilename?: string
+  transcript?: string
+  autoTranscribed?: boolean
+  durationSeconds?: number | null
+  notes?: string
+  status: 'DRAFT' | 'SUBMITTED' | 'PROCESSING' | 'ANALYZED' | 'FAILED'
+  aiScore?: number | null
+  aiAnalysisJson?: string | null
+  aiEnhanced?: boolean
+  analyzedAt?: string
+  updatedAt?: string
+}
+export const pitchApi = {
+  /** Admin/reviewer: all submissions for a programme (optionally one session). */
+  list: (programmeId: number, sessionId?: number) =>
+    api.get<PitchSubmissionDto[]>('/api/pitch/submissions', { params: { programmeId, ...(sessionId ? { sessionId } : {}) } }),
+  get: (id: number) => api.get<PitchSubmissionDto>(`/api/pitch/submissions/${id}`),
+  /** Porteur: create/update own submission. */
+  upsert: (data: Partial<PitchSubmissionDto>) => api.post<PitchSubmissionDto>('/api/pitch/submissions', data),
+  mine: () => api.get<PitchSubmissionDto[]>('/api/pitch/submissions/mine'),
+  /** Presentation sessions of a programme + caller's submission per session. */
+  presentations: (programmeId: number) => api.get<any[]>(`/api/pitch/presentations/${programmeId}`),
+  /** Save the AI analysis result on a submission. */
+  saveAnalysis: (id: number, aiScore: number | null, aiAnalysisJson: string) =>
+    api.put<PitchSubmissionDto>(`/api/pitch/submissions/${id}/analysis`, { aiScore, aiAnalysisJson }),
+  /** Run the AI pitch analysis (returns score + advice; does not persist). */
+  analyze: (submissionId: number) => api.post<any>('/api/admin-ai/pitch/analyze', { submissionId }),
+}
+
+/** Reports module — aggregated statistics from each service (reports:read). */
+export const reportsApi = {
+  users:        () => api.get('/api/auth/reports/users'),
+  candidatures: () => api.get('/api/candidatures/reports'),
+  programmes:   () => api.get('/api/programmes/reports'),
+  invitations:  () => api.get('/api/notifications/reports'),
+  // Programme-scoped variants (Rapports tab of a programme)
+  programmeCandidatures: (programmeId: number) =>
+    api.get(`/api/candidatures/reports/programme/${programmeId}`),
+  programmeSessions: (programmeId: number) =>
+    api.get(`/api/programmes/reports/${programmeId}`),
+  programmeInvitations: (programmeId: number) =>
+    api.get(`/api/notifications/reports/programme/${programmeId}`),
 }
 
 /** Landing page admin API */
@@ -426,8 +571,11 @@ export const usersApi = {
   grantPermissions:  (id: number, permissions: string[]) => api.post(`/api/auth/users/${id}/permissions/grant`, { permissions }),
   revokePermissions: (id: number, permissions: string[]) => api.post(`/api/auth/users/${id}/permissions/revoke`, { permissions }),
   syncPermissions:   (id: number, permissions: string[]) => api.put(`/api/auth/users/${id}/permissions`, { permissions }),
-  /** Catalog endpoints */
-  rolesCatalog: () => api.get('/api/auth/roles'),
+  /**
+   * Grouped permission catalog: modules with labels/descriptions and
+   * GENERAL/ADMIN scopes (see CatalogModule in components/PermissionMatrix).
+   * Role catalog: see rolesApi.list.
+   */
   permissionsCatalog: () => api.get('/api/auth/permissions'),
   /** Profile updates by role */
   updateAdminProfile:   (id: number, data: unknown) => api.put(`/api/auth/users/${id}/profile/admin`, data),

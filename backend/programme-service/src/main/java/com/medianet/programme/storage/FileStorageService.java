@@ -29,7 +29,9 @@ public class FileStorageService {
     private final MinioConfig config;
 
     private static final Set<String> ALLOWED_IMAGES = Set.of("image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/gif");
-    private static final long        MAX_BYTES      = 10 * 1024 * 1024L; // 10 MB
+    private static final Set<String> ALLOWED_VIDEOS = Set.of("video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/x-msvideo");
+    private static final long        MAX_BYTES      = 10 * 1024 * 1024L;        // 10 MB (images/docs)
+    private static final long        MAX_VIDEO_BYTES = 2L * 1024 * 1024 * 1024; // 2 GB (pitch videos)
 
     @PostConstruct
     void ensureBucket() {
@@ -98,6 +100,39 @@ public class FileStorageService {
         } catch (Exception e) {
             log.error("Upload failed", e);
             throw new RuntimeException("Upload failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Upload a pitch video (larger cap + video content types). Returns the public URL.
+     */
+    public String uploadVideo(String folder, MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Fichier vidéo vide");
+        }
+        if (file.getSize() > MAX_VIDEO_BYTES) {
+            throw new IllegalArgumentException("Vidéo trop lourde (max 2 Go)");
+        }
+        String contentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
+        if (!ALLOWED_VIDEOS.contains(contentType)) {
+            throw new IllegalArgumentException("Format vidéo non supporté (MP4, WebM, MOV, MKV, AVI) — reçu : " + contentType);
+        }
+        String safeFolder = (folder == null || folder.isBlank()) ? "pitch-videos" : folder.replaceAll("[^a-zA-Z0-9_-]", "_");
+        String ext        = extractExtension(file.getOriginalFilename(), contentType);
+        String objectKey  = "%s/%s/%s%s".formatted(safeFolder, LocalDate.now(), UUID.randomUUID(), ext);
+        try (InputStream is = file.getInputStream()) {
+            client.putObject(PutObjectArgs.builder()
+                    .bucket(config.getBucket())
+                    .object(objectKey)
+                    .stream(is, file.getSize(), -1)
+                    .contentType(contentType)
+                    .build());
+            String url = "%s/%s/%s".formatted(stripTrailingSlash(config.getPublicUrl()), config.getBucket(), objectKey);
+            log.info("Uploaded video {} ({} bytes) -> {}", objectKey, file.getSize(), url);
+            return url;
+        } catch (Exception e) {
+            log.error("Video upload failed", e);
+            throw new RuntimeException("Échec de l'envoi de la vidéo : " + e.getMessage(), e);
         }
     }
 

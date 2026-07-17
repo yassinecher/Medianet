@@ -45,6 +45,19 @@ public class FileUploadController {
         return ResponseEntity.ok(Map.of("url", url));
     }
 
+    /**
+     * Upload a pitch video — any authenticated user (porteurs upload their own
+     * presentation). Video content types, up to 250 MB. Returns { url, filename }.
+     */
+    @PostMapping(value = "/upload-video", consumes = "multipart/form-data")
+    public ResponseEntity<Map<String, String>> uploadVideo(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(defaultValue = "pitch-videos") String folder) {
+        String url = storage.uploadVideo(folder, file);
+        return ResponseEntity.ok(Map.of("url", url, "filename",
+                file.getOriginalFilename() != null ? file.getOriginalFilename() : "pitch"));
+    }
+
     /** Delete an uploaded file by its public URL — ADMIN only. */
     @DeleteMapping
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")

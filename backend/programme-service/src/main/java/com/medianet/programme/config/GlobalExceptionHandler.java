@@ -4,24 +4,41 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.lang.Nullable;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(com.medianet.programme.validation.ValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleDomainValidation(
+            com.medianet.programme.validation.ValidationException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now().toString());
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("error", HttpStatus.BAD_REQUEST.getReasonPhrase());
+        body.put("code", ex.getCode());
+        body.put("message", ex.getMessage());
+        return ResponseEntity.badRequest().body(body);
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
@@ -33,9 +50,37 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.CONFLICT, ex.getMessage());
     }
 
+    /**
+     * The {@link HandlerMethod} is injected so the 403 can NAME the missing
+     * permission (parsed from the endpoint's @PreAuthorize expression) — the
+     * frontends surface it to the user.
+     */
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
-        return error(HttpStatus.FORBIDDEN, "Access denied");
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(
+            AccessDeniedException ex, @Nullable HandlerMethod handlerMethod) {
+        String required = requiredAuthority(handlerMethod);
+        ResponseEntity<Map<String, Object>> resp = error(HttpStatus.FORBIDDEN,
+                required != null ? "Accès refusé — permission requise : " + required
+                                 : "Accès refusé : permission insuffisante.");
+        if (required != null) resp.getBody().put("requiredPermission", required);
+        return resp;
+    }
+
+    private static final Pattern AUTHORITY = Pattern.compile("has(?:Authority|Role)\\('([^']+)'\\)");
+
+    @Nullable
+    private static String requiredAuthority(@Nullable HandlerMethod handlerMethod) {
+        if (handlerMethod == null) return null;
+        PreAuthorize pre = handlerMethod.getMethodAnnotation(PreAuthorize.class);
+        if (pre == null) pre = handlerMethod.getBeanType().getAnnotation(PreAuthorize.class);
+        if (pre == null) return null;
+        Matcher m = AUTHORITY.matcher(pre.value());
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            if (sb.length() > 0) sb.append(" ou ");
+            sb.append(m.group(1));
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

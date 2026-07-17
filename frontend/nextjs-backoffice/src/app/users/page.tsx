@@ -7,7 +7,8 @@ import {
   Sparkles, Briefcase, GraduationCap, Crown, Pencil, Lock, KeyRound, Save
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { usersApi } from '@/lib/api'
+import { usersApi, rolesApi, type RoleDto } from '@/lib/api'
+import { PermissionMatrix, allSlugsOf, type CatalogModule } from '@/components/PermissionMatrix'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
@@ -29,14 +30,15 @@ interface User {
   createdAt?: string
 }
 
-const ROLES = [
-  { value: 'PORTEUR', label: 'Porteur',       icon: Briefcase,    color: 'brand'   },
-  { value: 'MENTOR',  label: 'Mentor',        icon: Sparkles,     color: 'green'   },
-  { value: 'JURY',    label: 'Juré',          icon: GraduationCap, color: 'amber'  },
-  { value: 'ADMIN',   label: 'Administrateur', icon: Crown,       color: 'purple'  },
-] as const
-
-const roleLabel = (r: string) => ROLES.find((x) => x.value === r)?.label ?? r
+/** Icon + fixed colour classes for the built-in roles; custom roles get a default. */
+const ROLE_META: Record<string, { icon: any; activeCard: string; activeIcon: string }> = {
+  PORTEUR: { icon: Briefcase,     activeCard: 'border-brand-500 bg-brand-500/5',   activeIcon: 'text-brand-600'  },
+  MENTOR:  { icon: Sparkles,      activeCard: 'border-green-500 bg-green-500/5',   activeIcon: 'text-green-600'  },
+  JURY:    { icon: GraduationCap, activeCard: 'border-amber-500 bg-amber-500/5',   activeIcon: 'text-amber-600'  },
+  ADMIN:   { icon: Crown,         activeCard: 'border-purple-500 bg-purple-500/5', activeIcon: 'text-purple-600' },
+}
+const DEFAULT_META = { icon: Shield, activeCard: 'border-brand-500 bg-brand-500/5', activeIcon: 'text-brand-600' }
+const metaOf = (name: string) => ROLE_META[name] ?? DEFAULT_META
 
 const roleBadge: Record<string, string> = {
   PORTEUR: 'bg-brand-500/10 text-brand-700 dark:text-brand-300 border-brand-500/30',
@@ -45,30 +47,11 @@ const roleBadge: Record<string, string> = {
   ADMIN:   'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30',
 }
 
-// CRUD columns for the permission matrix (read first — it's auto-granted by C/U/D).
-const ACTIONS = [
-  { key: 'read', short: 'R', label: 'Lire' },
-  { key: 'create', short: 'C', label: 'Créer' },
-  { key: 'update', short: 'U', label: 'Modifier' },
-  { key: 'delete', short: 'D', label: 'Supprimer' },
-] as const
-const MODULE_LABEL: Record<string, string> = {
-  dashboard: 'Tableau de bord', programmes: 'Programmes', candidatures: 'Candidatures',
-  tasks: 'Tâches', notifications: 'Invitations', users: 'Utilisateurs',
-  organizations: 'Organisations', landing: 'Page d\'accueil', ai: 'IA',
-  reports: 'Rapports', settings: 'Paramètres', sessions: 'Sessions',
-}
-
-// Modules a NON-admin user may hold (front-office features). Admin-only modules
-// (dashboard, users, organizations, landing, ai, reports, settings, notifications)
-// are hidden in the matrix and stripped when editing a non-admin user.
-const NON_ADMIN_MODULES = ['programmes', 'candidatures', 'sessions', 'tasks', 'organizations']
-const isFrontofficeSlug = (slug: string) => NON_ADMIN_MODULES.includes(slug.split(':')[0])
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([])
+  const [rolesList, setRolesList] = useState<RoleDto[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('ALL')
@@ -80,24 +63,26 @@ export default function UsersPage() {
   const [editingDataFor, setEditingDataFor] = useState<number | null>(null)
   const [draftData, setDraftData] = useState({ firstName: '', lastName: '', email: '' })
   const [savingData, setSavingData] = useState(false)
-  // Permission matrix
-  const [catalog, setCatalog] = useState<Record<string, string>>({})
+  // Permission matrix (grouped catalog: modules + GENERAL/ADMIN scopes)
+  const [catalog, setCatalog] = useState<CatalogModule[]>([])
   const [editingPermsFor, setEditingPermsFor] = useState<number | null>(null)
   const [draftPerms, setDraftPerms] = useState<Set<string>>(new Set())
   const [permInherited, setPermInherited] = useState<Set<string>>(new Set())
   const [savingPerms, setSavingPerms] = useState(false)
-  const { can } = useCan()
+  const { can, isAdmin } = useCan()
 
   useEffect(() => {
     usersApi.list()
       .then((r) => setUsers(r.data?.content ?? r.data ?? []))
       .catch(() => toast.error('Impossible de charger les utilisateurs'))
       .finally(() => setLoading(false))
-    usersApi.permissionsCatalog().then((r) => setCatalog(r.data ?? {})).catch(() => {})
+    usersApi.permissionsCatalog().then((r) => setCatalog(r.data ?? [])).catch(() => {})
+    // Dynamic role catalog — includes admin-created custom roles.
+    rolesApi.list().then((r) => setRolesList(r.data ?? [])).catch(() => {})
   }, [])
 
-  const modules = Array.from(new Set(Object.keys(catalog).map((s) => s.split(':')[0])))
-    .filter((m) => MODULE_LABEL[m]).sort()
+  const roleLabel = (r: string) => rolesList.find((x) => x.name === r)?.displayName ?? r
+  const knownSlugs = allSlugsOf(catalog)
 
   const handleToggle = async (user: User) => {
     const willDisable = user.active !== false
@@ -152,23 +137,17 @@ export default function UsersPage() {
   const openPermsEditor = async (u: User) => {
     setEditingPermsFor(u.id); setEditingRolesFor(null); setEditingDataFor(null)
     setDraftPerms(new Set()); setPermInherited(new Set())
-    const isAdminUser = (u.roles ?? [u.role]).includes('ADMIN')
     try {
       const r = await usersApi.get(u.id)
-      let direct: string[] = r.data?.directPermissions ?? []
-      let all: string[] = r.data?.allPermissions ?? []
-      // A non-admin user can only hold front-office permissions. Drop any admin
-      // module perms from the draft so saving (syncPermissions) removes them.
-      if (!isAdminUser) {
-        direct = direct.filter(isFrontofficeSlug)
-        all = all.filter(isFrontofficeSlug)
-      }
+      // Any permission can be granted to any user — role-inherited ones show locked.
+      const direct: string[] = r.data?.directPermissions ?? []
+      const all: string[] = r.data?.allPermissions ?? []
       setDraftPerms(new Set(direct))
       setPermInherited(new Set(all.filter((s) => !direct.includes(s)))) // role-inherited
     } catch { /* keep empties */ }
   }
-  const togglePerm = (module: string, action: string) => {
-    const slug = `${module}:${action}`
+  const togglePerm = (slug: string) => {
+    const [module, action] = slug.split(':')
     setDraftPerms((prev) => {
       const next = new Set(prev)
       if (next.has(slug)) {
@@ -177,7 +156,7 @@ export default function UsersPage() {
         next.delete(slug)
       } else {
         next.add(slug)
-        if (action !== 'read' && catalog[`${module}:read`]) next.add(`${module}:read`) // auto-read
+        if (action !== 'read' && knownSlugs.has(`${module}:read`)) next.add(`${module}:read`) // auto-read
       }
       return next
     })
@@ -204,8 +183,8 @@ export default function UsersPage() {
     return true
   })
 
-  const roleCounts = ROLES.reduce((acc, r) => {
-    acc[r.value] = users.filter((u) => (u.roles ?? [u.role]).includes(r.value)).length
+  const roleCounts = rolesList.reduce((acc, r) => {
+    acc[r.name] = users.filter((u) => (u.roles ?? [u.role]).includes(r.name)).length
     return acc
   }, {} as Record<string, number>)
 
@@ -226,21 +205,22 @@ export default function UsersPage() {
           </Link>
         </motion.div>
 
-        {/* Role stat cards */}
+        {/* Role stat cards — one per role (incl. custom roles created on /roles) */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {ROLES.map((r) => {
-            const Icon = r.icon
-            const active = roleFilter === r.value
+          {rolesList.map((r) => {
+            const meta = metaOf(r.name)
+            const Icon = meta.icon
+            const active = roleFilter === r.name
             return (
-              <button key={r.value} type="button"
-                onClick={() => setRoleFilter(active ? 'ALL' : r.value)}
+              <button key={r.name} type="button"
+                onClick={() => setRoleFilter(active ? 'ALL' : r.name)}
                 className={`text-left rounded-2xl border-2 p-4 transition-all
-                  ${active ? `border-${r.color}-500 bg-${r.color}-500/5` : 'border-border bg-card hover:border-brand-400'}`}>
+                  ${active ? meta.activeCard : 'border-border bg-card hover:border-brand-400'}`}>
                 <div className="flex items-center gap-2 mb-1">
-                  <Icon className={`h-4 w-4 ${active ? `text-${r.color}-600` : 'text-muted-foreground'}`} />
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{r.label}</p>
+                  <Icon className={`h-4 w-4 ${active ? meta.activeIcon : 'text-muted-foreground'}`} />
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{r.displayName}</p>
                 </div>
-                <p className="text-2xl font-black text-foreground tabular-nums">{roleCounts[r.value] ?? 0}</p>
+                <p className="text-2xl font-black text-foreground tabular-nums">{roleCounts[r.name] ?? 0}</p>
               </button>
             )
           })}
@@ -276,8 +256,6 @@ export default function UsersPage() {
           <div className="space-y-2">
             {filtered.map((u, i) => {
               const userRoles = u.roles ?? [u.role]
-              const isUserAdmin = userRoles.includes('ADMIN')
-              const permModules = isUserAdmin ? modules : modules.filter((m) => NON_ADMIN_MODULES.includes(m))
               const isEditingRoles = editingRolesFor === u.id
               const isEditingData = editingDataFor === u.id
               const isEditingPerms = editingPermsFor === u.id
@@ -343,15 +321,15 @@ export default function UsersPage() {
                           <div className="border-t border-border mt-3 pt-3 space-y-3">
                             <p className="text-xs font-medium text-muted-foreground">Choisir les rôles de cet utilisateur :</p>
                             <div className="flex flex-wrap gap-2">
-                              {ROLES.map((r) => {
-                                const Icon = r.icon
-                                const selected = draftRoles.includes(r.value)
+                              {rolesList.map((r) => {
+                                const Icon = metaOf(r.name).icon
+                                const selected = draftRoles.includes(r.name)
                                 return (
-                                  <button key={r.value} type="button"
-                                    onClick={() => toggleDraftRole(r.value)}
+                                  <button key={r.name} type="button"
+                                    onClick={() => toggleDraftRole(r.name)}
                                     className={`flex items-center gap-1.5 rounded-xl border-2 px-3 py-1.5 text-xs font-medium transition-all
                                       ${selected ? `border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300` : 'border-border bg-card text-muted-foreground hover:border-brand-400'}`}>
-                                    <Icon className="h-3.5 w-3.5" />{r.label}
+                                    <Icon className="h-3.5 w-3.5" />{r.displayName}
                                     {selected && <Check className="h-3 w-3" />}
                                   </button>
                                 )
@@ -365,7 +343,7 @@ export default function UsersPage() {
                               <Button size="sm" variant="ghost" onClick={() => setEditingRolesFor(null)}>Annuler</Button>
                             </div>
                             <p className="text-[10px] text-muted-foreground">
-                              ⚠ Modifier le rôle d'un utilisateur change ses permissions immédiatement (la session JWT en cours reste valable jusqu'à expiration).
+                              ⚡ Les nouveaux rôles s'appliquent en direct : si l'utilisateur est connecté, son interface se met à jour immédiatement, sans reconnexion.
                             </p>
                           </div>
                         </motion.div>
@@ -394,49 +372,15 @@ export default function UsersPage() {
                           exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                           <div className="border-t border-border mt-3 pt-3 space-y-3">
                             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                              <KeyRound className="h-3.5 w-3.5" />Permissions directes — cocher C/U/D ajoute « Lire » automatiquement ; les permissions héritées d'un rôle (<Lock className="inline h-3 w-3" />) sont verrouillées.
+                              <KeyRound className="h-3.5 w-3.5" />Permissions directes — en plus de celles héritées des rôles (<Lock className="inline h-3 w-3" /> = héritée, verrouillée). L'utilisateur connecté voit ses accès changer en direct.
                             </p>
-                            {!isUserAdmin && (
-                              <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                                Utilisateur non-admin : seules les permissions front-office (Programmes, Candidatures, Sessions, Tâches, Organisations) sont attribuables. Les modules d'administration sont réservés aux administrateurs.
-                              </p>
-                            )}
-                            <div className="overflow-x-auto rounded-lg border border-border">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="bg-muted/40 text-muted-foreground">
-                                    <th className="text-left font-medium py-1.5 px-2">Module</th>
-                                    {ACTIONS.map((a) => <th key={a.key} className="px-2 py-1.5 font-medium" title={a.label}>{a.short}</th>)}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {permModules.map((m) => (
-                                    <tr key={m} className="border-t border-border/50">
-                                      <td className="py-1.5 px-2 font-medium text-foreground">{MODULE_LABEL[m] ?? m}</td>
-                                      {ACTIONS.map((a) => {
-                                        const slug = `${m}:${a.key}`
-                                        const exists = !!catalog[slug]
-                                        const inherited = permInherited.has(slug)
-                                        const checked = inherited || draftPerms.has(slug)
-                                        const lockedRead = a.key === 'read' && ['create', 'update', 'delete'].some((x) => draftPerms.has(`${m}:${x}`))
-                                        const cellDisabled = !exists || inherited || lockedRead
-                                        return (
-                                          <td key={a.key} className="px-2 py-1.5 text-center">
-                                            {exists ? (
-                                              <span className="inline-flex items-center justify-center gap-0.5">
-                                                <input type="checkbox" checked={checked} disabled={cellDisabled}
-                                                  onChange={() => togglePerm(m, a.key)} className="accent-brand-500 h-4 w-4 disabled:opacity-50" />
-                                                {inherited && <Lock className="h-3 w-3 text-muted-foreground" />}
-                                              </span>
-                                            ) : <span className="text-muted-foreground/30">—</span>}
-                                          </td>
-                                        )
-                                      })}
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
+                            <PermissionMatrix
+                              catalog={catalog}
+                              selected={draftPerms}
+                              inherited={permInherited}
+                              onToggle={togglePerm}
+                              adminEditable={isAdmin}
+                            />
                             <div className="flex gap-2">
                               <Button size="sm" onClick={() => savePerms(u.id)} disabled={savingPerms} className="gap-1.5"><Save className="h-3.5 w-3.5" />Enregistrer</Button>
                               <Button size="sm" variant="ghost" onClick={() => setEditingPermsFor(null)}>Annuler</Button>

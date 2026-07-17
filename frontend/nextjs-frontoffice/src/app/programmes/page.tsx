@@ -7,7 +7,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { ProgrammeCard } from '@/components/programmes/ProgrammeCard'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { programmesApi } from '@/lib/api'
+import { programmesApi, candidaturesApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import type { Programme } from '@/types'
 
@@ -26,12 +26,28 @@ export default function ProgrammesPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
+  /** programmeId → the porteur's candidature status on it. */
+  const [appliedMap, setAppliedMap] = useState<Record<number, string>>({})
 
   useEffect(() => {
-    programmesApi.list(status ? { status } : {})
+    // publicOnly hides DRAFT / ARCHIVED / CANCELLED programmes from porteurs.
+    programmesApi.list({ publicOnly: true, ...(status ? { status } : {}) })
       .then((r) => setProgrammes(r.data?.content ?? r.data ?? []))
       .finally(() => setLoading(false))
   }, [status])
+
+  // Which programmes has this porteur already applied to (drives the badges)?
+  useEffect(() => {
+    if (!isAuthenticated) return
+    candidaturesApi.myList()
+      .then((r) => {
+        const list: any[] = r.data?.content ?? r.data ?? []
+        const map: Record<number, string> = {}
+        for (const c of list) if (c.programmeId != null) map[c.programmeId] = c.status
+        setAppliedMap(map)
+      })
+      .catch(() => {})
+  }, [isAuthenticated])
 
   const filtered = programmes.filter((p) => !search || (p.title ?? p.name ?? '').toLowerCase().includes(search.toLowerCase()))
 
@@ -65,7 +81,7 @@ export default function ProgrammesPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((p, i) => (
             <motion.div key={p.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-              <ProgrammeCard programme={p} />
+              <ProgrammeCard programme={p} appliedStatus={appliedMap[p.id!]} />
             </motion.div>
           ))}
           {filtered.length === 0 && <div className="col-span-full py-16 text-center text-muted-foreground">Aucun programme trouvé</div>}

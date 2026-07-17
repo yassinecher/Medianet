@@ -22,6 +22,7 @@ public class SessionDayService {
     private final ProgrammePhaseRepository    phaseRepository;
     private final SessionDayRepository        dayRepository;
     private final SessionActivityRepository   activityRepository;
+    private final com.medianet.programme.validation.ActivityValidator activityValidator;
 
     // ── Days ─────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,8 @@ public class SessionDayService {
     public SessionActivityDto addActivity(Long programmeId, Long sessionId, Long dayId,
                                           CreateSessionActivityRequest req) {
         SessionDay d = findDay(programmeId, sessionId, dayId);
+        activityValidator.validateSessionConstraints(d.getSession());
+        activityValidator.validateActivityTimeRange(req.getStartTime(), req.getEndTime());
         SessionActivity a = buildActivity(d, req);
         return toActivityDto(activityRepository.save(a));
     }
@@ -81,6 +84,10 @@ public class SessionDayService {
     public SessionActivityDto updateActivity(Long programmeId, Long sessionId, Long dayId,
                                              Long activityId, UpdateSessionActivityRequest req) {
         SessionActivity a = findActivity(programmeId, sessionId, dayId, activityId);
+        // Resolve the effective start/end after the patch to validate the range.
+        activityValidator.validateActivityTimeRange(
+                req.getStartTime() != null ? req.getStartTime() : a.getStartTime(),
+                req.getEndTime()   != null ? req.getEndTime()   : a.getEndTime());
         if (req.getActivityOrder() != null) a.setActivityOrder(req.getActivityOrder());
         if (req.getTitle()         != null) a.setTitle(req.getTitle());
         if (req.getDescription()   != null) a.setDescription(req.getDescription());

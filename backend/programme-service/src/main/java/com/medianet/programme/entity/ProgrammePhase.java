@@ -57,6 +57,46 @@ public class ProgrammePhase {
     private SessionType sessionType = SessionType.INCUBATION;
 
     /**
+     * Visibility of the session. Legacy rows default to VISIBLE (the previous
+     * implicit behaviour). See {@link SessionVisibility}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "visibility", length = 16)
+    @Builder.Default
+    private SessionVisibility visibility = SessionVisibility.VISIBLE;
+
+    // ── Presentation / pitch day ─────────────────────────────────────────────
+
+    /**
+     * When true, this session is a <b>presentation day</b>: participating
+     * porteurs may upload a pitch video for AI analysis. Typically enabled on
+     * PITCH_DAY / DEMO_DAY sessions, but admin-controlled independently.
+     */
+    @Column(name = "collect_pitch_videos", columnDefinition = "boolean not null default false")
+    @Builder.Default
+    private Boolean collectPitchVideos = false;
+
+    /** Deadline for porteurs to upload their pitch video (optional). */
+    @Column(name = "pitch_deadline")
+    private LocalDate pitchDeadline;
+
+    /**
+     * Whether this session may contain an activity agenda. Forced to false for
+     * APPLICATION/CANDIDATURE submission sessions (candidate management only).
+     */
+    @Column(name = "allow_activities")
+    @Builder.Default
+    private Boolean allowActivities = true;
+
+    /**
+     * When true, this session is allowed to overlap others in the same lane.
+     * Default false → the validation layer rejects overlapping sessions.
+     */
+    @Column(name = "allow_overlap")
+    @Builder.Default
+    private Boolean allowOverlap = false;
+
+    /**
      * Swimlane/track this session belongs to on the Parcours timeline.
      * Free-text — sessions sharing the same lane render on the same row
      * (e.g. "Cohorte A" vs "Cohorte B" vs "Tech track").

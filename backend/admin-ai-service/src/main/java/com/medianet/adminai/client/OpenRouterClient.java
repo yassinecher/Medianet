@@ -67,6 +67,21 @@ public class OpenRouterClient {
                                     List<Map<String, Object>> tools,
                                     String systemPrompt,
                                     String toolChoice) {
+        return chat(messages, tools, systemPrompt, toolChoice, null, null);
+    }
+
+    /**
+     * Same as {@link #chat}, but with per-call overrides for small, latency-
+     * sensitive generations (e.g. « générer un champ »): a lower {@code maxTokens}
+     * and a shorter {@code timeoutSeconds} so a queued provider fails fast instead
+     * of holding the request open for the default 4 minutes.
+     */
+    public Map<String, Object> chat(List<Map<String, Object>> messages,
+                                    List<Map<String, Object>> tools,
+                                    String systemPrompt,
+                                    String toolChoice,
+                                    Integer maxTokensOverride,
+                                    Integer timeoutSecondsOverride) {
         String apiKey  = settings.resolveApiKey();
         String baseUrl = settings.resolveBaseUrl();
 
@@ -96,7 +111,8 @@ public class OpenRouterClient {
             String model = chain.get(i);
             boolean isLast = i == chain.size() - 1;
             try {
-                Map<String, Object> result = callOnce(apiKey, baseUrl, model, messages, tools, systemPrompt, toolChoice, true);
+                Map<String, Object> result = callOnce(apiKey, baseUrl, model, messages, tools, systemPrompt, toolChoice, true,
+                        maxTokensOverride, timeoutSecondsOverride);
                 if (i > 0) {
                     log.info("Fallback succeeded with model {} (after {} 429s)", model, i);
                 }
@@ -109,8 +125,11 @@ public class OpenRouterClient {
                 lastFailure = rle;
                 if (isLast) break;
             } catch (java.net.http.HttpTimeoutException te) {
-                // Timeout — treat like a rate-limit so we try the next fallback model
-                String reason = "timeout (>" + (isLocalEndpoint(baseUrl) ? "10min" : "4min") + ")";
+                // Timeout — treat like a rate-limit so we try the next fallback model.
+                // Report the ACTUAL limit (small generations override it to ~50s).
+                String limit = timeoutSecondsOverride != null ? timeoutSecondsOverride + "s"
+                        : (isLocalEndpoint(baseUrl) ? "10min" : "4min");
+                String reason = "timeout (>" + limit + ")";
                 log.warn("Model {} → {}. {}", model, reason,
                         isLast ? "No more fallbacks." : "Trying next…");
                 triedSummary.append("• ").append(model).append(" → ").append(reason).append("\n");
@@ -150,7 +169,9 @@ public class OpenRouterClient {
                                          List<Map<String, Object>> tools,
                                          String systemPrompt,
                                          String toolChoice,
-                                         boolean allowRetryOn429) throws Exception {
+                                         boolean allowRetryOn429,
+                                         Integer maxTokensOverride,
+                                         Integer timeoutSecondsOverride) throws Exception {
         List<Map<String, Object>> finalMessages = new java.util.ArrayList<>();
         if (systemPrompt != null && !systemPrompt.isBlank()) {
             finalMessages.add(Map.of("role", "system", "content", systemPrompt));
@@ -161,7 +182,7 @@ public class OpenRouterClient {
         body.put("model", model);
         body.put("messages", finalMessages);
         body.put("temperature", settings.resolveTemperature());
-        body.put("max_tokens",  settings.resolveMaxTokens());
+        body.put("max_tokens",  maxTokensOverride != null ? maxTokensOverride : settings.resolveMaxTokens());
         // tool_choice="none" means: don't pass tools at all (some HF providers
         // 400 if tools+tool_choice="none" appear together). For "auto"/"required"
         // we include both.
@@ -184,9 +205,9 @@ public class OpenRouterClient {
         // can take 3-5 minutes for a multi-tool agent turn. Cloud APIs respond
         // quickly for simple turns, but big tools+plan generation on 70B models
         // can hit 2-3 minutes — be generous to avoid timeouts on free-tier queues.
-        Duration requestTimeout = isLocalEndpoint(baseUrl)
-            ? Duration.ofMinutes(10)
-            : Duration.ofMinutes(4);
+        Duration requestTimeout = timeoutSecondsOverride != null
+            ? Duration.ofSeconds(timeoutSecondsOverride)
+            : (isLocalEndpoint(baseUrl) ? Duration.ofMinutes(10) : Duration.ofMinutes(4));
 
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/chat/completions"))
@@ -205,7 +226,8 @@ public class OpenRouterClient {
                 log.warn("Model {} → 429, sleeping {}s and retrying once", model, wait);
                 try { Thread.sleep(wait * 1000L); }
                 catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
-                return callOnce(apiKey, baseUrl, model, messages, tools, systemPrompt, toolChoice, false);
+                return callOnce(apiKey, baseUrl, model, messages, tools, systemPrompt, toolChoice, false,
+                        maxTokensOverride, timeoutSecondsOverride);
             }
             throw new RateLimitException(model, wait, "rate-limited");
         }

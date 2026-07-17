@@ -35,6 +35,10 @@ spring:
           uri: lb://programme-service
           predicates:
             - Path=/api/tasks/**
+        - id: programme-service-pitch
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/pitch/**
         - id: programme-service-files
           uri: lb://programme-service
           predicates:

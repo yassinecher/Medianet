@@ -69,6 +69,14 @@ public class ProgrammeLifecycle {
             target = (idx == 0) ? ProgrammeStatus.OPEN : ProgrammeStatus.IN_PROGRESS;
         }
 
+        // Session-status synchronization: when the admin has explicitly marked
+        // sessions, their status drives the programme (more authoritative than the
+        // calendar). All default-UPCOMING → keep the date-derived target above.
+        boolean allCompleted = stages.stream().allMatch(s -> s.getStatus() == PhaseStatus.COMPLETED);
+        boolean anyActive    = stages.stream().anyMatch(s -> s.getStatus() == PhaseStatus.ACTIVE);
+        if (allCompleted)      target = ProgrammeStatus.CLOSED;
+        else if (anyActive)    target = ProgrammeStatus.IN_PROGRESS;
+
         if (target != p.getStatus()) {
             log.info("Programme {} status {} → {} (driven by session flow)",
                     p.getId(), p.getStatus(), target);

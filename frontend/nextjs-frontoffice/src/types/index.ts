@@ -76,6 +76,13 @@ export interface Phase {
   endDate?: string
   phaseOrder: number
   isActive?: boolean
+  /** Session type — drives the displayed badge (Pitch Day, Demo Day, …). */
+  sessionType?: string
+  /** Venue / "Online". */
+  location?: string
+  /** Lifecycle status of the session (UPCOMING | ACTIVE | COMPLETED). */
+  status?: string
+  visibility?: string
 }
 
 export interface Criteria {

@@ -1,5 +1,9 @@
 server:
   port: 8086
+  tomcat:
+    # Don't cap the body Tomcat swallows when rejecting a request (avoids
+    # connection resets on oversized uploads).
+    max-swallow-size: -1
 
 spring:
   application:
@@ -17,6 +21,13 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+  servlet:
+    multipart:
+      # Pitch videos can be large — raise the default 1MB/10MB limits.
+      # NB: docker-compose sets SPRING_SERVLET_MULTIPART_* env vars which
+      # OVERRIDE these values — keep both in sync.
+      max-file-size: 2GB
+      max-request-size: 2GB
 jwt:
   secret: ${JWT_SECRET:medianet-super-secret-jwt-key-2024-medianet-incubation}
 

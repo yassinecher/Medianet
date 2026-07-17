@@ -97,7 +97,8 @@ public class User {
     }
 
     /**
-     * All effective permission slugs = direct permissions UNION all role permissions.
+     * All effective permission slugs = direct permissions UNION all role
+     * permissions (including permissions inherited from parent roles).
      * This is what gets embedded in the JWT.
      */
     public Set<String> getAllPermissionSlugs() {
@@ -106,11 +107,7 @@ public class User {
             directPermissions.forEach(p -> all.add(p.getSlug()));
         }
         if (roles != null) {
-            roles.forEach(r -> {
-                if (r.getPermissions() != null) {
-                    r.getPermissions().forEach(p -> all.add(p.getSlug()));
-                }
-            });
+            roles.forEach(r -> r.getEffectivePermissions().forEach(p -> all.add(p.getSlug())));
         }
         return all;
     }

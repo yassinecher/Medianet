@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Calendar, Users, ArrowRight, Trophy, MapPin, Timer } from 'lucide-react'
+import { Calendar, Users, ArrowRight, Trophy, MapPin, Timer, CheckCircle2 } from 'lucide-react'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { cn, formatDate, statusColor } from '@/lib/utils'
 import type { Programme } from '@/types'
@@ -7,6 +7,18 @@ import type { Programme } from '@/types'
 const statusLabel: Record<string, string> = {
   DRAFT: 'Brouillon', OPEN: 'Ouvert', CLOSED: 'Fermé', ARCHIVED: 'Archivé',
   IN_PROGRESS: 'En cours', EVALUATION: 'Évaluation', CANCELLED: 'Annulé',
+}
+
+/** Label for the porteur's own candidature status on this programme. */
+const APPLIED_LABEL: Record<string, string> = {
+  PENDING: 'Candidature soumise', UNDER_EVALUATION: 'En évaluation',
+  ACCEPTED: 'Candidature acceptée', REJECTED: 'Candidature refusée',
+}
+const APPLIED_STYLE: Record<string, string> = {
+  PENDING: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30',
+  UNDER_EVALUATION: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30',
+  ACCEPTED: 'bg-green-500/10 text-green-700 dark:text-green-300 border-green-500/30',
+  REJECTED: 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30',
 }
 
 /** Days until the candidature deadline (synced with the Candidature session). */
@@ -18,7 +30,7 @@ function daysLeft(programme: Programme): number | null {
   return Math.ceil((d.getTime() - Date.now()) / 86_400_000)
 }
 
-export function ProgrammeCard({ programme }: { programme: Programme }) {
+export function ProgrammeCard({ programme, appliedStatus }: { programme: Programme; appliedStatus?: string }) {
   const title = programme.title ?? programme.name ?? ''
   const accepting = (programme as any).acceptingApplications
   const left = daysLeft(programme)
@@ -72,6 +84,16 @@ export function ProgrammeCard({ programme }: { programme: Programme }) {
               <p className="mt-0.5 text-xs text-brand-600 dark:text-brand-400 font-medium">{programme.tagline}</p>
             )}
           </div>
+
+          {/* Already-applied badge — clear signal the porteur already candidated */}
+          {appliedStatus && (
+            <span className={cn(
+              'inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold',
+              APPLIED_STYLE[appliedStatus] ?? 'bg-muted text-muted-foreground border-border',
+            )}>
+              <CheckCircle2 className="h-3 w-3" />{APPLIED_LABEL[appliedStatus] ?? 'Déjà candidaté'}
+            </span>
+          )}
 
           {/* Description */}
           {programme.description && (

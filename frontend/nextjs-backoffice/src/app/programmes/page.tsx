@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Plus, Search, Eye, Trash2, Edit } from 'lucide-react'
+import { Plus, Search, Eye, Trash2, Edit, PencilLine } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { programmesApi } from '@/lib/api'
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -76,10 +76,16 @@ export default function ProgrammesPage() {
                       <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-muted-foreground">
                         {(p.type ?? p.domain) && <span>{p.type ?? p.domain}</span>}
                         {p.region && <span>· {p.region}</span>}
-                        {p.applicationDeadline && <span>· Clôture : {formatDate(p.applicationDeadline)}</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      {p.status === 'DRAFT' && (
+                        <Link href={`/programmes/new?draft=${p.id}`}>
+                          <Button variant="outline" size="sm" className="gap-1.5">
+                            <PencilLine className="h-3.5 w-3.5" />Reprendre
+                          </Button>
+                        </Link>
+                      )}
                       <Link href={`/programmes/${p.id}`}>
                         <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>
                       </Link>

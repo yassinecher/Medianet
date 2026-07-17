@@ -47,4 +47,11 @@ public class CreatePhaseRequest {
 
     /** Optional initial days for the session. */
     private List<CreateSessionDayRequest> days;
+
+    /** Visibility — VISIBLE (default) | HIDDEN | PRIVATE. */
+    private String          visibility;
+    /** Whether the session may carry an activity agenda (default true). */
+    private Boolean         allowActivities;
+    /** Whether the session may overlap others in its lane (default false). */
+    private Boolean         allowOverlap;
 }

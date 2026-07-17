@@ -20,7 +20,7 @@ import {
   Plus, X, Trash2, Calendar, MapPin, Users, Loader2,
   AlertTriangle, Info, GripVertical, Layers, Clock, Palette, FileText,
   Pencil, UserPlus, CalendarDays, CalendarRange, ChevronRight, Sparkles, Copy,
-  Eye, ArrowLeft, Send, Mail, ClipboardList, ZoomIn, ZoomOut,
+  Eye, EyeOff, ArrowLeft, Send, Mail, ClipboardList, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { sessionsApi, sessionPresetsApi, notificationsApi, contactsApi, contactGroupsApi, programmesApi, parcoursTemplatesApi } from '@/lib/api'
@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { CandidaturePhasePanel, PreselectionPhasePanel } from './PhasePanels'
 import { SessionNotifyButton } from '@/app/programmes/[id]/SessionNotify'
+import { confirmDialog } from '@/lib/confirmDialog'
 
 // ── Color palette ───────────────────────────────────────────────────────────
 // Sessions / presets / activities are type-free — color is their only marker.
@@ -90,7 +91,52 @@ interface Session {
   criterionWeightsJson?: string
   /** Évaluation sessions: saved candidature-selection the jury evaluates. */
   evaluationSelectionId?: number | null
+  /** Visibility — VISIBLE | HIDDEN | PRIVATE (default VISIBLE). */
+  visibility?: 'VISIBLE' | 'HIDDEN' | 'PRIVATE'
+  /** Whether this session may carry an activity agenda. */
+  allowActivities?: boolean
+  /** Whether this session may overlap others in its lane. */
+  allowOverlap?: boolean
   days?: SessionDay[]
+}
+
+const VISIBILITY_META: Record<string, { label: string; badge: string; cls: string }> = {
+  VISIBLE: { label: 'Visible',  badge: '',         cls: 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
+  HIDDEN:  { label: 'Interne',  badge: 'Interne',  cls: 'border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300' },
+  PRIVATE: { label: 'Privé',    badge: 'Privé',    cls: 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' },
+}
+const visibilityOf = (s: { visibility?: string }) => (s.visibility ?? 'VISIBLE')
+
+const SESSION_TYPE_DISPLAY: Record<string, string> = {
+  CANDIDATURE_SUBMISSION: 'Candidature', PRESELECTION: 'Présélection', PITCH_DAY: 'Pitch Day',
+  ONBOARDING: 'Onboarding', INCUBATION: 'Incubation', DEMO_DAY: 'Demo Day', TRAINING_DAY: 'Formation',
+}
+const SESSION_STATUS_DISPLAY: Record<string, string> = { UPCOMING: 'À venir', ACTIVE: 'En cours', COMPLETED: 'Terminée' }
+
+/** Before→after rows for the « aperçu avant modification » dialog. Returns [] for
+ *  purely cosmetic edits (title/color/…) so those apply without interruption. */
+function previewLines(session: Session, patch: Partial<Session>): { label: string; from?: string; to?: string }[] {
+  const out: { label: string; from?: string; to?: string }[] = []
+  const yn  = (b?: boolean) => (b ? 'Oui' : 'Non')
+  const vis = (v?: string) => VISIBILITY_META[v ?? 'VISIBLE']?.label ?? (v ?? 'Visible')
+  const dur = (d?: string) => (d === 'day' ? 'Journée' : 'Plage')
+  if ('startDate' in patch && patch.startDate !== session.startDate)
+    out.push({ label: 'Début', from: session.startDate || '—', to: patch.startDate || '—' })
+  if ('endDate' in patch && patch.endDate !== session.endDate)
+    out.push({ label: 'Fin', from: session.endDate || '—', to: patch.endDate || '—' })
+  if ('visibility' in patch && patch.visibility !== visibilityOf(session))
+    out.push({ label: 'Visibilité', from: vis(visibilityOf(session)), to: vis(patch.visibility) })
+  if ('allowOverlap' in patch && !!patch.allowOverlap !== !!session.allowOverlap)
+    out.push({ label: 'Chevauchement', from: yn(session.allowOverlap), to: yn(patch.allowOverlap) })
+  if ('allowActivities' in patch && (patch.allowActivities !== false) !== (session.allowActivities !== false))
+    out.push({ label: 'Activités', from: yn(session.allowActivities !== false), to: yn(patch.allowActivities !== false) })
+  if ('durationKind' in patch && patch.durationKind !== session.durationKind)
+    out.push({ label: 'Type de durée', from: dur(session.durationKind), to: dur(patch.durationKind) })
+  if ('sessionType' in patch && patch.sessionType !== session.sessionType)
+    out.push({ label: 'Fonction', from: session.sessionType || 'INCUBATION', to: patch.sessionType || 'INCUBATION' })
+  if ('parentSessionId' in patch && (patch.parentSessionId ?? null) !== (session.parentSessionId ?? null))
+    out.push({ label: 'Rattachement', from: session.parentSessionId ? `#${session.parentSessionId}` : 'Aucun', to: patch.parentSessionId ? `#${patch.parentSessionId}` : 'Aucun' })
+  return out
 }
 
 /** A programme evaluation criterion (subset selectable per session). */
@@ -304,6 +350,19 @@ function TimelineBoard({ programmeId, programme }: {
       start = clampDate(start, ps, pe)
     }
     const end = kind === 'day' ? start : addDays(start, 13)
+    // Confirm before adding (click-based creation). Drag-drop placement
+    // (openAfter=false) is its own deliberate gesture and stays immediate.
+    if (openAfter && !(await confirmDialog({
+      title: 'Ajouter une session',
+      message: `Créer « ${preset.title} » ?`,
+      lines: [
+        { label: 'Type', value: kind === 'day' ? 'Journée' : 'Plage' },
+        { label: 'Début', value: fmtISO(start) },
+        ...(kind === 'day' ? [] : [{ label: 'Fin', value: fmtISO(end) }]),
+        ...(parent ? [{ label: 'Dans', value: parent.title || 'Plage parente' }] : []),
+      ],
+      confirmLabel: 'Créer',
+    }))) return
     try {
       const r = await sessionsApi.create(programmeId, {
         title: preset.title, color: preset.color || DEFAULT_COLOR, durationKind: kind,
@@ -329,6 +388,12 @@ function TimelineBoard({ programmeId, programme }: {
       const ps = parseDate(parent.startDate); const pe = parseDate(parent.endDate ?? parent.startDate)
       start = clampDate(start, ps, pe)
     }
+    if (!(await confirmDialog({
+      title: 'Ajouter une journée',
+      message: 'Créer une nouvelle journée vierge ?',
+      lines: [{ label: 'Date', value: fmtISO(start) }, ...(parent ? [{ label: 'Dans', value: parent.title || 'Plage parente' }] : [])],
+      confirmLabel: 'Créer',
+    }))) return
     try {
       const r = await sessionsApi.create(programmeId, {
         title: 'Journée', color: DEFAULT_COLOR, durationKind: 'day',
@@ -446,20 +511,56 @@ function TimelineBoard({ programmeId, programme }: {
       if (ps && pe && (start < ps || start > pe || (end != null && (end < ps || end > pe))))
         return `La journée doit rester dans la plage « ${parent!.title || 'parente'} » (${parent!.startDate} → ${parent!.endDate}).`
     }
-    // Range with nested journées → the new window must still contain them all.
-    if (kind === 'range' && end) {
-      for (const ch of childrenOf(id)) {
-        const cs = parseDate(ch.startDate)
-        if (cs && (cs < start || cs > end))
-          return `La journée « ${ch.title || 'Journée'} » (${ch.startDate}) sortirait de la plage. Déplacez-la d'abord ou élargissez la plage.`
-      }
-    }
+    // NB: a range whose nested journées would fall outside is NOT a hard error —
+    // update() carries the journées along (shift/clamp) after confirmation.
     return null
+  }
+
+  /** Nested journées that would leave the new window of a range — with the
+   *  adjusted dates to keep them inside (shift on move, clamp on resize). */
+  const childrenToCarry = (id: number, patch: Partial<Session>) => {
+    const cur = sessions.find(s => s.id === id)
+    if (!cur || kindOf(cur) !== 'range') return { isMove: false, patches: [] as { id: number; title?: string; startDate: string; endDate: string }[] }
+    if (!('startDate' in patch || 'endDate' in patch)) return { isMove: false, patches: [] }
+    const ns = parseDate(patch.startDate ?? cur.startDate)
+    const ne = parseDate(patch.endDate ?? cur.endDate ?? cur.startDate)
+    if (!ns || !ne) return { isMove: false, patches: [] }
+    const os = parseDate(cur.startDate); const oe = parseDate(cur.endDate ?? cur.startDate)
+    const day = 86400000
+    const dStart = os ? Math.round((ns.getTime() - os.getTime()) / day) : 0
+    const dEnd   = oe ? Math.round((ne.getTime() - oe.getTime()) / day) : 0
+    const isMove = dStart === dEnd
+    const patches: { id: number; title?: string; startDate: string; endDate: string }[] = []
+    for (const ch of childrenOf(id)) {
+      const cs = parseDate(ch.startDate); if (!cs) continue
+      const ce = parseDate(ch.endDate ?? ch.startDate) ?? cs
+      if (cs >= ns && cs <= ne && ce >= ns && ce <= ne) continue   // still inside
+      const ncs = isMove ? addDays(cs, dStart) : clampDate(cs, ns, ne)
+      const nce = kindOf(ch) === 'day' ? ncs : (isMove ? addDays(ce, dStart) : clampDate(ce, ns, ne))
+      patches.push({ id: ch.id, title: ch.title, startDate: fmtISO(ncs), endDate: fmtISO(nce) })
+    }
+    return { isMove, patches }
   }
 
   const update = async (id: number, patch: Partial<Session>) => {
     const err = dateError(id, patch)
     if (err) { toast.error(err); return }   // reject without touching state — bar stays put
+
+    // Moving/resizing a plage that contains nested journées: carry them along
+    // (shift on move, clamp on resize) instead of blocking the change.
+    const { isMove, patches: childPatches } = childrenToCarry(id, patch)
+    if (childPatches.length > 0) {
+      const names = childPatches.map(c => `« ${c.title || 'Journée'} »`).join(', ')
+      const ok = await confirmDialog({
+        title: 'Déplacer les journées imbriquées ?',
+        message: isMove
+          ? `${childPatches.length} journée(s) (${names}) seront déplacées avec la plage pour conserver leur position.`
+          : `${childPatches.length} journée(s) (${names}) seront ajustées pour rester dans la plage.`,
+        confirmLabel: 'Déplacer', cancelLabel: 'Annuler',
+      })
+      if (!ok) { reload(); return }   // revert the optimistic drag/resize on the board
+    }
+
     recordUndo(id, patch)
     // -1 is the API "clear" sentinel — locally it must become null, otherwise
     // e.g. a freshly detached journée fails the parentSessionId == null filter
@@ -467,8 +568,15 @@ function TimelineBoard({ programmeId, programme }: {
     const local: Partial<Session> = { ...patch }
     if ((local.parentSessionId as any) === -1) local.parentSessionId = null
     if ((local.evaluationSelectionId as any) === -1) local.evaluationSelectionId = null
-    setSessions(arr => arr.map(s => s.id === id ? { ...s, ...local } : s))
-    try { await sessionsApi.update(programmeId, id, patch) }
+    setSessions(arr => arr.map(s => {
+      if (s.id === id) return { ...s, ...local }
+      const cp = childPatches.find(c => c.id === s.id)
+      return cp ? { ...s, startDate: cp.startDate, endDate: cp.endDate } : s
+    }))
+    try {
+      await sessionsApi.update(programmeId, id, patch)
+      for (const cp of childPatches) await sessionsApi.update(programmeId, cp.id, { startDate: cp.startDate, endDate: cp.endDate })
+    }
     catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur'); reload() }
   }
 
@@ -1886,6 +1994,12 @@ function SessionBar({
       {/* Body */}
       <div className={`flex-1 min-w-0 px-2 truncate flex items-center gap-1.5 ${dayModeBar ? 'pt-1' : ''}`}>
         {kind === 'day' ? <CalendarDays className="h-3 w-3 shrink-0 opacity-90" /> : <CalendarRange className="h-3 w-3 shrink-0 opacity-90" />}
+        {visibilityOf(session) !== 'VISIBLE' && (
+          <span title={visibilityOf(session) === 'HIDDEN' ? 'Interne' : 'Privé'}
+            className="shrink-0 inline-flex items-center rounded-full bg-black/25 px-1 py-0.5 text-[9px] font-bold">
+            <EyeOff className="h-2.5 w-2.5" />
+          </span>
+        )}
         <span className="truncate">{session.title || '·'}</span>
         {fn !== 'STANDARD' && (
           <span title={FONCTION_META[fn].hint}
@@ -2015,15 +2129,38 @@ function SessionOverlay({
   const c = colorOf(session)
   const kind = kindOf(session)
   const { critical, warnings } = detectMissing(session)
+
+  // Preview-before-update: edits to CONSEQUENTIAL fields (dates, visibility,
+  // type, scheduling flags, parent) show a before→after preview the admin must
+  // confirm. Cosmetic edits (title, color, description, …) apply immediately so
+  // the editor stays fluid. Drag/resize bypass this (they call update() directly).
+  const onUpdatePreviewed = async (patch: Partial<Session>) => {
+    const lines = previewLines(session, patch)
+    if (lines.length === 0) { onUpdate(patch); return }
+    if (await confirmDialog({
+      title: 'Aperçu de la modification',
+      message: `Session « ${session.title || 'Sans titre'} »`,
+      lines, confirmLabel: 'Appliquer',
+    })) onUpdate(patch)
+  }
+
   // A session's « Fonction » (reused sessionType) wires it to a programme feature.
   const fonction = fonctionOf(session)
   const isFunctionPhase = fonction !== 'STANDARD'
-  // Range shows its fields immediately; day / function phases focus their content
-  // (fields behind « Détails »).
-  const [showDetails, setShowDetails] = useState(false)
-  // Day sessions with a function keep their agenda: Fonction ⇄ Agenda tabs.
-  const [fnTab, setFnTab] = useState<'fonction' | 'agenda'>('fonction')
-  useEffect(() => { setFnTab('fonction') }, [session.id])
+
+  // Unified, readability-first layout: the session info comes FIRST (Détails tab),
+  // its feature panel (candidatures / jury) and activities/days live in their own
+  // tabs so they're never mixed with the general information.
+  type OverlayTab = 'details' | 'feature' | 'activities' | 'days'
+  const overlayTabs = useMemo(() => {
+    const t: { key: OverlayTab; label: string; icon: any }[] = [{ key: 'details', label: 'Détails', icon: Info }]
+    if (isFunctionPhase) t.push({ key: 'feature', label: fonction === 'CANDIDATURE_SUBMISSION' ? 'Candidatures' : 'Jury', icon: fonction === 'CANDIDATURE_SUBMISSION' ? Mail : ClipboardList })
+    if (kind === 'day') t.push({ key: 'activities', label: 'Activités', icon: Clock })
+    if (kind === 'range') t.push({ key: 'days', label: 'Journées', icon: CalendarDays })
+    return t
+  }, [isFunctionPhase, fonction, kind])
+  const [tab, setTab] = useState<OverlayTab>('details')
+  useEffect(() => { setTab('details') }, [session.id])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -2052,6 +2189,12 @@ function SessionOverlay({
             {kind === 'day' ? <><CalendarDays className="h-3 w-3" />Journée</> : <><CalendarRange className="h-3 w-3" />Plage</>}
           </span>
           <span className="text-sm font-bold text-foreground truncate">{session.title || 'Sans titre'}</span>
+          {visibilityOf(session) !== 'VISIBLE' && (
+            <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-bold shrink-0 ${VISIBILITY_META[visibilityOf(session)].cls}`}
+              title={visibilityOf(session) === 'HIDDEN' ? 'Session interne — masquée du parcours public' : 'Session privée — invités uniquement'}>
+              <EyeOff className="h-3 w-3" />{VISIBILITY_META[visibilityOf(session)].badge}
+            </span>
+          )}
           <span className="text-[11px] text-muted-foreground shrink-0 hidden sm:inline">{dateText(session)}</span>
           {critical.length > 0 && (
             <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-300/40 px-1.5 py-0.5 text-[10px] font-bold shrink-0" title={`Critique : ${critical.join(', ')}`}>
@@ -2071,7 +2214,7 @@ function SessionOverlay({
               const active = fonction === f
               return (
                 <button key={f} type="button" title={FONCTION_META[f].hint}
-                  onClick={() => onUpdate({ sessionType: f === 'STANDARD' ? 'INCUBATION' : f })}
+                  onClick={() => onUpdatePreviewed({ sessionType: f === 'STANDARD' ? 'INCUBATION' : f })}
                   className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
                     active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
                   <Icon className="h-3 w-3" />{FONCTION_META[f].label}
@@ -2079,13 +2222,6 @@ function SessionOverlay({
               )
             })}
           </div>
-          {kind === 'day' && !isFunctionPhase && (
-            <button onClick={() => setShowDetails(v => !v)}
-              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors shrink-0 ${
-                showDetails ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300' : 'border-border text-muted-foreground hover:text-foreground'}`}>
-              <Pencil className="h-3 w-3" />Détails
-            </button>
-          )}
           {session.id && kind === 'day' && (
             <SessionNotifyButton
               programmeId={programmeId} programmeName={programmeName ?? 'Programme'} session={session as any} compact
@@ -2105,67 +2241,136 @@ function SessionOverlay({
           </button>
         </div>
 
-        {/* Body */}
-        {isFunctionPhase ? (
-          /* Function phase — settings (left) + feature panel (right) on the SAME page. */
-          <div className="flex-1 min-h-0 grid grid-cols-[300px_1fr]">
-            <div className="overflow-y-auto border-r border-border">
-              <EditorPanel session={session} allLanes={allLanes} parents={parents}
-                onUpdate={onUpdate} onSaveAsPreset={onSaveAsPreset} criteria={criteria} />
-            </div>
-            <div className="min-w-0 flex flex-col min-h-0">
-              {/* A journée with fonction keeps its agenda — switchable tabs */}
-              {kind === 'day' && (
-                <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border bg-muted/20 shrink-0">
-                  {([['fonction', FONCTION_META[fonction].label, fonction === 'CANDIDATURE_SUBMISSION' ? Mail : ClipboardList],
-                     ['agenda', 'Agenda', Clock]] as const).map(([k, lbl, Icon]) => (
-                    <button key={k} type="button" onClick={() => setFnTab(k)}
-                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors ${
-                        fnTab === k ? 'bg-card text-foreground shadow-sm border border-border' : 'text-muted-foreground hover:text-foreground'}`}>
-                      <Icon className="h-3 w-3" />{lbl}
-                    </button>
-                  ))}
+        {/* Tab bar — Détails first, feature & activities/days clearly separated. */}
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border bg-muted/20 shrink-0">
+          {overlayTabs.map((t) => (
+            <button key={t.key} type="button" onClick={() => setTab(t.key)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-bold transition-colors ${
+                tab === t.key ? 'bg-card text-foreground shadow-sm border border-border' : 'text-muted-foreground hover:text-foreground'}`}>
+              <t.icon className="h-3.5 w-3.5" />{t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Body — one section at a time, never mixed. */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {tab === 'details' && (
+            <div className="h-full overflow-y-auto">
+              <div className="mx-auto max-w-2xl">
+                <SessionInfoSummary session={session} />
+                <div className="border-t border-border">
+                  <div className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Modifier</div>
+                  <EditorPanel session={session} allLanes={allLanes} parents={parents}
+                    onUpdate={onUpdatePreviewed} onSaveAsPreset={onSaveAsPreset} criteria={criteria} />
                 </div>
-              )}
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                {kind === 'day' && fnTab === 'agenda'
-                  ? <DayCanvas programmeId={programmeId} programmeName={programmeName} session={session} onChanged={onDaysChanged} />
-                  : fonction === 'CANDIDATURE_SUBMISSION'
-                    ? <CandidaturePhasePanel programmeId={programmeId} />
-                    : <PreselectionPhasePanel programmeId={programmeId}
-                        session={{ id: session.id, title: session.title, focusCriteriaIds: session.focusCriteriaIds,
-                          criterionWeightsJson: session.criterionWeightsJson, evaluationSelectionId: session.evaluationSelectionId }}
-                        onUpdateSession={(patch) => onUpdate(patch as Partial<Session>)} />}
               </div>
             </div>
-          </div>
-        ) : kind === 'range' ? (
-          <div className="flex-1 min-h-0 grid grid-cols-[300px_1fr]">
-            <div className="overflow-y-auto border-r border-border">
-              <EditorPanel session={session} allLanes={allLanes} parents={parents}
-                onUpdate={onUpdate} onSaveAsPreset={onSaveAsPreset} criteria={criteria} />
+          )}
+
+          {tab === 'feature' && (
+            <div className="h-full overflow-y-auto">
+              {fonction === 'CANDIDATURE_SUBMISSION'
+                ? <CandidaturePhasePanel programmeId={programmeId} />
+                : <PreselectionPhasePanel programmeId={programmeId}
+                    session={{ id: session.id, title: session.title, focusCriteriaIds: session.focusCriteriaIds,
+                      criterionWeightsJson: session.criterionWeightsJson, evaluationSelectionId: session.evaluationSelectionId }}
+                    onUpdateSession={(patch) => onUpdate(patch as Partial<Session>)} />}
             </div>
-            <div className="overflow-y-auto min-w-0">
+          )}
+
+          {tab === 'activities' && (
+            <div className="h-full">
+              <DayCanvas programmeId={programmeId} programmeName={programmeName} session={session} onChanged={onDaysChanged} />
+            </div>
+          )}
+
+          {tab === 'days' && (
+            <div className="h-full overflow-y-auto">
               <ChildDaysPane session={session} children={children} dayPresets={dayPresets}
                 onOpenSession={onOpenSession} onAddChild={onAddChild} onAddBlankChild={onAddBlankChild} />
             </div>
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 flex flex-col">
-            {showDetails && (
-              <div className="border-b-2 border-border max-h-[42%] overflow-y-auto shrink-0">
-                <EditorPanel session={session} allLanes={allLanes} parents={parents}
-                  onUpdate={onUpdate} onSaveAsPreset={onSaveAsPreset} criteria={criteria} />
-              </div>
-            )}
-            <div className="flex-1 min-h-0">
-              <DayCanvas programmeId={programmeId} programmeName={programmeName} session={session} onChanged={onDaysChanged} />
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>,
     document.body,
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//             SESSION INFO SUMMARY (read-first header of the Détails tab)
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Clear, structured at-a-glance read of the session before its editable fields. */
+function SessionInfoSummary({ session }: { session: Session }) {
+  const c = colorOf(session)
+  const kind = kindOf(session)
+  const vis = visibilityOf(session)
+  const acts = (session.days ?? []).reduce((n, d) => n + (d.activities?.length ?? 0), 0)
+  const typeLabel = SESSION_TYPE_DISPLAY[session.sessionType || 'INCUBATION'] ?? (session.sessionType || 'Session')
+  const status = session.status ?? 'UPCOMING'
+
+  const Info = ({ icon: Icon, label, value }: { icon: any; label: string; value: React.ReactNode }) => (
+    <div className="flex items-start gap-2">
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <p className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">{label}</p>
+        <p className="text-sm text-foreground break-words">{value}</p>
+      </div>
+    </div>
+  )
+  const Stat = ({ icon: Icon, n, label }: { icon: any; n: number; label: string }) => (
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+      <Icon className="h-3 w-3" />{n} {label}
+    </span>
+  )
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Title + badges */}
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: c }} />
+          <h2 className="text-lg font-bold text-foreground truncate">{session.title || 'Sans titre'}</h2>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: c + '22', color: c }}>{typeLabel}</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            {kind === 'day' ? <CalendarDays className="h-3 w-3" /> : <CalendarRange className="h-3 w-3" />}{kind === 'day' ? 'Journée' : 'Plage'}
+          </span>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : status === 'COMPLETED' ? 'bg-muted text-muted-foreground' : 'bg-sky-500/10 text-sky-700 dark:text-sky-300'}`}>
+            {SESSION_STATUS_DISPLAY[status] ?? status}
+          </span>
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${VISIBILITY_META[vis].cls}`}>
+            {vis === 'VISIBLE' ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}{vis === 'VISIBLE' ? 'Visible' : VISIBILITY_META[vis].badge}
+          </span>
+        </div>
+      </div>
+
+      {/* Key info grid */}
+      <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-muted/10 p-3">
+        <Info icon={Calendar} label="Dates" value={dateText(session)} />
+        <Info icon={MapPin} label="Lieu" value={session.location || '—'} />
+      </div>
+
+      {/* Description */}
+      {session.description ? (
+        <div>
+          <p className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground mb-1">Description</p>
+          <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{session.description}</p>
+        </div>
+      ) : (
+        <p className="text-xs italic text-muted-foreground">Aucune description — ajoutez-en une dans « Modifier » ci-dessous.</p>
+      )}
+
+      {/* Related counts */}
+      <div className="flex flex-wrap gap-1.5">
+        <Stat icon={Users} n={(session.responsibles ?? []).length} label="responsables" />
+        <Stat icon={UserPlus} n={(session.guests ?? []).length} label="invités" />
+        {kind === 'day' ? <Stat icon={Clock} n={acts} label="activités" />
+          : <Stat icon={CalendarDays} n={(session.days ?? []).length} label="journées" />}
+      </div>
+    </div>
   )
 }
 
@@ -2344,6 +2549,48 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
           onBlur={() => { if (location !== (session.location ?? '')) onUpdate({ location }) }} className="h-7 text-[11px] mt-0.5" />
       </div>
 
+      {/* Visibility — who can see this session */}
+      <div>
+        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
+          {visibilityOf(session) === 'VISIBLE' ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}Visibilité
+        </label>
+        <div className="flex gap-1 mt-0.5">
+          {(['VISIBLE', 'HIDDEN', 'PRIVATE'] as const).map((v) => {
+            const m = VISIBILITY_META[v]
+            const active = visibilityOf(session) === v
+            return (
+              <button key={v} type="button" onClick={() => onUpdate({ visibility: v })}
+                className={`flex-1 rounded-md border px-1.5 py-1 text-[10px] font-semibold transition-colors ${
+                  active ? m.cls : 'border-border text-muted-foreground hover:border-emerald-400'}`}>
+                {m.label}
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-1 text-[9px] text-muted-foreground leading-tight">
+          {visibilityOf(session) === 'VISIBLE' ? 'Affichée dans le parcours public aux invités.'
+            : visibilityOf(session) === 'HIDDEN' ? 'Interne — visible des admins uniquement, masquée du parcours public.'
+            : 'Privée — accessible aux seuls utilisateurs explicitement invités.'}
+        </p>
+      </div>
+
+      {/* Capability flags */}
+      <div className="grid grid-cols-1 gap-1.5">
+        <label className={`flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-[11px] ${session.sessionType === 'CANDIDATURE_SUBMISSION' ? 'opacity-50' : 'cursor-pointer hover:bg-accent/40'}`}>
+          <input type="checkbox" className="h-3.5 w-3.5 accent-emerald-500"
+            checked={session.allowActivities !== false}
+            disabled={session.sessionType === 'CANDIDATURE_SUBMISSION'}
+            onChange={(e) => onUpdate({ allowActivities: e.target.checked })} />
+          <span className="flex-1 text-foreground">Autoriser les activités (agenda)</span>
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-2 py-1.5 text-[11px] hover:bg-accent/40">
+          <input type="checkbox" className="h-3.5 w-3.5 accent-emerald-500"
+            checked={!!session.allowOverlap}
+            onChange={(e) => onUpdate({ allowOverlap: e.target.checked })} />
+          <span className="flex-1 text-foreground">Autoriser le chevauchement (sessions parallèles)</span>
+        </label>
+      </div>
+
       <div>
         <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1"><FileText className="h-3 w-3" />Description</label>
         <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
@@ -2351,20 +2598,29 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
           className="mt-0.5 w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] resize-y focus:outline-none focus:ring-2 focus:ring-ring" />
       </div>
 
-      {/* Fonction — wires the phase to a programme feature (form / jury evaluation). */}
+      {/* Type de session — drives behaviour (Candidature / Présélection) AND the
+          badge shown to participants in the front-office. */}
       <div>
         <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
-          <Sparkles className="h-3 w-3" />Fonction
+          <Sparkles className="h-3 w-3" />Type de session
         </label>
         <select
-          value={fonctionOf(session)}
-          onChange={(e) => onUpdate({ sessionType: e.target.value === 'STANDARD' ? 'INCUBATION' : e.target.value })}
+          value={session.sessionType || 'INCUBATION'}
+          onChange={(e) => onUpdate({ sessionType: e.target.value })}
           className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2">
-          <option value="STANDARD">Standard (défaut)</option>
           <option value="CANDIDATURE_SUBMISSION">Candidature — accepter les candidatures</option>
-          <option value="PRESELECTION">Évaluation — jury</option>
+          <option value="PRESELECTION">Présélection — jury</option>
+          <option value="PITCH_DAY">Pitch Day</option>
+          <option value="ONBOARDING">Onboarding</option>
+          <option value="INCUBATION">Incubation / Standard</option>
+          <option value="TRAINING_DAY">Formation</option>
+          <option value="DEMO_DAY">Demo Day</option>
         </select>
-        <p className="mt-1 text-[9px] text-muted-foreground">{FONCTION_META[fonctionOf(session)].hint}</p>
+        <p className="mt-1 text-[9px] text-muted-foreground">
+          {fonctionOf(session) === 'STANDARD'
+            ? 'Type affiché aux participants dans le parcours public.'
+            : FONCTION_META[fonctionOf(session)].hint}
+        </p>
       </div>
 
       {/* ── Avancé (replié) : critères · imbrication · voie · préset ── */}
@@ -2583,10 +2839,16 @@ function DayCanvas({ programmeId, programmeName, session, onChanged }: {
   }
 
   const addActivity = async (startMin?: number) => {
-    const d = await ensureDay()
-    if (!d?.id) return
     const start = startMin != null ? snap(startMin) : 9 * 60
     const end   = Math.min(HOUR_END * 60, start + 60)
+    if (!(await confirmDialog({
+      title: 'Ajouter une activité',
+      message: 'Créer une nouvelle activité dans cette journée ?',
+      lines: [{ label: 'Horaire', value: `${fmtHM(minToTime(start))} – ${fmtHM(minToTime(end))}` }],
+      confirmLabel: 'Créer',
+    }))) return
+    const d = await ensureDay()
+    if (!d?.id) return
     try {
       const r = await sessionsApi.addActivity(programmeId, session.id, d.id, {
         title: 'Nouvelle activité', color: colorOf(session), startTime: minToTime(start), endTime: minToTime(end),

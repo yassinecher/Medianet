@@ -47,7 +47,6 @@ export default function EditProgrammeBuilderPage() {
             type: prog.type ?? 'PUBLIC',
             sectors: prog.sectors ?? [],
             startDate: prog.startDate, endDate: prog.endDate,
-            applicationDeadline: prog.applicationDeadline,
           },
         })
         // Timeline node removed — sessions live on the Parcours tab now.

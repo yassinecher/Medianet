@@ -99,6 +99,28 @@ public class NotificationController {
         return ResponseEntity.ok(notificationService.getByProgramme(programmeId, type, status));
     }
 
+    /**
+     * Session (phase) ids the AUTHENTICATED caller was explicitly invited to.
+     * Used by programme-service to let invited users see HIDDEN/PRIVATE sessions.
+     */
+    @GetMapping("/invitations/my-phases")
+    public ResponseEntity<List<Long>> myInvitedPhases(
+            org.springframework.security.core.Authentication authentication) {
+        String email = authentication != null ? authentication.getName() : null;
+        return ResponseEntity.ok(notificationService.getInvitedPhaseIds(email));
+    }
+
+    /**
+     * Programme ids the current user has been invited to. Lets the front office
+     * reveal a PRIVATE programme only to the people invited to it.
+     */
+    @GetMapping("/invitations/my-programmes")
+    public ResponseEntity<List<Long>> myInvitedProgrammes(
+            org.springframework.security.core.Authentication authentication) {
+        String email = authentication != null ? authentication.getName() : null;
+        return ResponseEntity.ok(notificationService.getInvitedProgrammeIds(email));
+    }
+
     @GetMapping("/invitations/phase/{phaseId}")
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update') or hasAuthority('notifications:read')")
     public ResponseEntity<List<InvitationDto>> getByPhase(@PathVariable Long phaseId) {

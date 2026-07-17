@@ -33,6 +33,7 @@ public class AuthService {
     private final PasswordEncoder          passwordEncoder;
     private final JwtService               jwtService;
     private final NotificationClient       notificationClient;
+    private final AuthEventService         authEventService;
 
     // ── Auth ─────────────────────────────────────────────────────────────────
 
@@ -274,11 +275,13 @@ public class AuthService {
     public UserDto updateRole(Long id, String roleName) {
         User user = findUser(id);
         Set<Role> newRoles = resolveRoles(Set.of(roleName.toUpperCase()));
+        requireAdminForPrivilegedRoleChange(added(user, newRoles), removed(user, newRoles));
         user.getRoles().clear();
         user.getRoles().addAll(newRoles);
         userRepository.save(user);
         ensureProfiles(user, newRoles);
         ensurePorteurOrganization(user);
+        authEventService.permissionsChanged(user.getId());
         return toDto(user);
     }
 
@@ -286,11 +289,13 @@ public class AuthService {
     public UserDto syncRoles(Long id, Set<String> roleNames) {
         User user = findUser(id);
         Set<Role> newRoles = resolveRoles(toUpper(roleNames));
+        requireAdminForPrivilegedRoleChange(added(user, newRoles), removed(user, newRoles));
         user.getRoles().clear();
         user.getRoles().addAll(newRoles);
         userRepository.save(user);
         ensureProfiles(user, newRoles);
         ensurePorteurOrganization(user);
+        authEventService.permissionsChanged(user.getId());
         return toDto(user);
     }
 
@@ -298,10 +303,12 @@ public class AuthService {
     public UserDto assignRoles(Long id, Set<String> roleNames) {
         User user = findUser(id);
         Set<Role> toAdd = resolveRoles(toUpper(roleNames));
+        requireAdminForPrivilegedRoleChange(added(user, toAdd), Set.of());
         user.getRoles().addAll(toAdd);
         userRepository.save(user);
         ensureProfiles(user, toAdd);
         ensurePorteurOrganization(user);
+        authEventService.permissionsChanged(user.getId());
         return toDto(user);
     }
 
@@ -309,18 +316,60 @@ public class AuthService {
     public UserDto removeRoles(Long id, Set<String> roleNames) {
         User user = findUser(id);
         Set<String> upperNames = toUpper(roleNames);
+        Set<Role> toRemove = user.getRoles().stream()
+                .filter(r -> upperNames.contains(r.getName()))
+                .collect(Collectors.toSet());
+        requireAdminForPrivilegedRoleChange(Set.of(), toRemove);
         user.getRoles().removeIf(r -> upperNames.contains(r.getName()));
         userRepository.save(user);
+        authEventService.permissionsChanged(user.getId());
         return toDto(user);
+    }
+
+    /** Roles the user would gain. */
+    private static Set<Role> added(User user, Set<Role> target) {
+        Set<Role> a = new HashSet<>(target);
+        a.removeAll(user.getRoles());
+        return a;
+    }
+
+    /** Roles the user would lose. */
+    private static Set<Role> removed(User user, Set<Role> target) {
+        Set<Role> r = new HashSet<>(user.getRoles());
+        r.removeAll(target);
+        return r;
+    }
+
+    /**
+     * Privileged roles (ADMIN itself, or any role carrying ADMIN-scoped
+     * permissions) can only be given or taken away by an administrator —
+     * a non-admin user manager can neither escalate someone into the
+     * back-office nor demote an administrator.
+     */
+    private void requireAdminForPrivilegedRoleChange(Set<Role> addedRoles, Set<Role> removedRoles) {
+        if (PermissionUtils.callerIsAdmin()) return;
+        List<String> privileged = java.util.stream.Stream.concat(addedRoles.stream(), removedRoles.stream())
+                .filter(r -> "ADMIN".equals(r.getName())
+                        // effective set: inherited admin permissions count too
+                        || r.getEffectivePermissions().stream().anyMatch(Permission::isAdminScope))
+                .map(Role::getName).distinct().sorted().toList();
+        if (!privileged.isEmpty()) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Seul un administrateur peut attribuer ou retirer un rôle disposant de permissions d'administration : "
+                            + String.join(", ", privileged));
+        }
     }
 
     // ── Direct permission management ──────────────────────────────────────────
 
     public UserDto grantPermissions(Long id, Set<String> slugs) {
         User user = findUser(id);
-        Set<Permission> toGrant = resolvePermissions(expandWithRead(slugs));
+        Set<Permission> toGrant = resolvePermissions(PermissionUtils.expandWithRead(slugs));
+        toGrant.removeAll(user.getDirectPermissions()); // only genuinely new grants are checked
+        PermissionUtils.requireAdminToGrantAdminScope(toGrant);
         user.getDirectPermissions().addAll(toGrant);
         userRepository.save(user);
+        authEventService.permissionsChanged(user.getId());
         return toDto(user);
     }
 
@@ -328,36 +377,24 @@ public class AuthService {
         User user = findUser(id);
         user.getDirectPermissions().removeIf(p -> slugs.contains(p.getSlug()));
         userRepository.save(user);
+        authEventService.permissionsChanged(user.getId());
         return toDto(user);
     }
 
     public UserDto syncPermissions(Long id, Set<String> slugs) {
         User user = findUser(id);
+        Set<String> expanded = PermissionUtils.expandWithRead(slugs);
+        Set<Permission> target = expanded.isEmpty() ? new HashSet<>() : resolvePermissions(expanded);
+        // Only the ADDED permissions need the admin-scope check: keeping an
+        // admin-granted permission in place (or dropping it) is allowed.
+        Set<Permission> addedPerms = new HashSet<>(target);
+        addedPerms.removeAll(user.getDirectPermissions());
+        PermissionUtils.requireAdminToGrantAdminScope(addedPerms);
         user.getDirectPermissions().clear();
-        Set<String> expanded = expandWithRead(slugs);
-        if (!expanded.isEmpty()) {
-            user.getDirectPermissions().addAll(resolvePermissions(expanded));
-        }
+        user.getDirectPermissions().addAll(target);
         userRepository.save(user);
+        authEventService.permissionsChanged(user.getId());
         return toDto(user);
-    }
-
-    /** Auto-read rule: any "module:create|update|delete" also implies "module:read". */
-    private Set<String> expandWithRead(Set<String> slugs) {
-        Set<String> out = new HashSet<>();
-        if (slugs == null) return out;
-        for (String s : slugs) {
-            if (s == null || s.isBlank()) continue;
-            out.add(s);
-            int i = s.indexOf(':');
-            if (i > 0) {
-                String action = s.substring(i + 1);
-                if (action.equals("create") || action.equals("update") || action.equals("delete")) {
-                    out.add(s.substring(0, i) + ":read");
-                }
-            }
-        }
-        return out;
     }
 
     // ── Role-profile management ───────────────────────────────────────────────
@@ -440,21 +477,67 @@ public class AuthService {
         User user = findUser(id);
         user.setActive(!user.isActive());
         userRepository.save(user);
+        if (user.isActive()) {
+            authEventService.permissionsChanged(user.getId());
+        } else {
+            authEventService.accountDisabled(user.getId());
+        }
         return toDto(user);
     }
 
-    /** Return all permissions as {slug → displayName} map */
-    public Map<String, String> getPermissionCatalog() {
-        return permissionRepository.findAll().stream()
-                .collect(Collectors.toMap(Permission::getSlug, Permission::getDisplayName,
-                        (a, b) -> a, java.util.LinkedHashMap::new));
+    /**
+     * Re-issue a JWT from current DB state — used by live sessions after a
+     * {@code permissions-changed} event so new roles/permissions take effect
+     * without re-login.
+     */
+    @Transactional(readOnly = true)
+    public AuthResponse refreshToken(Long userId) {
+        User user = findUser(userId);
+        if (!user.isActive()) throw new BadCredentialsException("Account is disabled");
+        return buildAuthResponse(jwtService.generateToken(user), user);
     }
 
-    /** Return all roles as {name → displayName} map */
-    public Map<String, String> getRoleCatalog() {
-        return roleRepository.findAll().stream()
-                .collect(Collectors.toMap(Role::getName, Role::getDisplayName,
-                        (a, b) -> a, java.util.LinkedHashMap::new));
+    /**
+     * Grouped permission catalog: modules in ModuleCatalog order (plateforme
+     * first, administration after) with labels, descriptions and scopes.
+     */
+    @Transactional(readOnly = true)
+    public List<PermissionCatalogDto> getPermissionCatalog() {
+        Map<String, List<Permission>> byModule = permissionRepository.findAll().stream()
+                .collect(Collectors.groupingBy(p -> p.getSlug().split(":")[0]));
+
+        List<PermissionCatalogDto> out = new ArrayList<>();
+        for (ModuleCatalog.ModuleDef mod : ModuleCatalog.MODULES) {
+            List<Permission> perms = byModule.get(mod.key());
+            if (perms == null || perms.isEmpty()) continue;
+            List<PermissionCatalogDto.Entry> entries = perms.stream()
+                    .sorted(Comparator.comparing(p -> actionOrder(p.getSlug())))
+                    .map(p -> PermissionCatalogDto.Entry.builder()
+                            .slug(p.getSlug())
+                            .action(p.getSlug().substring(p.getSlug().indexOf(':') + 1))
+                            .label(p.getDisplayName())
+                            .scope(p.getScope() == null ? mod.scope() : p.getScope())
+                            .build())
+                    .collect(Collectors.toList());
+            out.add(PermissionCatalogDto.builder()
+                    .key(mod.key())
+                    .label(mod.label())
+                    .description(mod.description())
+                    .scope(mod.scope())
+                    .permissions(entries)
+                    .build());
+        }
+        return out;
+    }
+
+    /** read < create < update < delete < specials (alphabetical). */
+    private static String actionOrder(String slug) {
+        String action = slug.substring(slug.indexOf(':') + 1);
+        return switch (action) {
+            case "read" -> "0"; case "create" -> "1";
+            case "update" -> "2"; case "delete" -> "3";
+            default -> "4" + action;
+        };
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

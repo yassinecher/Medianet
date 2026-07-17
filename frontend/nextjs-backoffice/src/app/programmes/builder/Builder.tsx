@@ -61,7 +61,7 @@ type NodeKind =
   | 'objectives' | 'benefits' | 'timeline'
   | 'criterion' | 'session'
 
-interface ProgrammeData   extends Record<string, unknown> { kind: 'programme'; title: string; status: 'DRAFT'|'OPEN'|'IN_PROGRESS'|'EVALUATION'|'CLOSED'; type: 'PUBLIC'|'PRIVATE'; sectors: string[]; startDate?: string; endDate?: string; applicationDeadline?: string }
+interface ProgrammeData   extends Record<string, unknown> { kind: 'programme'; title: string; status: 'DRAFT'|'OPEN'|'IN_PROGRESS'|'EVALUATION'|'CLOSED'; type: 'PUBLIC'|'PRIVATE'; sectors: string[]; startDate?: string; endDate?: string }
 interface DescriptionData extends Record<string, unknown> { kind: 'description'; description: string }
 interface VisualData      extends Record<string, unknown> { kind: 'visual'; tagline: string; logoUrl: string; bannerImageUrl: string; location: string; applicationUrl: string }
 interface FormTemplateData extends Record<string, unknown> { kind: 'formTemplate'; formTemplate: 'STANDARD'|'MINIMAL'|'FOODSTART'|'TECH'|'AGRITECH'; customFormSchema: string }
@@ -573,7 +573,6 @@ function BuilderInner(props: BuilderProps = {}) {
 
   const handleSave = async () => {
     const prog = nodes.find((n): n is Node<ProgrammeData, 'programme'> => n.data.kind === 'programme')
-    if (!prog || !prog.data.title.trim()) { toast.error('Programme — un titre est requis'); return }
 
     const desc = nodes.find((n): n is Node<DescriptionData, 'description'> => n.data.kind === 'description')
     const vis  = nodes.find((n): n is Node<VisualData,      'visual'>      => n.data.kind === 'visual')
@@ -581,6 +580,35 @@ function BuilderInner(props: BuilderProps = {}) {
     const st   = nodes.find((n): n is Node<StatsData,       'stats'>       => n.data.kind === 'stats')
     const obj  = nodes.find((n): n is Node<ObjectivesData,  'objectives'>  => n.data.kind === 'objectives')
     const ben  = nodes.find((n): n is Node<BenefitsData,    'benefits'>    => n.data.kind === 'benefits')
+
+    // ── Required-information gate ────────────────────────────────────────────
+    // Before creating a programme, the essentials + a candidature form must be
+    // set. Collect everything missing and show one clear, actionable message.
+    // (Skipped in edit mode — an existing programme already cleared this.)
+    if (!props.existingProgrammeId) {
+      const hasCustomForm = !!ft?.data.customFormSchema && ft.data.customFormSchema.trim().length > 2
+      const missing: string[] = []
+      if (!prog || !prog.data.title.trim())                       missing.push('un titre (nœud Programme)')
+      if (!prog?.data.startDate)                                  missing.push('une date de début (nœud Programme)')
+      if (!prog?.data.endDate)                                    missing.push('une date de fin (nœud Programme)')
+      if (prog?.data.startDate && prog?.data.endDate && prog.data.endDate < prog.data.startDate)
+        missing.push('une date de fin postérieure à la date de début')
+      if (!prog?.data.sectors || prog.data.sectors.length === 0)  missing.push('au moins un secteur (nœud Programme)')
+      if (!desc?.data.description?.trim())                         missing.push('une description (nœud Description)')
+      if (!ft)                                                     missing.push('un formulaire de candidature (ajoutez le nœud Formulaire)')
+      else if (!ft.data.formTemplate && !hasCustomForm)           missing.push('le choix du formulaire (modèle ou formulaire personnalisé)')
+      if (missing.length > 0) {
+        toast.error('Informations requises avant la création :\n• ' + missing.join('\n• '),
+          { duration: 6000, style: { maxWidth: 460, whiteSpace: 'pre-line' } })
+        if (!prog?.data.title.trim() || !prog?.data.sectors?.length || !prog?.data.startDate || !prog?.data.endDate) setSelectedId('programme')
+        else if (!desc?.data.description?.trim()) { const d = nodes.find(n => n.data.kind === 'description'); if (d) setSelectedId(d.id) }
+        else if (ft) setSelectedId(ft.id)
+        return
+      }
+    } else if (!prog || !prog.data.title.trim()) {
+      toast.error('Programme — un titre est requis'); return
+    }
+    if (!prog) return // (unreachable — gates above guarantee it; narrows the type)
 
     setSaving(true)
     try {
@@ -595,7 +623,6 @@ function BuilderInner(props: BuilderProps = {}) {
       }
       if (prog.data.startDate)            payload.startDate = prog.data.startDate
       if (prog.data.endDate)              payload.endDate = prog.data.endDate
-      if (prog.data.applicationDeadline)  payload.applicationDeadline = prog.data.applicationDeadline
       if (desc?.data.description)         payload.description = desc.data.description
       if (vis) {
         if (vis.data.tagline)             payload.tagline = vis.data.tagline
@@ -891,10 +918,12 @@ function Inspector({ node, allCriteria, allSessions, onChange, onSelectNode, onD
 
 // ── Individual inspectors ───────────────────────────────────────────────────
 
-function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+function Field({ label, children, hint, required }: { label: string; children: React.ReactNode; hint?: string; required?: boolean }) {
   return (
     <div>
-      <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1 block">{label}</label>
+      <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1 block">
+        {label}{required && <span className="ml-0.5 text-red-500">*</span>}
+      </label>
       {children}
       {hint && <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>}
     </div>
@@ -926,12 +955,9 @@ function ProgrammeInspector({ d, onChange }: { d: ProgrammeData; onChange: (p: P
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Date début"><Input type="date" value={d.startDate ?? ''} onChange={(e) => onChange({ startDate: e.target.value })} /></Field>
-        <Field label="Date fin"><Input type="date" value={d.endDate ?? ''} onChange={(e) => onChange({ endDate: e.target.value })} /></Field>
+        <Field label="Date début" required><Input type="date" value={d.startDate ?? ''} onChange={(e) => onChange({ startDate: e.target.value })} /></Field>
+        <Field label="Date fin" required><Input type="date" value={d.endDate ?? ''} onChange={(e) => onChange({ endDate: e.target.value })} /></Field>
       </div>
-      <Field label="Clôture des candidatures">
-        <Input type="date" value={d.applicationDeadline ?? ''} onChange={(e) => onChange({ applicationDeadline: e.target.value })} />
-      </Field>
       <Field label={`Secteurs (${d.sectors.length})`}>
         <div className="flex flex-wrap gap-1">
           {SECTORS.map((s) => (

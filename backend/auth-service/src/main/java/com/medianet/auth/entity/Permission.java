@@ -31,8 +31,23 @@ public class Permission {
 
     private String description;
 
-    /** Grouping category: users | sessions | candidatures | reports */
+    /** Grouping module key: users | sessions | candidatures | … */
     private String category;
+
+    /**
+     * GENERAL = capacité plateforme (attribuable à tout utilisateur) ;
+     * ADMIN   = permission d'administration (accès back-office) — seuls les
+     *           administrateurs peuvent l'attribuer.
+     * columnDefinition carries a SQL default so ddl-auto:update can add the
+     * column to the existing populated table.
+     */
+    @Column(nullable = false, columnDefinition = "varchar(16) not null default 'GENERAL'")
+    @Builder.Default
+    private String scope = "GENERAL";
+
+    public boolean isAdminScope() {
+        return "ADMIN".equalsIgnoreCase(scope);
+    }
 
     @ManyToMany(mappedBy = "permissions", fetch = FetchType.LAZY)
     @Builder.Default

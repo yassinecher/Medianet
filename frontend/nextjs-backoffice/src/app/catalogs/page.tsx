@@ -22,6 +22,8 @@ const TABS = [
     hint: 'Catégories proposées quand un porteur crée son organisation (Startup, Incubateur…).' },
   { key: CATALOG_CATEGORIES.PROGRAMME_SECTOR, label: 'Secteurs de programme',
     hint: 'Secteurs cochés dans la fiche programme (Tech, Fintech, Santé…).' },
+  { key: CATALOG_CATEGORIES.SESSION_TYPE, label: 'Types de session',
+    hint: 'Types proposés pour les sessions du Parcours (Pitch Day, Demo Day, Hackathon…). Les types intégrés gardent leur comportement; les types ajoutés ici sont génériques.' },
 ] as const
 
 export default function CatalogsPage() {
@@ -72,8 +74,8 @@ function CatalogEditor({ category, hint }: { category: string; hint: string }) {
   const add = async () => {
     const label = newLabel.trim()
     if (!label) return
-    // Org types use an enum-style value (UPPER_SNAKE); sectors use the label as value.
-    const value = category === 'organization_type'
+    // Org & session types use an enum-style value (UPPER_SNAKE); sectors use the label.
+    const value = (category === 'organization_type' || category === 'session_type')
       ? label.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '')
       : label
     setBusy(true)

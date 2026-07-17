@@ -64,6 +64,120 @@ public class AdminAiController {
         return ResponseEntity.ok(service.scoreCandidature(candidatureId, token));
     }
 
+    /**
+     * Analyse a porteur's pitch from its transcript — scores delivery/content,
+     * lists strengths & weaknesses, and gives concrete advice. Any authenticated
+     * user: the submission is fetched with the caller's token, so ownership is
+     * enforced downstream (owner porteur or admin only).
+     */
+    @PostMapping("/pitch/analyze")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Map<String, Object>> analyzePitch(
+            @RequestBody Map<String, Object> body, HttpServletRequest http) {
+        Long submissionId = body.get("submissionId") == null ? null
+                : Long.valueOf(String.valueOf(body.get("submissionId")));
+        if (submissionId == null) throw new IllegalArgumentException("submissionId requis");
+        String token = (String) http.getAttribute("token");
+        return ResponseEntity.ok(service.analyzePitch(submissionId, token));
+    }
+
+    /**
+     * Live variant — streams the REAL pipeline stages (transcription, élocution,
+     * vision, criteria, LLM) as they complete, then a final `done` event with the
+     * full analysis. Drives the "AI thinking" panel.
+     */
+    @PostMapping(value = "/pitch/analyze/stream",
+                 produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter analyzePitchStream(
+            @RequestBody Map<String, Object> body, HttpServletRequest http) {
+        Long submissionId = Long.valueOf(String.valueOf(body.get("submissionId")));
+        String token = (String) http.getAttribute("token");
+        // No servlet timeout — Whisper + LLM can run for minutes.
+        var emitter = new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(0L);
+
+        // Track the step in flight so the heartbeat can report elapsed/remaining.
+        var currentStep  = new java.util.concurrent.atomic.AtomicReference<String>("submission");
+        var currentLabel = new java.util.concurrent.atomic.AtomicReference<String>("Démarrage…");
+        var currentEta   = new java.util.concurrent.atomic.AtomicReference<Double>(null);
+        var stepStart    = new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
+        var alive        = new java.util.concurrent.atomic.AtomicBoolean(true);
+
+        /*
+         * Heartbeat every 3s. Two jobs:
+         *  1. Keeps the SSE connection warm — long silent stages (Whisper, the LLM)
+         *     were being dropped by the gateway with PrematureCloseException.
+         *  2. Carries a live countdown built from REAL measured stage durations.
+         */
+        var heartbeat = HEARTBEAT_POOL.scheduleAtFixedRate(() -> {
+            if (!alive.get()) return;
+            try {
+                double elapsed = (System.currentTimeMillis() - stepStart.get()) / 1000.0;
+                Double eta = currentEta.get();
+                Map<String, Object> p = new java.util.LinkedHashMap<>();
+                p.put("step", currentStep.get());
+                p.put("label", currentLabel.get());
+                p.put("elapsedSec", Math.round(elapsed * 10) / 10.0);
+                if (eta != null) {
+                    p.put("etaSec", eta);
+                    p.put("remainingSec", Math.max(0, Math.round((eta - elapsed) * 10) / 10.0));
+                    p.put("percent", (int) Math.min(99, Math.round((elapsed / Math.max(eta, 0.1)) * 100)));
+                }
+                emitter.send(org.springframework.web.servlet.mvc.method.annotation
+                        .SseEmitter.event().name("progress").data(p));
+            } catch (Exception e) {
+                alive.set(false); // client disconnected
+            }
+        }, 3, 3, java.util.concurrent.TimeUnit.SECONDS);
+
+        Runnable stop = () -> { alive.set(false); heartbeat.cancel(true); };
+        emitter.onCompletion(stop);
+        emitter.onError(e -> stop.run());
+        emitter.onTimeout(stop);
+
+        CHAT_STREAM_POOL.submit(() -> {
+            try {
+                Map<String, Object> result = service.analyzePitch(submissionId, token, s -> {
+                    // A new step began → reset the countdown baseline.
+                    if ("running".equals(s.get("status"))) {
+                        currentStep.set(String.valueOf(s.get("step")));
+                        currentLabel.set(String.valueOf(s.get("label")));
+                        currentEta.set(s.get("etaSec") == null ? null
+                                : Double.valueOf(String.valueOf(s.get("etaSec"))));
+                        stepStart.set(System.currentTimeMillis());
+                    }
+                    try { emitter.send(org.springframework.web.servlet.mvc.method.annotation
+                            .SseEmitter.event().name("stage").data(s)); }
+                    catch (Exception ignored) { alive.set(false); }
+                });
+                stop.run();  // silence the heartbeat before the final frame
+                emitter.send(org.springframework.web.servlet.mvc.method.annotation
+                        .SseEmitter.event().name("done").data(result));
+                // Give the final (large) frame time to flush through the gateway
+                // before closing — an immediate complete() races the write and the
+                // browser sees an aborted stream.
+                try { Thread.sleep(250); } catch (InterruptedException ignored) {}
+                emitter.complete();
+            } catch (Exception ex) {
+                try {
+                    emitter.send(org.springframework.web.servlet.mvc.method.annotation
+                            .SseEmitter.event().name("error").data(Map.of("error", String.valueOf(ex.getMessage()))));
+                } catch (Exception ignored) {}
+                stop.run();
+                emitter.complete();
+            }
+        });
+        return emitter;
+    }
+
+    /** Keeps SSE streams warm + emits progress countdowns during long stages. */
+    private static final java.util.concurrent.ScheduledExecutorService HEARTBEAT_POOL =
+            java.util.concurrent.Executors.newScheduledThreadPool(2, r -> {
+                Thread t = new Thread(r, "pitch-sse-heartbeat");
+                t.setDaemon(true);
+                return t;
+            });
+
     /** Dedicated executor for streaming chats — the agent loop can run for minutes. */
     private static final java.util.concurrent.ExecutorService CHAT_STREAM_POOL =
             java.util.concurrent.Executors.newCachedThreadPool(r -> {
@@ -277,6 +391,24 @@ public class AdminAiController {
         String brief   = body.getOrDefault("brief", "");
         String locale  = body.getOrDefault("locale", "fr");
         return ResponseEntity.ok(service.suggestLandingContent(section, brief, locale));
+    }
+
+    /**
+     * Generate or improve a single form field with the LLM. Powers the
+     * « générer / améliorer avec l'IA » buttons on the programme wizard.
+     * Body: {@code { field, mode: "generate"|"enhance", current?, context?, locale? }}.
+     * Returns {@code { value }} (a string) or {@code { values: [...] }} for list fields.
+     */
+    @PostMapping("/field-suggest")
+    public ResponseEntity<Map<String, Object>> fieldSuggest(@RequestBody Map<String, String> body) {
+        String field   = body.getOrDefault("field", "").trim();
+        String mode     = body.getOrDefault("mode", "generate").trim().toLowerCase();
+        String current  = body.getOrDefault("current", "");
+        String context  = body.getOrDefault("context", "");
+        String locale   = body.getOrDefault("locale", "fr");
+        if (field.isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "field requis"));
+        return ResponseEntity.ok(service.suggestField(field, mode, current, context, locale));
     }
 
     /**

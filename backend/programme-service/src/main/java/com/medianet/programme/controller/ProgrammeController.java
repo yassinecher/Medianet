@@ -23,12 +23,25 @@ public class ProgrammeController {
     /**
      * List programmes — public endpoint.
      * Supports optional ?status=OPEN&type=PUBLIC filters.
+     * <p>{@code publicOnly=true} (used by the front-office) hides programmes that
+     * should not be visible to porteurs: DRAFT, ARCHIVED and CANCELLED.
      */
     @GetMapping
     public ResponseEntity<List<ProgrammeDto>> getAll(
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String type) {
-        return ResponseEntity.ok(programmeService.getAllProgrammes(status, type));
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false, defaultValue = "false") boolean publicOnly) {
+        return ResponseEntity.ok(programmeService.getAllProgrammes(status, type, publicOnly));
+    }
+
+    /**
+     * Private (and other) programmes the current user was invited to — the only
+     * way a porteur discovers an invitation-only programme. Ids are resolved from
+     * the caller's own token, so nothing here can be spoofed.
+     */
+    @GetMapping("/invited")
+    public ResponseEntity<List<ProgrammeDto>> getInvited() {
+        return ResponseEntity.ok(programmeService.getMyInvitedProgrammes());
     }
 
     /** Get a single programme with its criteria and phases — public. */

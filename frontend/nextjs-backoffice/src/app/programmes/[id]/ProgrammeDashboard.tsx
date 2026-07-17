@@ -104,7 +104,6 @@ export function ProgrammeDashboard({
   // ── Missing-fields checklist ─────────────────────────────────────────────
   const todos: { label: string; tab?: 'info' | 'phases' | 'criteria' }[] = []
   if (!programme?.startDate || !programme?.endDate) todos.push({ label: 'Définir les dates du programme', tab: 'info' })
-  if (!programme?.applicationDeadline) todos.push({ label: 'Définir la date limite de candidature', tab: 'info' })
   if (criteria.length === 0) todos.push({ label: 'Ajouter des critères d’évaluation', tab: 'criteria' })
   if (topSessions.length === 0) todos.push({ label: 'Créer des sessions dans le Parcours', tab: 'phases' })
   const undated = topSessions.filter(s => !s.startDate).length
@@ -119,7 +118,6 @@ export function ProgrammeDashboard({
     const fn = currentStage.sessionType
     if (fn === 'CANDIDATURE_SUBMISSION') {
       nextActions.push({ text: `Phase de candidature « ${currentStage.title} » — ${total} candidature(s) reçue(s).`, cta: { label: 'Voir le formulaire', tab: 'info' } })
-      if (!programme?.applicationDeadline) nextActions.push({ text: 'Aucune date limite — les candidats ne voient pas d’échéance.', cta: { label: 'Définir', tab: 'info' } })
     } else if (fn === 'PRESELECTION') {
       nextActions.push({ text: `Présélection « ${currentStage.title} » — ${evaluatedCount}/${total} candidature(s) évaluée(s).`, cta: { label: 'Assigner / évaluer', tab: 'phases' } })
       nextActions.push({ text: `${total - accepted} candidature(s) en attente de décision (accepter/refuser).`, cta: { label: 'Ouvrir', tab: 'phases' } })

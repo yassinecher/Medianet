@@ -9,7 +9,7 @@ import {
   Sparkles, Trophy, GraduationCap, Lightbulb
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { programmesApi } from '@/lib/api'
+import { programmesApi, candidaturesApi } from '@/lib/api'
 import { useUser, useAuthStore } from '@/store/auth.store'
 import { Navbar } from '@/components/layout/Navbar'
 import { AppShell } from '@/components/layout/AppShell'
@@ -25,6 +25,22 @@ const statusLabel: Record<string, string> = {
   OPEN: 'Ouvert', CLOSED: 'Fermé', DRAFT: 'Brouillon', ARCHIVED: 'Archivé',
   IN_PROGRESS: 'En cours', EVALUATION: 'Évaluation', CANCELLED: 'Annulé',
 }
+
+// Session type → human label + tone (shown as a badge on each session).
+const SESSION_TYPE_LABEL: Record<string, string> = {
+  CANDIDATURE_SUBMISSION: 'Candidature', PRESELECTION: 'Présélection', PITCH_DAY: 'Pitch Day',
+  ONBOARDING: 'Onboarding', INCUBATION: 'Incubation', DEMO_DAY: 'Demo Day', TRAINING_DAY: 'Formation',
+}
+const SESSION_TYPE_TONE: Record<string, string> = {
+  CANDIDATURE_SUBMISSION: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+  PRESELECTION: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  PITCH_DAY: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+  DEMO_DAY: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  ONBOARDING: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  TRAINING_DAY: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+  INCUBATION: 'bg-brand-500/10 text-brand-600 dark:text-brand-400',
+}
+const sessionStatusLabel: Record<string, string> = { UPCOMING: 'À venir', ACTIVE: 'En cours', COMPLETED: 'Terminée' }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -68,6 +84,8 @@ export default function ProgrammeDetailPage() {
   const [criteria, setCriteria] = useState<Criteria[]>([])
   const [partners, setPartners] = useState<Partner[]>([])
   const [loading, setLoading] = useState(true)
+  /** The porteur's own candidature status on this programme, if any. */
+  const [myApplication, setMyApplication] = useState<string | null>(null)
 
   useEffect(() => {
     const pid = Number(id)
@@ -86,6 +104,18 @@ export default function ProgrammeDetailPage() {
       .catch(() => toast.error('Programme introuvable'))
       .finally(() => setLoading(false))
   }, [id])
+
+  // Has the logged-in porteur already applied to this programme?
+  useEffect(() => {
+    if (!user) { setMyApplication(null); return }
+    candidaturesApi.myList()
+      .then((r) => {
+        const list: any[] = r.data?.content ?? r.data ?? []
+        const mine = list.find((c) => c.programmeId === Number(id))
+        setMyApplication(mine?.status ?? null)
+      })
+      .catch(() => {})
+  }, [id, user])
 
   const handleApply = () => {
     if (!user) { router.push('/login'); return }
@@ -121,9 +151,41 @@ export default function ProgrammeDetailPage() {
 
   if (!programme) return null
 
+  // Front-office visitors must not see draft / archived / cancelled programmes.
+  if (['DRAFT', 'ARCHIVED', 'CANCELLED'].includes(programme.status)) {
+    return wrap(
+      <main className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-4 text-center">
+        <BookOpen className="mb-3 h-10 w-10 text-muted-foreground/40" />
+        <h1 className="text-xl font-bold text-foreground">Programme non disponible</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Ce programme n&apos;est pas ouvert au public pour le moment.
+        </p>
+        <Link href="/programmes" className="mt-4">
+          <Button variant="outline" className="gap-1.5"><ArrowLeft className="h-4 w-4" />Voir les programmes</Button>
+        </Link>
+      </main>,
+    )
+  }
+
   // Accepting candidatures = inside the candidature-session window (computed by the API);
   // fall back to the raw OPEN status for older payloads.
   const isOpen = programme.acceptingApplications ?? (programme.status === 'OPEN')
+  const alreadyApplied = !!myApplication
+  const APPLIED_LABEL: Record<string, string> = {
+    PENDING: 'Candidature soumise', UNDER_EVALUATION: 'En évaluation',
+    ACCEPTED: 'Candidature acceptée ✓', REJECTED: 'Candidature refusée',
+  }
+
+  /** Shown in the apply slots when the porteur has already candidated. */
+  const AppliedChip = ({ light }: { light?: boolean }) => (
+    <Link href="/candidatures" className="inline-flex">
+      <span className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-bold ${
+        light ? 'bg-white/20 text-white backdrop-blur-sm' : 'border border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-300'
+      }`}>
+        <CheckCircle2 className="h-4 w-4" />{APPLIED_LABEL[myApplication!] ?? 'Déjà candidaté'}
+      </span>
+    </Link>
+  )
 
   return wrap(
     <>
@@ -172,7 +234,9 @@ export default function ProgrammeDetailPage() {
                     <p className="mt-1 text-lg text-white/80 font-medium">{programme.tagline}</p>
                   )}
                 </div>
-                {isOpen && (
+                {alreadyApplied ? (
+                  <div className="hidden sm:block shrink-0"><AppliedChip light /></div>
+                ) : isOpen && (
                   <div className="hidden sm:block shrink-0">
                     <Button size="lg" onClick={handleApply}
                       className="bg-white text-brand-700 hover:bg-white/90 font-bold shadow-xl gap-2">
@@ -188,7 +252,9 @@ export default function ProgrammeDetailPage() {
       </div>
 
       {/* Mobile apply CTA */}
-      {isOpen && (
+      {alreadyApplied ? (
+        <div className="sm:hidden px-4 py-3 bg-brand-600 flex justify-center"><AppliedChip light /></div>
+      ) : isOpen && (
         <div className="sm:hidden px-4 py-3 bg-brand-600">
           <Button className="w-full bg-white text-brand-700 hover:bg-white/90 font-bold" onClick={handleApply}>
             <Sparkles className="h-4 w-4" />
@@ -302,16 +368,31 @@ export default function ProgrammeDetailPage() {
                       {/* Content */}
                       <div className={`pb-6 flex-1 ${i < phases.length - 1 ? '' : ''}`}>
                         <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                          <p className="font-semibold text-foreground">{ph.title ?? ph.name}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-foreground">{ph.title ?? ph.name}</p>
+                            {ph.sessionType && (
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${SESSION_TYPE_TONE[ph.sessionType] ?? 'bg-muted text-muted-foreground'}`}>
+                                {SESSION_TYPE_LABEL[ph.sessionType] ?? ph.sessionType}
+                              </span>
+                            )}
+                            {ph.status && ph.status !== 'UPCOMING' && (
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ph.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
+                                {sessionStatusLabel[ph.status] ?? ph.status}
+                              </span>
+                            )}
+                          </div>
                           {ph.description && <p className="mt-1 text-sm text-muted-foreground">{ph.description}</p>}
-                          {(ph.startDate || ph.endDate) && (
-                            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Calendar className="h-3 w-3" />
-                              {ph.startDate ? formatDate(ph.startDate) : ''}
-                              {ph.startDate && ph.endDate && ' → '}
-                              {ph.endDate ? formatDate(ph.endDate) : ''}
-                            </p>
-                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            {(ph.startDate || ph.endDate) && (
+                              <span className="flex items-center gap-1.5">
+                                <Calendar className="h-3 w-3" />
+                                {ph.startDate ? formatDate(ph.startDate) : ''}
+                                {ph.startDate && ph.endDate && ' → '}
+                                {ph.endDate ? formatDate(ph.endDate) : ''}
+                              </span>
+                            )}
+                            {ph.location && <span className="flex items-center gap-1.5"><MapPin className="h-3 w-3" />{ph.location}</span>}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -407,15 +488,6 @@ export default function ProgrammeDetailPage() {
                       </div>
                     </div>
                   )}
-                  {programme.applicationDeadline && (
-                    <div className="flex items-start gap-3 text-sm">
-                      <Clock className="h-4 w-4 mt-0.5 shrink-0 text-amber-500" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Clôture des candidatures</p>
-                        <p className="font-bold text-foreground">{formatDate(programme.applicationDeadline)}</p>
-                      </div>
-                    </div>
-                  )}
                   {(programme.maxApplications ?? programme.maxParticipants) && (
                     <div className="flex items-start gap-3 text-sm">
                       <Users className="h-4 w-4 mt-0.5 shrink-0 text-brand-500" />
@@ -436,7 +508,16 @@ export default function ProgrammeDetailPage() {
                   )}
                 </div>
 
-                {isOpen && (
+                {alreadyApplied && (
+                  <div className="mt-6 space-y-2 text-center">
+                    <AppliedChip />
+                    <p className="text-xs text-muted-foreground">
+                      Vous avez déjà candidaté à ce programme.{' '}
+                      <Link href="/candidatures" className="text-brand-600 hover:underline">Voir ma candidature</Link>
+                    </p>
+                  </div>
+                )}
+                {!alreadyApplied && isOpen && (
                   <div className="mt-6 space-y-3">
                     <Button className="w-full gap-2 bg-gradient-to-r from-brand-600 to-purple-600 text-white font-bold shadow-lg hover:shadow-brand-500/30 hover:shadow-xl transition-all"
                       size="lg" onClick={handleApply}>

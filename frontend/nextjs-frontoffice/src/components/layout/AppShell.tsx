@@ -20,10 +20,11 @@ import type { User } from '@/types'
 import {
   Home, FileText, CheckSquare, FolderKanban, LogOut, ChevronLeft, ChevronRight,
   Briefcase, Sparkles, GraduationCap, Menu, X, ChevronDown, Bell, User as UserIcon,
-  Building2,
+  Building2, Presentation,
 } from 'lucide-react'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { useAuthStore, useUser, useFrontofficeRoles, usePerms, type FrontofficeRole } from '@/store/auth.store'
+import { startAuthEvents } from '@/lib/authEvents'
 import { cn, getInitials } from '@/lib/utils'
 
 const ROLE_META: Record<FrontofficeRole, { label: string; icon: any; color: string }> = {
@@ -36,28 +37,34 @@ type NavItem = {
   label: string
   href: string
   icon: any
-  /** Visible if the user holds ANY of these roles… */
+  /** Required: the user must hold at least ONE of these roles. */
   roles?: FrontofficeRole[]
-  /** …OR holds this permission slug. No constraint → always visible. */
+  /** Required: the user must hold this permission. */
   perm?: string
 }
 
 const NAV: NavItem[] = [
-  { label: 'Tableau de bord',  href: '/dashboard',     icon: Home },
-  { label: 'Programmes',       href: '/programmes',    icon: FolderKanban, perm: 'programmes:read' },
-  { label: 'Mes candidatures', href: '/candidatures',  icon: FileText,     perm: 'candidatures:read' },
+  // The dashboard is role-dependent: it only exists for front-office roles.
+  { label: 'Tableau de bord',  href: '/dashboard',     icon: Home,          roles: ['PORTEUR', 'MENTOR', 'JURY'] },
+  { label: 'Programmes',       href: '/programmes',    icon: FolderKanban,  perm: 'programmes:read' },
+  // "Mes candidatures" is the porteur experience — a jury/mentor holding
+  // candidatures:read (to consult dossiers) must NOT see it.
+  { label: 'Mes candidatures', href: '/candidatures',  icon: FileText,      roles: ['PORTEUR'], perm: 'candidatures:read' },
+  { label: 'Mes présentations', href: '/presentations', icon: Presentation,  roles: ['PORTEUR'] },
   { label: 'Mes évaluations',  href: '/evaluations',   icon: GraduationCap, roles: ['JURY'], perm: 'candidatures:evaluate' },
-  { label: 'Mes organisations', href: '/organizations', icon: Building2,   perm: 'organizations:read' },
-  { label: 'Mes tâches',       href: '/tasks',         icon: CheckSquare,  perm: 'tasks:read' },
+  { label: 'Mes organisations', href: '/organizations', icon: Building2,    perm: 'organizations:read' },
+  { label: 'Mes tâches',       href: '/tasks',         icon: CheckSquare,   perm: 'tasks:read' },
 ]
 
-/** A nav item shows when it has no constraint, or the user holds one of its
- *  roles, or the user holds its permission — the union of role + permission. */
+/**
+ * Constraints are cumulative (AND): an item requiring a role AND a permission
+ * only shows when the user satisfies BOTH. Losing either one — e.g. an admin
+ * revokes the permission while the user is logged in — removes the item live.
+ */
 function navVisible(item: NavItem, roles: FrontofficeRole[], perms: string[]): boolean {
-  if (!item.roles && !item.perm) return true
-  if (item.roles?.some((r) => roles.includes(r))) return true
-  if (item.perm && perms.includes(item.perm)) return true
-  return false
+  if (item.roles && !item.roles.some((r) => roles.includes(r))) return false
+  if (item.perm && !perms.includes(item.perm)) return false
+  return true
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -76,6 +83,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const stored = typeof window !== 'undefined' ? localStorage.getItem('frontoffice.sidebar.collapsed') : null
     if (stored === '1') setCollapsed(true)
   }, [])
+  // Live permission updates: refreshes the JWT (and this layout) whenever an
+  // admin changes this user's roles/permissions; logs out if disabled.
+  useEffect(() => { startAuthEvents() }, [])
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('frontoffice.sidebar.collapsed', collapsed ? '1' : '0')
@@ -116,7 +126,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               return (
                 <li key={item.href}>
                   <Link href={item.href}
-                    title={collapsed ? item.label : undefined}
+                    title={collapsed ? item.label : [
+                      item.roles ? `Rôle : ${item.roles.join(' ou ')}` : null,
+                      item.perm ? `Permission : ${item.perm}` : null,
+                    ].filter(Boolean).join(' · ') || undefined}
                     className={cn(
                       'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                       active

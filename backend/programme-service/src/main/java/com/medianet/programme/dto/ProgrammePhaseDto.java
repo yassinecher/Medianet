@@ -30,6 +30,20 @@ public class ProgrammePhaseDto {
      *  ONBOARDING, INCUBATION, DEMO_DAY, TRAINING_DAY. */
     private String          sessionType;
 
+    /** Visibility — VISIBLE | HIDDEN | PRIVATE. */
+    private String          visibility;
+    /** Derived: true only when visibility == VISIBLE. */
+    private Boolean         isPublic;
+
+    /** Presentation day: porteurs may upload a pitch video for AI analysis. */
+    private Boolean         collectPitchVideos;
+    /** Deadline for pitch-video uploads (optional). */
+    private java.time.LocalDate pitchDeadline;
+    /** Whether the session may carry an activity agenda. */
+    private Boolean         allowActivities;
+    /** Whether the session may overlap others in its lane. */
+    private Boolean         allowOverlap;
+
     /** Swimlane (e.g. "Principal", "Cohorte A") — drives row grouping on the timeline. */
     private String          lane;
 

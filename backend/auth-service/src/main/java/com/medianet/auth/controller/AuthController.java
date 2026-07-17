@@ -2,12 +2,14 @@ package com.medianet.auth.controller;
 
 import com.medianet.auth.dto.*;
 import com.medianet.auth.security.JwtService;
+import com.medianet.auth.service.AuthEventService;
 import com.medianet.auth.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
@@ -18,8 +20,9 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final AuthService authService;
-    private final JwtService  jwtService;
+    private final AuthService      authService;
+    private final JwtService       jwtService;
+    private final AuthEventService authEventService;
 
     // ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +67,26 @@ public class AuthController {
     public ResponseEntity<UserDto> me(@RequestHeader("Authorization") String authHeader) {
         String email = jwtService.extractEmail(authHeader.substring(7));
         return ResponseEntity.ok(authService.getUserByEmail(email));
+    }
+
+    /**
+     * Re-issue a JWT with claims re-read from the DB. Called by clients when they
+     * receive a {@code permissions-changed} SSE event, so a live session picks up
+     * new roles/permissions without re-login.
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh(@RequestAttribute("userId") Long userId) {
+        return ResponseEntity.ok(authService.refreshToken(userId));
+    }
+
+    /**
+     * Live auth events stream (SSE): {@code permissions-changed},
+     * {@code account-disabled}. Authenticated via the standard Bearer header
+     * (clients use fetch-based SSE, not EventSource).
+     */
+    @GetMapping("/events/stream")
+    public SseEmitter authEvents(@RequestAttribute("userId") Long userId) {
+        return authEventService.subscribe(userId);
     }
 
     @GetMapping("/validate")
@@ -157,17 +180,14 @@ public class AuthController {
 
     // ── Permission management ─────────────────────────────────────────────────
 
+    /** Grouped catalog: modules (label, description, GENERAL/ADMIN scope) + permissions. */
     @GetMapping("/permissions")
-    @PreAuthorize("hasAuthority('users:read')")
-    public ResponseEntity<Map<String, String>> getPermissionCatalog() {
+    @PreAuthorize("hasAuthority('users:read') or hasAuthority('roles:read')")
+    public ResponseEntity<List<PermissionCatalogDto>> getPermissionCatalog() {
         return ResponseEntity.ok(authService.getPermissionCatalog());
     }
 
-    @GetMapping("/roles")
-    @PreAuthorize("hasAuthority('users:read')")
-    public ResponseEntity<Map<String, String>> getRoleCatalog() {
-        return ResponseEntity.ok(authService.getRoleCatalog());
-    }
+    // NB: role catalog + role CRUD moved to RoleController (/api/auth/roles).
 
     @PostMapping("/users/{id}/permissions/grant")
     @PreAuthorize("hasAuthority('users:update')")

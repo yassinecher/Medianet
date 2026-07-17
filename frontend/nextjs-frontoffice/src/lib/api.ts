@@ -1,5 +1,6 @@
 import axios from 'axios'
 import Cookies from 'js-cookie'
+import toast from 'react-hot-toast'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
 
@@ -14,18 +15,72 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      Cookies.remove('token')
-      window.location.href = '/login'
+    if (typeof window !== 'undefined') {
+      if (error.response?.status === 401) {
+        Cookies.remove('token')
+        window.location.href = '/login'
+      }
+      if (error.response?.status === 403) {
+        // Backend 403s name the missing permission — show it (deduped) and
+        // normalize `data.message` for page-level catch blocks.
+        const data = error.response.data ?? {}
+        const msg: string = data.message ?? data.error ?? 'Accès refusé : permission insuffisante.'
+        error.response.data = { ...data, message: msg }
+        toast.error(msg, { id: 'forbidden' })
+      }
     }
     return Promise.reject(error)
   }
 )
 
+/**
+ * Live auth events (SSE): `permissions-changed`, `account-disabled`, `connected`.
+ * Fetch-based (EventSource can't send the Authorization header). Resolves when
+ * the stream closes; throws on connection failure — callers reconnect.
+ */
+export async function streamAuthEvents(
+  onEvent: (type: string, payload: any) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const token = Cookies.get('token')
+  if (!token) throw new Error('not authenticated')
+  const res = await fetch(`${API_URL}/api/auth/events/stream`, {
+    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
+    signal,
+  })
+  if (!res.ok || !res.body) throw new Error(`auth events HTTP ${res.status}`)
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let idx: number
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, idx)
+      buf = buf.slice(idx + 2)
+      let eventName = 'message'
+      const dataLines: string[] = []
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim()
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+      }
+      if (dataLines.length === 0) continue
+      let payload: any = dataLines.join('\n')
+      try { payload = JSON.parse(payload) } catch { /* keep raw string */ }
+      onEvent(eventName, payload)
+    }
+  }
+}
+
 export const authApi = {
   login: (email: string, password: string) => api.post('/api/auth/login', { email, password }),
   register: (data: unknown) => api.post('/api/auth/register', data),
   me: () => api.get('/api/auth/me'),
+  /** Re-issue the JWT with fresh roles/permissions (same payload as login). */
+  refresh: () => api.post('/api/auth/refresh'),
   /** Update first/last name + optionally change password (requires currentPassword). */
   updateProfile: (data: {
     firstName: string
@@ -64,7 +119,122 @@ export const filesApi = {
     )
     return (r.data?.url ?? r.data) as string
   },
+  /** Upload a pitch video (up to 250 MB). Returns { url, filename }. */
+  uploadVideo: async (file: File, folder = 'pitch-videos', onProgress?: (pct: number) => void) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const r = await api.post<{ url: string; filename: string }>(
+      `/api/files/upload-video?folder=${encodeURIComponent(folder)}`,
+      fd,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 0,
+        onUploadProgress: (e) => {
+          if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100))
+        },
+      },
+    )
+    return r.data
+  },
   delete: (url: string) => api.delete(`/api/files?url=${encodeURIComponent(url)}`),
+}
+
+/** Pitch / presentation-day submissions (porteur side). */
+export interface PitchSubmission {
+  id: number
+  programmeId: number
+  sessionId?: number | null
+  kind?: 'TRAINING' | 'FINAL'
+  organizationId?: number
+  companyName?: string
+  projectName?: string
+  title?: string
+  videoUrl?: string
+  videoFilename?: string
+  transcript?: string
+  autoTranscribed?: boolean
+  /** Whisper segments [{start,end,text}] as JSON — transcript panel + markers. */
+  segmentsJson?: string | null
+  durationSeconds?: number | null
+  notes?: string
+  status: 'DRAFT' | 'SUBMITTED' | 'PROCESSING' | 'ANALYZED' | 'FAILED'
+  aiScore?: number | null
+  aiAnalysisJson?: string | null
+  analyzedAt?: string
+  updatedAt?: string
+}
+export const pitchApi = {
+  mine: () => api.get<PitchSubmission[]>('/api/pitch/submissions/mine'),
+  get: (id: number) => api.get<PitchSubmission>(`/api/pitch/submissions/${id}`),
+  upsert: (data: Partial<PitchSubmission>) => api.post<PitchSubmission>('/api/pitch/submissions', data),
+  /** Presentation sessions of a programme + my submissions per session. */
+  presentations: (programmeId: number) => api.get<any[]>(`/api/pitch/presentations/${programmeId}`),
+  /** Move a submission to PROCESSING / FAILED. */
+  setStatus: (id: number, status: string) => api.put<PitchSubmission>(`/api/pitch/submissions/${id}/status`, { status }),
+  /** Run AI analysis (auto-transcribe + video; returns score + advice; not persisted).
+   *  No client timeout — CPU Whisper on a few-minute clip can take a while. */
+  analyze: (submissionId: number) => api.post<any>('/api/admin-ai/pitch/analyze', { submissionId }, { timeout: 0 }),
+  /** Persist the AI analysis (+ auto-transcript + segments) on the submission. */
+  saveAnalysis: (id: number, result: any) =>
+    api.put<PitchSubmission>(`/api/pitch/submissions/${id}/analysis`, {
+      aiScore: result?.overallScore ?? null,
+      aiAnalysisJson: JSON.stringify(result),
+      transcript: result?.transcript,
+      autoTranscribed: result?.autoTranscribed,
+      durationSeconds: result?.durationSeconds,
+      segmentsJson: result?.segmentsJson,
+    }),
+}
+
+/** Whisper segment — one spoken chunk with its timestamps. */
+export interface TranscriptSegment { start: number; end: number; text: string }
+
+/**
+ * Live pitch analysis over SSE — streams the real pipeline stages
+ * (transcription, élocution, vision, criteria, LLM) then a final `done` event
+ * carrying the full analysis. Fetch-based (EventSource can't send auth headers).
+ */
+export async function streamPitchAnalysis(
+  submissionId: number,
+  onEvent: (type: string, payload: any) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const token = Cookies.get('token')
+  const res = await fetch(`${API_URL}/api/admin-ai/pitch/analyze/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ submissionId }),
+    signal,
+  })
+  if (!res.ok || !res.body) throw new Error(`analyse HTTP ${res.status}`)
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let idx: number
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, idx)
+      buf = buf.slice(idx + 2)
+      let eventName = 'message'
+      const dataLines: string[] = []
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim()
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+      }
+      if (dataLines.length === 0) continue
+      let payload: any = dataLines.join('\n')
+      try { payload = JSON.parse(payload) } catch { /* keep raw */ }
+      onEvent(eventName, payload)
+    }
+  }
 }
 
 /** Org-member token invitation: a porteur added me to their organisation. */

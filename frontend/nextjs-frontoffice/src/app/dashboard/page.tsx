@@ -61,6 +61,7 @@ export default function DashboardPage() {
   const [candidatures, setCandidatures] = useState<Candidature[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [programmes, setProgrammes] = useState<Programme[]>([])
+  const [myProgrammes, setMyProgrammes] = useState<Programme[]>([])
   const [juryItems, setJuryItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -68,10 +69,22 @@ export default function DashboardPage() {
     Promise.allSettled([
       candidaturesApi.myList().then((r) => setCandidatures(r.data?.content ?? r.data ?? [])).catch(() => {}),
       tasksApi.myTasks().then((r) => setTasks(r.data?.content ?? r.data ?? [])).catch(() => {}),
-      programmesApi.list({ status: 'OPEN' }).then((r) => setProgrammes(r.data?.content ?? r.data ?? [])).catch(() => {}),
+      // publicOnly: don't surface draft/archived programmes in recommendations.
+      programmesApi.list({ status: 'OPEN', publicOnly: true }).then((r) => setProgrammes(r.data?.content ?? r.data ?? [])).catch(() => {}),
       isJury ? juryApi.myAssignments().then((r) => setJuryItems(r.data ?? [])).catch(() => {}) : Promise.resolve(),
     ]).finally(() => setLoading(false))
   }, [isJury])
+
+  // "Mes programmes en cours" — the incubation space: programmes the porteur was
+  // ACCEPTED into. Fetch each so we can show a rich card.
+  useEffect(() => {
+    const ids = Array.from(new Set(
+      candidatures.filter((c) => c.status === 'ACCEPTED').map((c) => c.programmeId).filter(Boolean),
+    )) as number[]
+    if (ids.length === 0) { setMyProgrammes([]); return }
+    Promise.all(ids.map((pid) => programmesApi.get(pid).then((r) => r.data).catch(() => null)))
+      .then((list) => setMyProgrammes(list.filter(Boolean) as Programme[]))
+  }, [candidatures])
 
   // ── Jury-derived values ─────────────────────────────────────────────────
   const myEvalOf = (c: any) => (c.evaluations ?? []).find((e: any) => e.juryId === user?.id) ?? null
@@ -253,6 +266,51 @@ export default function DashboardPage() {
 
           {/* LEFT (2/3): Recent candidatures + tasks */}
           <div className="lg:col-span-2 space-y-6">
+
+            {/* Mes programmes en cours — incubation space (accepted candidatures) */}
+            {activeRole === 'PORTEUR' && myProgrammes.length > 0 && (
+              <section>
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-bold text-foreground flex items-center gap-2">
+                    <Award className="h-4 w-4 text-emerald-500" />Mes programmes en cours
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                      {myProgrammes.length}
+                    </span>
+                  </h2>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {myProgrammes.map((p) => (
+                    <Link key={p.id} href={`/programmes/${p.id}`}>
+                      <MagicCard className="relative h-full overflow-hidden p-4 transition-transform hover:scale-[1.02]">
+                        <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          <CheckSquare className="h-2.5 w-2.5" />Incubé
+                        </span>
+                        <div className="flex items-start gap-3">
+                          {p.logoUrl ? (
+                            <img src={p.logoUrl} alt="" className="h-11 w-11 rounded-lg object-contain bg-white" />
+                          ) : (
+                            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 to-brand-500/20">
+                              <FolderKanban className="h-5 w-5 text-emerald-500" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1 pr-14">
+                            <p className="line-clamp-1 font-semibold text-sm text-foreground">{p.title ?? p.name}</p>
+                            {p.tagline && <p className="line-clamp-1 text-xs text-muted-foreground">{p.tagline}</p>}
+                            <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                              {p.location && <span className="flex items-center gap-0.5"><MapPin className="h-2.5 w-2.5" />{p.location}</span>}
+                              <span className={`rounded-full px-1.5 py-0.5 font-bold ${statusColor(p.status)}`}>{p.status === 'IN_PROGRESS' ? 'En cours' : p.status}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center gap-1 border-t border-border pt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                          Accéder à mon espace <ArrowRight className="h-3 w-3" />
+                        </div>
+                      </MagicCard>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* Recent candidatures (PORTEUR only) */}
             {activeRole === 'PORTEUR' && (

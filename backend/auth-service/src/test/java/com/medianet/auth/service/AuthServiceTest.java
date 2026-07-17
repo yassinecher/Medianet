@@ -31,6 +31,7 @@ class AuthServiceTest {
     @Mock private JuryProfileRepository    juryProfileRepository;
     @Mock private PasswordEncoder          passwordEncoder;
     @Mock private JwtService               jwtService;
+    @Mock private AuthEventService         authEventService;
 
     @InjectMocks
     private AuthService authService;

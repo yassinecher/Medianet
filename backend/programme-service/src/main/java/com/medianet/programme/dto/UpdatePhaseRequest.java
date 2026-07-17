@@ -34,4 +34,14 @@ public class UpdatePhaseRequest {
     private String          color;
     /** Optional — (re)parent this day-session under a range session. Send -1 to detach. */
     private Long            parentSessionId;
+    /** Optional — VISIBLE | HIDDEN | PRIVATE. */
+    private String          visibility;
+    /** Optional — allow an activity agenda on this session. */
+    private Boolean         allowActivities;
+    /** Optional — allow this session to overlap others in its lane. */
+    private Boolean         allowOverlap;
+    /** Presentation day: enable pitch-video collection by porteurs. */
+    private Boolean         collectPitchVideos;
+    /** Pitch upload deadline (send a pre-1971 date to clear it). */
+    private LocalDate       pitchDeadline;
 }

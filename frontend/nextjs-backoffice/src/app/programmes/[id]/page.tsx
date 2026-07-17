@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Wand2, ChevronRight, Calendar, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { programmesApi, partnersApi, CATALOG_CATEGORIES } from '@/lib/api'
+import { programmesApi, partnersApi, sessionsApi, CATALOG_CATEGORIES } from '@/lib/api'
 import { useCatalog } from '@/hooks/useCatalog'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
@@ -16,11 +16,15 @@ import { formatDate, statusColor } from '@/lib/utils'
 import type { Programme, Partner } from '@/types'
 import { parseSchema, type CustomFormSchema } from '@/components/formbuilder/schema'
 import { ImageUpload } from '@/components/upload/ImageUpload'
+import { useCan } from '@/hooks/useCan'
+import { ProgrammeReports } from '@/components/ProgrammeReports'
+import { ProgrammePresentations } from './ProgrammePresentations'
 import { TimelineTab } from '../builder/TimelineTab'
 import { InvitationsPanel } from './InvitationsPanel'
 import { ParcoursFlow } from './ParcoursFlow'
 import { ProgrammeDashboard } from './ProgrammeDashboard'
 import { EvaluationDashboard } from './EvaluationDashboard'
+import { ParticipantsPanel } from './ParticipantsPanel'
 
 const statusLabel: Record<string, string> = {
   DRAFT: 'Brouillon', OPEN: 'Ouvert', IN_PROGRESS: 'En cours',
@@ -61,12 +65,13 @@ interface Criterion {
 export default function ProgrammeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const { can } = useCan()
   const [programme, setProgramme] = useState<Programme | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'info' | 'phases' | 'criteria' | 'evaluations' | 'partners' | 'invitations'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'info' | 'phases' | 'criteria' | 'evaluations' | 'participants' | 'partners' | 'invitations' | 'presentations' | 'reports'>('dashboard')
   type Tab = typeof activeTab
-  const TABS: Tab[] = ['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'partners', 'invitations']
+  const TABS: Tab[] = ['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'participants', 'partners', 'invitations', 'presentations', 'reports']
 
   // Reflect the active tab in the URL (?tab=) so the browser Back button moves
   // between tabs and only leaves the programme once you're back on the first one.
@@ -93,7 +98,7 @@ export default function ProgrammeDetailPage() {
   const [editMode, setEditMode] = useState(false)
   const [form, setForm] = useState({
     title: '', description: '', type: '', region: '', status: '',
-    applicationDeadline: '', startDate: '', endDate: '', sectors: [] as string[],
+    startDate: '', endDate: '', sectors: [] as string[],
     eligibleOrgTypes: [] as string[],
     formTemplate: 'STANDARD',
     customFormSchema: null as CustomFormSchema | null,
@@ -138,7 +143,6 @@ export default function ProgrammeDetailPage() {
           type: (p.type === 'PUBLIC' || p.type === 'PRIVATE') ? p.type : 'PUBLIC',
           region: p.region ?? '',
           status: p.status ?? 'DRAFT',
-          applicationDeadline: p.applicationDeadline ? p.applicationDeadline.substring(0, 10) : '',
           startDate: p.startDate ? p.startDate.substring(0, 10) : '',
           endDate: p.endDate ? p.endDate.substring(0, 10) : '',
           sectors: p.sectors ?? [],
@@ -165,8 +169,21 @@ export default function ProgrammeDetailPage() {
     partnersApi.list().then((r) => setAllPartners(r.data ?? [])).catch(() => {})
   }, [id])
 
+  /** Refetch just the sessions (used after toggling presentation-day flags). */
+  const reloadPhases = () => {
+    sessionsApi.list(Number(id))
+      .then((r) => setPhases(r.data ?? []))
+      .catch(() => {})
+  }
+
   const handleSaveInfo = async () => {
     if (!programme) return
+    if (!form.startDate || !form.endDate) {
+      toast.error('Les dates de début et de fin sont obligatoires'); return
+    }
+    if (form.endDate < form.startDate) {
+      toast.error('La date de fin doit être postérieure à la date de début'); return
+    }
     setSaving(true)
     try {
       const res = await programmesApi.update(programme.id, {
@@ -175,7 +192,6 @@ export default function ProgrammeDetailPage() {
         type: form.type,
         region: form.region,
         status: form.status,
-        // applicationDeadline NOT sent — fully derived from the candidature session.
         startDate: form.startDate || undefined,
         endDate: form.endDate || undefined,
         sectors: form.sectors,
@@ -359,7 +375,6 @@ export default function ProgrammeDetailPage() {
               </div>
               <p className="text-sm text-muted-foreground">
                 {programme?.domain}{programme?.region && ` · ${programme.region}`}
-                {programme?.applicationDeadline && ` · Clôture : ${formatDate(programme.applicationDeadline)}`}
               </p>
               {/* Status workflow buttons */}
               {programme && (statusActions[programme.status] ?? []).length > 0 && (
@@ -381,18 +396,24 @@ export default function ProgrammeDetailPage() {
           )}
         </motion.div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 border-b border-border">
-          {(['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'partners', 'invitations'] as const).map((tab) => (
+        {/* Tabs — "Rapports" only shows with the reports:read permission */}
+        <div className="flex gap-1 border-b border-border overflow-x-auto">
+          {(['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'participants', 'partners', 'invitations', 'presentations', 'reports'] as const)
+            .filter((tab) => tab !== 'reports' || can('reports:read'))
+            .map((tab) => (
             <button key={tab} onClick={() => selectTab(tab)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${activeTab === tab ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+              title={tab === 'reports' ? 'Accès : permission reports:read' : undefined}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${activeTab === tab ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
               {tab === 'dashboard' ? 'Tableau de bord'
                 : tab === 'info' ? 'Informations'
                 : tab === 'phases' ? `Sessions (${phases.length})`
                 : tab === 'criteria' ? `Critères (${criteria.length})`
                 : tab === 'evaluations' ? 'Évaluations'
+                : tab === 'participants' ? 'Participants'
                 : tab === 'partners' ? `Partenaires (${programmePartners.length})`
-                : 'Invitations'}
+                : tab === 'invitations' ? 'Invitations'
+                : tab === 'presentations' ? 'Présentations'
+                : 'Rapports'}
             </button>
           ))}
         </div>
@@ -406,6 +427,21 @@ export default function ProgrammeDetailPage() {
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <ProgrammeDashboard programmeId={programme.id} programme={programme}
                   phases={phases as any} criteria={criteria as any} onOpenTab={selectTab} />
+              </motion.div>
+            )}
+
+            {/* PRESENTATIONS TAB */}
+            {activeTab === 'presentations' && programme && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <ProgrammePresentations programmeId={programme.id} sessions={phases as any}
+                  onSessionsChanged={reloadPhases} />
+              </motion.div>
+            )}
+
+            {/* REPORTS TAB */}
+            {activeTab === 'reports' && programme && can('reports:read') && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <ProgrammeReports programmeId={programme.id} />
               </motion.div>
             )}
 
@@ -444,7 +480,6 @@ export default function ProgrammeDetailPage() {
                         },
                         { label: 'Début', value: programme?.startDate ? formatDate(programme.startDate) : '—' },
                         { label: 'Fin', value: programme?.endDate ? formatDate(programme.endDate) : '—' },
-                        { label: 'Clôture candidatures', value: programme?.applicationDeadline ? formatDate(programme.applicationDeadline) : '—' },
                       ].map(({ label, value }) => (
                         <div key={label}>
                           <p className="text-xs text-muted-foreground">{label}</p>
@@ -502,22 +537,14 @@ export default function ProgrammeDetailPage() {
                         <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
                           <Calendar className="h-3.5 w-3.5" />Calendrier
                         </p>
-                        <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="grid gap-3 sm:grid-cols-2">
                           <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Date de début</label>
-                            <Input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
+                            <label className="text-xs font-medium text-muted-foreground">Date de début <span className="text-red-500">*</span></label>
+                            <Input type="date" value={form.startDate} required onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Date de fin</label>
-                            <Input type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Clôture candidatures</label>
-                            <Input type="date" value={form.applicationDeadline} disabled readOnly
-                              className="opacity-70 cursor-not-allowed" />
-                            <p className="text-[10px] text-muted-foreground">
-                              🔒 Entièrement automatique — calée sur la session « Candidature » du Parcours. Modifiez ses dates pour changer la clôture.
-                            </p>
+                            <label className="text-xs font-medium text-muted-foreground">Date de fin <span className="text-red-500">*</span></label>
+                            <Input type="date" value={form.endDate} required onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} />
                           </div>
                         </div>
                       </section>
@@ -847,6 +874,14 @@ export default function ProgrammeDetailPage() {
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <EvaluationDashboard programmeId={programme.id} programme={programme}
                   criteria={criteria as any} phases={phases as any} />
+              </motion.div>
+            )}
+
+            {/* PARTICIPANTS TAB */}
+            {activeTab === 'participants' && programme && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <ParticipantsPanel programmeId={programme.id} programmeName={programme.title ?? programme.name ?? 'Programme'}
+                  phases={phases as any} />
               </motion.div>
             )}
 

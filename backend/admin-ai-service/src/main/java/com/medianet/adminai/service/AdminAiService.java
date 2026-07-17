@@ -357,6 +357,26 @@ public class AdminAiService {
     private final com.medianet.adminai.client.UpstreamClient upstream;
     private final ObjectMapper             json = new ObjectMapper();
 
+    /**
+     * For parsing model output only. An LLM writes JSON the way it writes prose,
+     * so it drifts into "score": 4. / trailing commas / single quotes — a strict
+     * mapper then throws a whole valid analysis away over one stray character
+     * (observed: 'Decimal point not followed by a digit' on a complete report).
+     * Never use this for data we control; it would hide real defects there.
+     */
+    private final ObjectMapper lenientJson = com.fasterxml.jackson.databind.json.JsonMapper.builder()
+            .enable(com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_TRAILING_DECIMAL_POINT_FOR_NUMBERS)
+            .enable(com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_LEADING_DECIMAL_POINT_FOR_NUMBERS)
+            // The prompt asks for signed scoreImpact, so the model writes "+2".
+            .enable(com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_LEADING_PLUS_SIGN_FOR_NUMBERS)
+            .enable(com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_NON_NUMERIC_NUMBERS)
+            .enable(com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_TRAILING_COMMA)
+            .enable(com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_SINGLE_QUOTES)
+            .enable(com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES)
+            .enable(com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS)
+            .enable(com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_JAVA_COMMENTS)
+            .build();
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
@@ -873,6 +893,73 @@ public class AdminAiService {
      * Returns a map ready to merge into the LandingPage entity.
      */
     @SuppressWarnings("unchecked")
+    /**
+     * Generate (from a brief) or improve (from a draft) a single programme field.
+     * Field-specific length/tone rules keep the output usable as-is. Returns
+     * {@code {value}} for text fields, or {@code {values:[...]}} for list fields
+     * (objectives, benefits) so the wizard can drop them straight into a list.
+     */
+    public Map<String, Object> suggestField(String field, String mode, String current, String context, String locale) {
+        boolean enhance = "enhance".equals(mode) && current != null && !current.isBlank();
+        boolean isList = field.equals("objectives") || field.equals("benefits");
+
+        // Per-field brief: what the field is and how long/what tone it should be.
+        String spec = switch (field) {
+            case "title"       -> "un titre de programme d'incubation: 3 à 8 mots, percutant, sans guillemets ni ponctuation finale";
+            case "tagline"     -> "une accroche courte (tagline) de programme: 6 à 14 mots, une seule phrase mémorable";
+            case "description" -> "une description de programme d'incubation: 60 à 130 mots, ton professionnel et engageant, "
+                                + "qui explique à qui il s'adresse et ce qu'il apporte";
+            case "objectives"  -> "3 à 5 objectifs de programme, chacun une phrase concrète et mesurable";
+            case "benefits"    -> "3 à 5 avantages concrets pour les porteurs de projet, chacun une phrase courte";
+            default             -> "le contenu du champ « " + field + " »";
+        };
+
+        String task = enhance
+            ? "Améliore le texte existant ci-dessous (clarté, impact, grammaire) sans en changer le sens ni la langue. "
+            : "Rédige " + spec + ". ";
+
+        String outFmt = isList
+            ? "Réponds UNIQUEMENT avec un objet JSON {\"values\": [\"...\", \"...\"]}."
+            : "Réponds UNIQUEMENT avec un objet JSON {\"value\": \"...\"}.";
+
+        String langInstr = "fr".equals(locale)
+            ? "Écris en français, avec les accents corrects."
+            : "Écris en " + locale + ".";
+
+        String systemPrompt = "Tu es un rédacteur pour une plateforme d'incubation de startups (Medianet Incubateur). "
+            + task + "Il s'agit de " + spec + ". " + langInstr + " "
+            + "Pas de markdown, pas d'explication, commence par { et termine par }. " + outFmt;
+
+        StringBuilder userMsg = new StringBuilder();
+        if (context != null && !context.isBlank()) userMsg.append("Contexte du programme: ").append(context.trim()).append("\n");
+        if (enhance) userMsg.append("Texte à améliorer: ").append(current.trim());
+        else if (userMsg.length() == 0) userMsg.append("Génère un contenu pertinent par défaut.");
+
+        List<Map<String, Object>> messages = List.of(Map.of("role", "user", "content", userMsg.toString()));
+        try {
+            // Small generation: cap tokens and use a short timeout so a queued
+            // provider fails in ~50s with a clear message instead of holding the
+            // request open for the default 4 minutes (infinite spinner in the UI).
+            Map<String, Object> response = llm.chat(messages, List.of(), systemPrompt, "none", 600, 50);
+            List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
+            String content = String.valueOf(((Map<String, Object>) choices.get(0).get("message")).get("content"));
+            content = content.replaceAll("(?s)```\\w*", "").replaceAll("```", "").trim();
+            int s = content.indexOf('{'), e = content.lastIndexOf('}');
+            if (s >= 0 && e > s) content = content.substring(s, e + 1);
+            Map<String, Object> parsed = json.readValue(content, Map.class);
+            return isList
+                ? Map.of("values", parsed.getOrDefault("values", List.of()))
+                : Map.of("value", String.valueOf(parsed.getOrDefault("value", "")).trim());
+        } catch (Exception ex) {
+            String m = String.valueOf(ex.getMessage());
+            boolean slow = m.contains("timeout") || ex.getCause() instanceof java.net.http.HttpTimeoutException;
+            log.warn("field-suggest failed for '{}': {}", field, m);
+            return Map.of("error", slow
+                ? "Le modèle IA met trop de temps à répondre (fournisseur saturé). Réessaie dans un instant."
+                : "Génération échouée — réessaie ou précise ta demande.");
+        }
+    }
+
     public Map<String, Object> suggestLandingContent(String section, String brief, String locale) {
         String sectionPrompt = switch (section) {
             case "hero" -> """
@@ -1081,7 +1168,7 @@ public class AdminAiService {
                     .replaceAll("(?s)```\\w*", "").replaceAll("```", "").trim();
             int s = content.indexOf('{'), e = content.lastIndexOf('}');
             if (s >= 0 && e > s) content = content.substring(s, e + 1);
-            Map<String, Object> parsed = json.readValue(content, Map.class);
+            Map<String, Object> parsed = lenientJson.readValue(content, Map.class);
             out.putAll(parsed);
             // Backfill weightedScore if the model omitted it.
             if (out.get("weightedScore") == null && parsed.get("criteria") instanceof List<?> cl && !cl.isEmpty()) {
@@ -1098,7 +1185,679 @@ public class AdminAiService {
         return out;
     }
 
+    /**
+     * Analyse a porteur's pitch from its transcript. Grounded in the programme
+     * criteria and the project. Scores the pitch on delivery/content dimensions,
+     * lists strengths & weaknesses, and gives concrete, actionable advice.
+     *
+     * <p>The submission is fetched with the CALLER's token, so programme-service
+     * enforces that only the owner porteur (or an admin) can trigger analysis.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> analyzePitch(Long submissionId, String callerToken) {
+        return analyzePitch(submissionId, callerToken, s -> {});
+    }
+
+    /**
+     * Same, but reports each pipeline stage as it genuinely completes (drives the
+     * live "AI thinking" panel). Stages carry real results, never fake progress.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> analyzePitch(Long submissionId, String callerToken,
+                                            java.util.function.Consumer<Map<String, Object>> stage) {
+        stage.accept(Map.of("step", "submission", "label", "Chargement de la présentation…", "status", "running"));
+        Map<String, Object> sub;
+        try {
+            sub = (Map<String, Object>) upstream.get(
+                    upstream.programme() + "/api/pitch/submissions/" + submissionId, callerToken);
+        } catch (Exception e) {
+            throw new RuntimeException("Présentation introuvable ou inaccessible.");
+        }
+        stage.accept(Map.of("step", "submission", "label", "Présentation chargée", "status", "done",
+                "detail", str(sub.get("projectName"))));
+
+        String transcript = str(sub.get("transcript"));
+        String videoUrl   = str(sub.get("videoUrl"));
+
+        // ── Self-hosted media pipeline: auto-transcribe + visual analysis ─────
+        // If there's a video, run it through pitch-media-service (Whisper +
+        // frame/vision). We prefer the auto transcript when the porteur didn't
+        // type one. Everything degrades gracefully.
+        Map<String, Object> media = new java.util.LinkedHashMap<>();
+        boolean autoTranscribed = false;
+        Integer durationSeconds = null;
+
+        // ── Cache: the media pipeline (Whisper + vision) is the expensive part.
+        // If this submission was already transcribed, reuse it — re-analysis then
+        // costs only the LLM call instead of re-running speech-to-text.
+        String cachedSegments = str(sub.get("segmentsJson"));
+
+        // The delivery/visual signals only survive inside the stored analysis. If
+        // they are gone, the cache must NOT be used: without them the rubric
+        // silently drops to its 6-dimension variant (no Rythme/Confiance/Présence),
+        // so the same video would be scored on a different scale than last time and
+        // the radar would change shape. Correctness beats the saved transcription.
+        Map<String, Object> cachedSignals = new java.util.LinkedHashMap<>();
+        try {
+            Object prev = sub.get("aiAnalysisJson");
+            if (prev != null && !str(prev).isBlank()) {
+                Map<String, Object> old = lenientJson.readValue(str(prev), Map.class);
+                if (old.get("delivery") instanceof Map<?, ?> dm)
+                    for (Map.Entry<?, ?> en : dm.entrySet())
+                        cachedSignals.put(String.valueOf(en.getKey()), en.getValue());
+                if (old.get("visualObservations") != null)
+                    cachedSignals.put("visualObservations", old.get("visualObservations"));
+            }
+        } catch (Exception ignored) { /* unreadable previous analysis → re-measure */ }
+
+        boolean cacheHit = !transcript.isBlank() && !cachedSegments.isBlank()
+                && !"null".equals(cachedSegments) && !cachedSignals.isEmpty();
+        if (cacheHit) {
+            try {
+                media.put("segments", json.readValue(cachedSegments, List.class));
+                if (sub.get("durationSeconds") != null) {
+                    durationSeconds = (int) Double.parseDouble(String.valueOf(sub.get("durationSeconds")));
+                    media.put("durationSeconds", durationSeconds);
+                }
+                autoTranscribed = Boolean.TRUE.equals(sub.get("autoTranscribed"));
+                media.putAll(cachedSignals);
+                stage.accept(mapOf("step", "media", "status", "done",
+                        "label", "Transcription réutilisée (cache)",
+                        "detail", "pas de re-transcription — analyse plus rapide"));
+            } catch (Exception e) {
+                cacheHit = false; media.clear();
+            }
+        }
+
+        if (!cacheHit && !videoUrl.isBlank()) {
+            Integer knownLen = sub.get("durationSeconds") == null ? null
+                    : (int) Double.parseDouble(String.valueOf(sub.get("durationSeconds")));
+            stage.accept(mapOf("step", "media", "status", "running",
+                    "label", "Extraction audio, transcription (Whisper) et analyse d'images…",
+                    "etaSec", mediaEtaFor(knownLen)));
+            long t0 = System.nanoTime();
+            media = callPitchMedia(videoUrl);
+            recordStage("media", (System.nanoTime() - t0) / 1e9);
+            String autoTr = str(media.get("transcript"));
+            if (!autoTr.isBlank() && transcript.isBlank()) {
+                transcript = autoTr;
+                autoTranscribed = true;
+            }
+            if (media.get("durationSeconds") != null) {
+                try { durationSeconds = (int) Double.parseDouble(String.valueOf(media.get("durationSeconds"))); }
+                catch (Exception ignored) {}
+            }
+            int segCount = media.get("segments") instanceof List<?> sl ? sl.size() : 0;
+            // NB: same step id as the "running" event above so the UI RESOLVES that
+            // row instead of leaving it spinning next to a new one.
+            stage.accept(mapOf("step", "media", "status", autoTr.isBlank() ? "warn" : "done",
+                    "label", autoTr.isBlank() ? "Aucune parole détectée" : "Transcription terminée",
+                    "detail", autoTr.isBlank() ? "vérifiez la piste audio"
+                            : segCount + " segments · " + str(media.get("language")) + " · " + durationSeconds + "s"));
+            if (media.get("wordsPerMinute") != null) {
+                stage.accept(mapOf("step", "delivery", "status", "done", "label", "Élocution mesurée",
+                        "detail", media.get("wordsPerMinute") + " mots/min · "
+                                + media.getOrDefault("fillerCount", 0) + " hésitations · "
+                                + media.getOrDefault("longPauses", 0) + " pauses"));
+            }
+            int visCount = media.get("visualObservations") instanceof List<?> vlx ? vlx.size() : 0;
+            stage.accept(mapOf("step", "vision", "status", visCount > 0 ? "done" : "warn",
+                    "label", visCount > 0 ? "Images analysées (présence)" : "Analyse visuelle indisponible",
+                    "detail", visCount > 0 ? media.getOrDefault("frames", 0) + " images échantillonnées"
+                            : String.valueOf(media.getOrDefault("warnings", ""))));
+        }
+
+        if (transcript.isBlank()) {
+            Map<String, Object> err = new java.util.LinkedHashMap<>();
+            err.put("submissionId", submissionId);
+            err.put("aiEnhanced", false);
+            err.put("error", videoUrl.isBlank()
+                    ? "Ajoutez une vidéo (transcription automatique) ou saisissez le texte de votre pitch."
+                    : "La transcription automatique n'a rien produit — vérifiez que la vidéo contient de l'audio, ou saisissez le texte.");
+            if (!media.isEmpty()) err.put("media", media);
+            return err;
+        }
+
+        Object programmeIdObj = sub.get("programmeId");
+        Long programmeId = programmeIdObj == null ? null : Long.valueOf(String.valueOf(programmeIdObj));
+
+        // Programme criteria (public) — the official grid every finding maps to.
+        List<Map<String, Object>> criteria = new ArrayList<>();
+        if (programmeId != null) {
+            try {
+                Object cr = upstream.get(upstream.programme() + "/api/programmes/" + programmeId + "/criteria", callerToken);
+                if (cr instanceof List<?> l) for (Object o : l) if (o instanceof Map) criteria.add((Map<String, Object>) o);
+            } catch (Exception ignored) { /* criteria optional */ }
+        }
+        stage.accept(mapOf("step", "criteria", "status", criteria.isEmpty() ? "warn" : "done",
+                "label", criteria.isEmpty() ? "Aucun critère officiel défini" : "Critères du programme chargés",
+                "detail", criteria.isEmpty() ? "notation générique" : criteria.size() + " critère(s)"));
+
+        StringBuilder ctx = new StringBuilder();
+        ctx.append("# PROJET\n");
+        if (!str(sub.get("projectName")).isBlank()) ctx.append("Projet: ").append(str(sub.get("projectName"))).append("\n");
+        if (!str(sub.get("companyName")).isBlank()) ctx.append("Startup: ").append(str(sub.get("companyName"))).append("\n");
+        if (!str(sub.get("title")).isBlank())       ctx.append("Titre du pitch: ").append(str(sub.get("title"))).append("\n");
+        if (!str(sub.get("notes")).isBlank())       ctx.append("Notes du porteur: ").append(str(sub.get("notes"))).append("\n");
+        if (!criteria.isEmpty()) {
+            ctx.append("\n# CRITÈRES OFFICIELS DU PROGRAMME (chaque observation doit s'y rattacher)\n");
+            for (Map<String, Object> c : criteria) {
+                ctx.append("- ").append(str(c.get("name")));
+                if (c.get("weight") != null) ctx.append(" (poids ").append(c.get("weight")).append(")");
+                if (c.get("description") != null) ctx.append(" : ").append(str(c.get("description")));
+                ctx.append("\n");
+            }
+        }
+        // Timestamped transcript when Whisper produced segments — lets the model
+        // anchor every highlight/section to a real moment of the video.
+        Object segsObj = media.get("segments");
+        if (segsObj instanceof List<?> segs && !segs.isEmpty()) {
+            ctx.append("\n# TRANSCRIPTION HORODATÉE (mm:ss — texte)\n");
+            for (Object o : segs) {
+                if (!(o instanceof Map<?, ?> sg)) continue;
+                double st = sg.get("start") == null ? 0 : Double.parseDouble(String.valueOf(sg.get("start")));
+                ctx.append(String.format("[%d:%02d] ", (int) st / 60, (int) st % 60))
+                   .append(str(sg.get("text")).trim()).append("\n");
+            }
+        } else {
+            ctx.append("\n# TRANSCRIPTION DU PITCH (à analyser)\n").append(transcript).append("\n");
+        }
+
+        // Delivery metrics (from the audio) + visual observations (from frames).
+        boolean hasDelivery = media.get("wordsPerMinute") != null || media.get("fillerCount") != null;
+        if (hasDelivery || durationSeconds != null) {
+            ctx.append("\n# ÉLOCUTION, VOIX & RYTHME (MESURÉ sur la forme d'onde — chiffres factuels)\n");
+            if (durationSeconds != null)             ctx.append("- Durée: ").append(durationSeconds).append(" s\n");
+            if (media.get("wordsPerMinute") != null) ctx.append("- Débit: ").append(media.get("wordsPerMinute"))
+                    .append(" mots/min (repère: 130-160 = bon; <110 = lent/monocorde; >180 = précipité)\n");
+            if (media.get("fillerCount") != null) {
+                Object fc = media.get("fillerCount");
+                double perMin = durationSeconds != null && durationSeconds > 0
+                        ? Double.parseDouble(String.valueOf(fc)) / (durationSeconds / 60.0) : -1;
+                ctx.append("- Hésitations/mots de remplissage détectés: ").append(fc);
+                if (perMin >= 0) ctx.append(" (soit ").append(Math.round(perMin * 10) / 10.0).append("/min ; >2/min = distrayant)");
+                ctx.append("\n");
+            }
+            if (media.get("pauseCount") != null)   ctx.append("- Pauses (silences ≥0,7s): ").append(media.get("pauseCount")).append("\n");
+            if (media.get("longPauses") != null)   ctx.append("- Pauses longues (≥1,5s): ").append(media.get("longPauses")).append("\n");
+            if (media.get("longestPauseSec") != null) ctx.append("- Plus longue pause: ").append(media.get("longestPauseSec")).append(" s\n");
+            if (media.get("speakingRatio") != null) ctx.append("- Temps de parole effectif: ")
+                    .append(Math.round(Double.parseDouble(String.valueOf(media.get("speakingRatio"))) * 100)).append("%\n");
+            if (media.get("integratedLoudnessLufs") != null) ctx.append("- Volume moyen: ")
+                    .append(media.get("integratedLoudnessLufs")).append(" LUFS (repère: -16 à -23 = bon; < -30 = trop faible/inaudible)\n");
+            if (media.get("loudnessRangeLu") != null) ctx.append("- Variation d'intensité (LRA): ")
+                    .append(media.get("loudnessRangeLu"))
+                    .append(" LU — C'EST L'INDICATEUR DE MONOTONIE: <3 = voix plate/monocorde, 3-6 = peu expressive, >6 = dynamique\n");
+        }
+
+        // Unconscious tics + markers of hesitation / lack of conviction.
+        if (media.get("elongationCount") != null || media.get("hedgeCount") != null
+                || media.get("fillerSoundCount") != null) {
+            ctx.append("\n# TICS, HÉSITATIONS & ASSURANCE (MESURÉ mot à mot)\n");
+            if (media.get("fillerSoundCount") != null) {
+                ctx.append("- Sons de remplissage (« euh », « um », « uh », « hmm »): ")
+                   .append(media.get("fillerSoundCount"));
+                if (media.get("fillerSoundsPerMin") != null)
+                    ctx.append(" (").append(media.get("fillerSoundsPerMin")).append("/min)");
+                ctx.append("\n");
+                if (media.get("fillerMoments") instanceof List<?> fm && !fm.isEmpty()) {
+                    ctx.append("  moments: ");
+                    int n = 0;
+                    for (Object o : fm) {
+                        if (n++ >= 8) break;
+                        if (o instanceof Map<?, ?> m) ctx.append("« ").append(str(m.get("word")))
+                                .append(" » à ").append(str(m.get("atSec"))).append("s  ");
+                    }
+                    ctx.append("\n");
+                }
+            }
+            if (media.get("elongationCount") != null) {
+                ctx.append("- Sons étirés / traînés (« euuuh », « aaaa », son tenu >0,7s hors pause): ")
+                   .append(media.get("elongationCount"));
+                if (media.get("elongationsPerMin") != null) ctx.append(" (").append(media.get("elongationsPerMin")).append("/min)");
+                ctx.append("\n");
+                if (media.get("elongations") instanceof List<?> el && !el.isEmpty()) {
+                    ctx.append("  exemples: ");
+                    int n = 0;
+                    for (Object o : el) {
+                        if (n++ >= 6) break;
+                        if (o instanceof Map<?, ?> m) ctx.append("« ").append(str(m.get("word")))
+                                .append(" » à ").append(str(m.get("atSec"))).append("s (")
+                                .append(str(m.get("heldSec"))).append("s)  ");
+                    }
+                    ctx.append("\n");
+                }
+            }
+            if (media.get("repetitionCount") != null)
+                ctx.append("- Répétitions/bégaiements (« le le », « on on »): ").append(media.get("repetitionCount")).append("\n");
+            if (media.get("lowConfidenceWordPct") != null)
+                ctx.append("- Mots mal articulés / marmonnés: ").append(media.get("lowConfidenceWordPct"))
+                   .append("% (confiance ASR faible ; >15% = élocution peu claire)\n");
+            if (media.get("hedgeCount") != null) {
+                ctx.append("- Formules d'atténuation (« je pense », « peut-être », « un peu »…): ")
+                   .append(media.get("hedgeCount"));
+                if (media.get("hedgesPerMin") != null) ctx.append(" (").append(media.get("hedgesPerMin")).append("/min)");
+                ctx.append(" — elles SAPENT la conviction\n");
+                if (media.get("hedgePhrases") instanceof Map<?, ?> hp && !hp.isEmpty())
+                    ctx.append("  détail: ").append(hp).append("\n");
+            }
+            if (media.get("tagQuestionCount") != null)
+                ctx.append("- Affirmations tournées en question (« ok ? », « vous voyez ? »): ")
+                   .append(media.get("tagQuestionCount")).append(" — ton hésitant/peu affirmé\n");
+            if (media.get("questionMarks") != null)
+                ctx.append("- Points d'interrogation dans le discours: ").append(media.get("questionMarks")).append("\n");
+        }
+        Object visObs = media.get("visualObservations");
+        if (visObs instanceof List<?> vl && !vl.isEmpty()) {
+            ctx.append("\n# PRÉSENCE & LANGAGE CORPOREL (").append(vl.size())
+               .append(" images isolées, légendées par un PETIT modèle de vision — PREUVE FAIBLE)\n");
+            for (Object o : vl) ctx.append("- ").append(str(o)).append("\n");
+            // A single frame is a 1/40s glimpse of a plan large, and the captioner
+            // has been caught misreading one (it reported "arms crossed" for a
+            // speaker mid-gesture). Confident posture advice from one sighting is
+            // how the coaching told a porteur to stop doing something he never did.
+            ctx.append("RÈGLES SUR CES IMAGES:\n")
+               .append("- Ce sont des instantanés isolés (1 image toutes les ~40s), pas un suivi continu, "
+                     + "et le modèle qui les décrit se TROMPE parfois sur les détails (position des bras, regard).\n")
+               .append("- Ne fonde un reproche de posture QUE sur un trait visible dans AU MOINS 2 images. "
+                     + "Un trait vu UNE seule fois est une anecdote: ne l'utilise pas, et n'en fais JAMAIS "
+                     + "une action de coaching.\n")
+               .append("- Formule toujours ces remarques au conditionnel (« semble », « sur les images observées »), "
+                     + "jamais comme un fait établi.\n")
+               .append("- Si les images se contredisent, dis-le et baisse confidence.\n");
+        } else {
+            ctx.append("\n# PRÉSENCE & LANGAGE CORPOREL\n- AUCUNE donnée visuelle exploitable.\n");
+        }
+
+        boolean haveVideoSignals = hasDelivery || (visObs instanceof List<?> l2 && !l2.isEmpty());
+        // Scores from the two rubrics are NOT comparable (different dimension sets),
+        // so never let this switch happen unnoticed.
+        if (!haveVideoSignals)
+            log.warn("Pitch {}: no delivery/visual signals — scoring on the reduced "
+                    + "6-dimension rubric (no Rythme/Confiance/Présence)", submissionId);
+        String dims = haveVideoSignals
+                ? "\"Clarté du message\", \"Structure & narration\", \"Proposition de valeur\", "
+                  + "\"Marché & traction\", \"Équipe & crédibilité\", \"Rythme & élocution\", "
+                  + "\"Confiance & assurance\", \"Présence & langage corporel\""
+                : "\"Clarté du message\", \"Structure & narration\", \"Proposition de valeur\", "
+                  + "\"Marché & traction\", \"Équipe & crédibilité\", \"Appel à l'action / demande\"";
+
+        // Criterion list for the mapping section (real programme criteria).
+        StringBuilder critJson = new StringBuilder();
+        for (Map<String, Object> c : criteria) {
+            if (critJson.length() > 0) critJson.append(", ");
+            critJson.append('"').append(str(c.get("name")).replace("\"", "'")).append('"');
+        }
+
+        String systemPrompt = "Tu es Medi, évaluateur de pitchs de startups pour un incubateur sélectif. "
+                + "Analyse la présentation à partir de la TRANSCRIPTION HORODATÉE, des MESURES audio et des "
+                + "observations visuelles. Réponds en français. Tu dois être JUSTE et CALIBRÉ: ni complaisant, "
+                + "ni sévère par réflexe. Un jury doit pouvoir se fier à tes notes pour CLASSER les dossiers "
+                + "entre eux — donc un excellent pitch et un mauvais pitch ne doivent JAMAIS finir avec la même note.\n"
+                + "RÈGLES STRICTES:\n"
+                + "- N'invente RIEN. Chaque observation doit s'appuyer sur le contenu réellement dit ou mesuré.\n"
+                + "- Chaque horodatage (timeSec) doit correspondre à un moment réel de la transcription.\n"
+                + "- Si une information est absente du pitch, dis-le explicitement, ne la suppose pas.\n"
+                + "- INTERDIT de féliciter par défaut: ne cite un point fort que s'il est PROUVÉ.\n"
+                + "- Symétriquement, INTERDIT de minimiser une force PROUVÉE par des chiffres (clients, revenus, "
+                + "rétention, marges, rentabilité). Si elle est là, elle DOIT faire MONTER les notes concernées.\n"
+
+                + "ÉTAPE 1 — IDENTIFIE LE FORMAT (champ pitchFormat) AVANT de noter. Les attentes changent selon "
+                + "le format: ne reproche JAMAIS l'absence d'un élément qui n'est pas attendu dans ce format-là.\n"
+                + "- \"DEMO_DAY\" (~1-3 min, débit rapide, devant une salle d'investisseurs): on attend solution, "
+                + "traction chiffrée, marché, demande. Le détail de l'équipe et des financements est souvent "
+                + "HORS FORMAT — son absence ne se sanctionne pas, ou très peu.\n"
+                + "- \"COMPETITION\" (~3-7 min + questions du jury): on attend un récit complet ET la tenue en Q&A. "
+                + "Les réponses au jury sont une PREUVE de maîtrise: si elles sont précises et chiffrées, "
+                + "cela compte comme une force majeure.\n"
+                + "- \"INVESTOR\" (>7 min): on attend TOUT, équipe et plan de financement compris.\n"
+                + "- \"INTERNAL\" (point d'étape interne, session avec l'équipe ou les coachs): on attend clarté et "
+                + "avancement. NE reproche PAS l'absence de demande de financement ou de valorisation.\n"
+                + "- \"NOT_A_PITCH\" (cours, exposé général, aucune entreprise présentée): SEUL ce cas plafonne "
+                + "overallScore à 3. Dis-le clairement dans globalCommentary.\n"
+
+                + "BARÈME — UTILISE TOUTE L'ÉCHELLE (0 à 10):\n"
+                + "- 9-10 = exceptionnel, prêt pour des investisseurs. 7-8 = solide. 5-6 = moyen, lacunes nettes. "
+                + "3-4 = faible. 1-2 = inexploitable.\n"
+                + "- Une lacune ne plafonne PAS le score global: elle fait baisser LA dimension concernée, et elle "
+                + "seule. Équipe absente ⇒ 'Équipe & crédibilité' bas, mais 'Marché & traction' garde SA note.\n"
+                + "- Une traction PROUVÉE et vérifiable (clients payants, revenus, rétention, rentabilité, marges, "
+                + "CAC/LTV) vaut au MINIMUM 7 sur 'Marché & traction', même si le reste du pitch est incomplet.\n"
+                + "- INTERDIT de faire converger toutes les dimensions vers 3-4. Si tes notes sont toutes dans un "
+                + "mouchoir, c'est que tu n'as pas discriminé: relis les preuves et écarte-les.\n"
+                + "NOTATION DE 'Rythme & élocution' — fonde-la UNIQUEMENT sur les mesures:\n"
+                + "- Débit: <100 mots/min = trop lent; >190 = précipité. En DEMO_DAY un débit soutenu (jusqu'à ~200) "
+                + "est NORMAL et énergique: ne le sanctionne pas.\n"
+                + "- >3 hésitations/min OU LRA <3 LU (voix monocorde) OU volume < -30 LUFS ⇒ note ≤ 4. "
+                + "Ne dis JAMAIS 'élocution fluide' si les hésitations sont fréquentes.\n"
+                + "- ATTENTION: la transcription automatique EFFACE une partie des hésitations réelles — le nombre "
+                + "mesuré est donc un MINIMUM, jamais une preuve de fluidité.\n"
+                + "NOTATION DE 'Confiance & assurance' — fonde-la UNIQUEMENT sur les tics mesurés:\n"
+                + "- Additionne les marqueurs d'hésitation par minute: sons de remplissage (« euh », « um ») "
+                + "+ sons étirés + formules d'atténuation. Total >4/min ⇒ note ≤ 4. Total >8/min ⇒ note ≤ 2.\n"
+                + "- Des affirmations tournées en question OU >15% de mots marmonnés ⇒ note ≤ 4 également.\n"
+                + "- Un débit haché trahit aussi le manque d'assurance, indépendamment des mots: >6 pauses/min "
+                + "OU un temps de parole effectif < 75% (le reste = silences) ⇒ note ≤ 4.\n"
+                + "- Cite les tics RÉELS avec leur horodatage dans les highlights (severity high si fréquents) et "
+                + "explique en quoi ils décrédibilisent. Ne dis pas 'assuré' si ces marqueurs sont nombreux.\n"
+                + "NOTATION DE 'Présence & langage corporel' — fonde-la UNIQUEMENT sur les images horodatées:\n"
+                + "- Regard fuyant/baissé, lecture de notes, posture avachie ou fermée, absence de gestes ⇒ note ≤ 4.\n"
+                + "- Si AUCUNE donnée visuelle n'est disponible, mets score 5, comment='non mesurable', et signale-le "
+                + "dans confidence.limits. N'invente jamais une 'présence assurée'.\n"
+                + "PRODUIS:\n"
+                + "0) pitchFormat: un de DEMO_DAY | COMPETITION | INVESTOR | INTERNAL | NOT_A_PITCH, et "
+                + "formatReason: une phrase justifiant ce choix (durée, public, contenu).\n"
+                + "1) dimensions: note /10 pour CHACUNE de: " + dims + ", avec un commentaire court.\n"
+                + "2) overallScore (0-10) = la MOYENNE de tes notes de dimensions, arrondie à 0,1. "
+                + "Ne t'en écarte pas: la note globale se DÉDUIT des dimensions, elle ne se décide pas à part.\n"
+                + "3) highlights: 4 à 8 moments clés. Pour chacun: timeSec (secondes, entier), topic, "
+                + "severity (\"low\"|\"medium\"|\"high\"|\"positive\"), observation, advice, scoreImpact (entier, négatif "
+                + "si ça coûte des points, positif si c'est un atout), criterion (le critère du programme concerné), "
+                + "confidence (0-1).\n"
+                + "4) sections: découpage réel du pitch. Pour chacune: name (ex: Introduction, Problème, Solution, "
+                + "Marché, Business Model, Traction, Concurrence, Équipe, Financement, Conclusion), startSec, endSec, "
+                + "score (/10), missing (liste de ce qui manque). N'inclus QUE les sections réellement présentes, et "
+                + "ajoute dans coaching.weaknesses les sections attendues POUR CE FORMAT mais absentes "
+                + "(ne réclame pas une section hors format).\n"
+                + (criteria.isEmpty() ? ""
+                    : "5) criteria: pour CHAQUE critère officiel du programme (" + critJson + "), donne: name, weight, "
+                      + "aiScore, maxScore (= poids), evidenceFound (liste), evidenceMissing (liste), advice, "
+                      + "recoverablePoints (points récupérables si l'advice est suivi).\n")
+                + "6) coaching: {strengths[], weaknesses[], nextActions[], estimatedScoreAfter (0-10 si TOUT est appliqué)}.\n"
+                + "   Chaque nextAction est un OBJET, pas une phrase vague — il doit être actionnable dès demain:\n"
+                + "   - action: le geste précis à poser (impératif, concret, vérifiable).\n"
+                + "   - why: la CONSÉQUENCE observée dans CE pitch qui le justifie (cite le fait ou le chiffre réel).\n"
+                + "   - criterion: la dimension qu'elle fait progresser (parmi " + dims + ").\n"
+                + "   - impactPoints: gain réaliste sur la note globale (nombre, ex 0.5, 1, 2).\n"
+                + "   - effort: \"low\" | \"medium\" | \"high\" (low = réécrire une phrase; high = plusieurs semaines).\n"
+                + "   - atSec: l'horodatage du moment qui illustre le problème, si applicable (sinon omets).\n"
+                + "   - example: si l'action est de reformuler, DONNE la formulation de remplacement, prête à dire.\n"
+                + "   Classe-les de la plus rentable à la moins rentable. 3 à 7 actions.\n"
+                + "   ARITHMÉTIQUE À RESPECTER: la note globale est la MOYENNE des dimensions. Porter un critère "
+                + "de sa note actuelle jusqu'à 10 ne peut donc faire gagner que (10 - note du critère) / "
+                + "(nombre de dimensions) sur la note globale. impactPoints ne doit JAMAIS dépasser ce plafond, "
+                + "et la somme des impactPoints d'un même critère non plus. "
+                + "estimatedScoreAfter = overallScore + somme des impactPoints (max 10). Sois conservateur.\n"
+                + "7) confidence: {score (0-1), reasons[] (ce qui rend l'analyse fiable), limits[] (ce qui la limite)}.\n"
+                + "8) globalCommentary: synthèse courte.\n"
+                + "RÉPONDS UNIQUEMENT avec un objet JSON brut (pas de markdown), commençant par { et finissant par }, "
+                + "de la forme: {\"overallScore\":0,\"dimensions\":[{\"name\":\"\",\"score\":0,\"comment\":\"\"}],"
+                + "\"highlights\":[{\"timeSec\":0,\"topic\":\"\",\"severity\":\"medium\",\"observation\":\"\",\"advice\":\"\","
+                + "\"scoreImpact\":0,\"criterion\":\"\",\"confidence\":0.8}],"
+                + "\"sections\":[{\"name\":\"\",\"startSec\":0,\"endSec\":0,\"score\":0,\"missing\":[\"\"]}],"
+                + "\"criteria\":[{\"name\":\"\",\"weight\":0,\"aiScore\":0,\"maxScore\":0,\"evidenceFound\":[\"\"],"
+                + "\"evidenceMissing\":[\"\"],\"advice\":\"\",\"recoverablePoints\":0}],"
+                + "\"coaching\":{\"strengths\":[\"\"],\"weaknesses\":[\"\"],\"nextActions\":[{\"action\":\"\",\"why\":\"\","
+                + "\"criterion\":\"\",\"impactPoints\":0,\"effort\":\"low\",\"atSec\":0,\"example\":\"\"}],"
+                + "\"estimatedScoreAfter\":0},"
+                + "\"confidence\":{\"score\":0.9,\"reasons\":[\"\"],\"limits\":[\"\"]},\"globalCommentary\":\"\"}";
+
+        List<Map<String, Object>> messages = List.of(Map.of("role", "user", "content", ctx.toString()));
+
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("submissionId", submissionId);
+        out.put("projectName", sub.get("projectName"));
+        // Surface what the media pipeline produced so the client can persist it.
+        if (autoTranscribed)          { out.put("transcript", transcript); out.put("autoTranscribed", true); }
+        if (durationSeconds != null)  out.put("durationSeconds", durationSeconds);
+        if (!media.isEmpty()) {
+            Map<String, Object> delivery = new java.util.LinkedHashMap<>();
+            for (String k : new String[]{"wordsPerMinute", "fillerCount", "pauseCount", "longPauses",
+                                          "longestPauseSec", "speakingRatio",
+                                          "integratedLoudnessLufs", "loudnessRangeLu",
+                                          "elongationCount", "elongationsPerMin", "elongations",
+                                          "repetitionCount", "lowConfidenceWordPct",
+                                          "hedgeCount", "hedgesPerMin", "hedgePhrases",
+                                          "tagQuestionCount",
+                                          "fillerSoundCount", "fillerSoundsPerMin", "fillerMoments"}) {
+                if (media.get(k) != null) delivery.put(k, media.get(k));
+            }
+            out.put("delivery", delivery);
+            out.put("visualObservations", media.getOrDefault("visualObservations", List.of()));
+            if (media.get("warnings") != null) out.put("mediaWarnings", media.get("warnings"));
+            // Timestamped segments drive the transcript panel + timeline markers.
+            if (media.get("segments") != null) {
+                out.put("segments", media.get("segments"));
+                try { out.put("segmentsJson", json.writeValueAsString(media.get("segments"))); }
+                catch (Exception ignored) {}
+            }
+        }
+        stage.accept(mapOf("step", "llm", "status", "running",
+                "label", "Analyse du pitch, notation et rattachement aux critères…",
+                "etaSec", etaFor("llm")));
+        long tLlm = System.nanoTime();
+        try {
+            Map<String, Object> response = llm.chat(messages, List.of(), systemPrompt, "none");
+            recordStage("llm", (System.nanoTime() - tLlm) / 1e9);
+            List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
+            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+            String content = String.valueOf(message.get("content"))
+                    .replaceAll("(?s)```\\w*", "").replaceAll("```", "").trim();
+            int s = content.indexOf('{'), e = content.lastIndexOf('}');
+            if (s >= 0 && e > s) content = content.substring(s, e + 1);
+            Map<String, Object> parsed = lenientJson.readValue(content, Map.class);
+            out.putAll(parsed);
+            // The overall score is DERIVED from the dimensions, never taken as the
+            // model's own gut number. Left free, it anchored on the worst weakness
+            // and collapsed the scale — a demo-day pitch with proven traction and a
+            // deliberately bad talk both came out at 3-4, which tells a jury nothing.
+            // The average keeps the score reconcilable with the radar the user sees.
+            if (parsed.get("dimensions") instanceof List<?> dl && !dl.isEmpty()) {
+                double sum = 0; int n = 0;
+                for (Object o : dl) if (o instanceof Map<?, ?> m && m.get("score") != null) {
+                    try { sum += Double.parseDouble(String.valueOf(m.get("score"))); n++; }
+                    catch (NumberFormatException ignored) {}
+                }
+                if (n > 0) {
+                    double avg = sum / n;
+                    // One legitimate override: a talk that is not a pitch at all.
+                    if ("NOT_A_PITCH".equals(str(parsed.get("pitchFormat")))) avg = Math.min(avg, 3.0);
+                    double llmScore = out.get("overallScore") == null ? Double.NaN
+                            : Double.parseDouble(String.valueOf(out.get("overallScore")));
+                    double derived = Math.round(avg * 10.0) / 10.0;
+                    if (!Double.isNaN(llmScore) && Math.abs(llmScore - derived) >= 1.0)
+                        log.info("Pitch {}: overallScore {} -> {} (derived from {} dimensions)",
+                                submissionId, llmScore, derived, n);
+                    out.put("overallScore", derived);
+                    reconcileCoaching(out, dl, derived, n);
+                }
+            }
+            out.put("aiEnhanced", true);
+            int hl = parsed.get("highlights") instanceof List<?> hll ? hll.size() : 0;
+            int sc = parsed.get("sections")   instanceof List<?> scl ? scl.size() : 0;
+            stage.accept(mapOf("step", "llm", "status", "done", "label", "Analyse terminée",
+                    "detail", hl + " moment(s) clé(s) · " + sc + " section(s) · score "
+                            + out.getOrDefault("overallScore", "?") + "/10"));
+
+            // Persist server-side immediately. The client used to save this from
+            // the final SSE frame, but if the stream is torn down at close the
+            // browser errors and a perfectly good analysis was lost. Saving here
+            // makes the result durable regardless of what happens to the stream.
+            try {
+                Map<String, Object> lean = new java.util.LinkedHashMap<>(out);
+                lean.remove("segments");        // stored in its own column
+                lean.remove("segmentsJson");
+                Map<String, Object> body = new java.util.LinkedHashMap<>();
+                body.put("aiScore", out.get("overallScore"));
+                body.put("aiAnalysisJson", json.writeValueAsString(lean));
+                body.put("transcript", transcript);
+                body.put("autoTranscribed", autoTranscribed);
+                if (durationSeconds != null) body.put("durationSeconds", durationSeconds);
+                if (out.get("segmentsJson") != null) body.put("segmentsJson", out.get("segmentsJson"));
+                upstream.put(upstream.programme() + "/api/pitch/submissions/" + submissionId + "/analysis",
+                        body, callerToken);
+                out.put("saved", true);
+                stage.accept(mapOf("step", "save", "status", "done", "label", "Analyse enregistrée",
+                        "detail", "disponible même si la connexion se coupe"));
+            } catch (Exception se) {
+                log.warn("Could not persist pitch analysis {}: {}", submissionId, se.getMessage());
+                out.put("saved", false);
+            }
+        } catch (Exception ex) {
+            log.warn("Pitch analysis failed for submission {}: {}", submissionId, ex.getMessage(), ex);
+            out.put("aiEnhanced", false);
+            out.put("error", "L'analyse IA a échoué — réessayez dans un instant.");
+            // Say what actually broke: this used to report "timed out" for every
+            // failure, which sent debugging after a timeout that never happened.
+            boolean timedOut = ex instanceof java.net.http.HttpTimeoutException
+                    || ex instanceof java.util.concurrent.TimeoutException
+                    || ex instanceof java.net.SocketTimeoutException;
+            String detail = timedOut ? "le modèle n'a pas répondu à temps"
+                    : ex instanceof com.fasterxml.jackson.core.JacksonException
+                            ? "réponse du modèle illisible"
+                            : "erreur inattendue";
+            stage.accept(mapOf("step", "llm", "status", "error", "label", "L'analyse a échoué",
+                    "detail", detail));
+        }
+        return out;
+    }
+
+    /**
+     * Make the coaching promises add up to the score they claim.
+     *
+     * The model inflates its own advice: one run's actions claimed +7.5 points on
+     * a pitch scoring 5, and projected a 9. The overall score is the MEAN of the
+     * dimensions, so lifting one criterion all the way to 10 can only move it by
+     * (10 - criterionScore) / dimensionCount. Anything above that is arithmetically
+     * impossible, and the UI would show it next to a contradictory "you need N
+     * points" target. Clamp per criterion (grouped, so two actions on the same one
+     * cannot double-count it), then rebuild estimatedScoreAfter from what is left.
+     */
+    @SuppressWarnings("unchecked")
+    private void reconcileCoaching(Map<String, Object> out, List<?> dims, double overall, int dimCount) {
+        if (!(out.get("coaching") instanceof Map)) return;
+        Map<String, Object> coaching = (Map<String, Object>) out.get("coaching");
+        if (!(coaching.get("nextActions") instanceof List<?> raw) || raw.isEmpty()) return;
+
+        Map<String, Double> dimScore = new java.util.LinkedHashMap<>();
+        for (Object o : dims)
+            if (o instanceof Map<?, ?> m && m.get("name") != null && m.get("score") != null)
+                try { dimScore.put(str(m.get("name")).trim().toLowerCase(),
+                        Double.parseDouble(String.valueOf(m.get("score")))); }
+                catch (NumberFormatException ignored) {}
+
+        // Group the claimed impact per criterion so a group can be scaled as one.
+        List<Map<String, Object>> actions = new java.util.ArrayList<>();
+        Map<String, Double> claimed = new java.util.LinkedHashMap<>();
+        for (Object o : raw) {
+            if (!(o instanceof Map)) continue;                 // legacy string action
+            Map<String, Object> a = new java.util.LinkedHashMap<>((Map<String, Object>) o);
+            double pts = 0;
+            try { pts = a.get("impactPoints") == null ? 0
+                    : Double.parseDouble(String.valueOf(a.get("impactPoints"))); }
+            catch (NumberFormatException ignored) {}
+            pts = Math.max(0, pts);
+            a.put("impactPoints", pts);
+            actions.add(a);
+            claimed.merge(str(a.get("criterion")).trim().toLowerCase(), pts, Double::sum);
+        }
+        if (actions.isEmpty()) return;
+
+        double total = 0;
+        for (Map<String, Object> a : actions) {
+            String crit = str(a.get("criterion")).trim().toLowerCase();
+            // Unknown criterion: fall back to the headroom of an average dimension.
+            double headroom = dimScore.containsKey(crit)
+                    ? (10.0 - dimScore.get(crit)) / dimCount
+                    : (10.0 - overall) / dimCount;
+            double groupClaim = claimed.getOrDefault(crit, 0.0);
+            double pts = (double) a.get("impactPoints");
+            if (groupClaim > headroom && groupClaim > 0) pts = pts * (headroom / groupClaim);
+            pts = Math.round(Math.max(0, pts) * 10.0) / 10.0;
+            a.put("impactPoints", pts);
+            total += pts;
+        }
+        coaching.put("nextActions", actions);
+
+        double after = Math.min(10.0, Math.round((overall + total) * 10.0) / 10.0);
+        Object was = coaching.get("estimatedScoreAfter");
+        coaching.put("estimatedScoreAfter", after);
+        log.debug("Coaching reconciled: estimatedScoreAfter {} -> {} (overall {} + {} clamped pts)",
+                was, after, overall, Math.round(total * 10.0) / 10.0);
+    }
+
+    // ── Stage timing: real ETAs learned from actual runs ─────────────────────
+    /**
+     * Rolling average (EMA) of how long each pipeline step really takes, in
+     * seconds. Seeded from measured runs on this stack, then continuously
+     * corrected with every real execution — so the ETA shown to users reflects
+     * THIS machine, not a guess.
+     */
+    private static final Map<String, Double> STAGE_EMA = new java.util.concurrent.ConcurrentHashMap<>(Map.of(
+            "submission", 0.5,
+            "media",     15.0,   // measured: ~12.7s (parallel whisper+vision, 22s clip)
+            "llm",       26.0)); // measured: ~26s on the configured provider
+
+    /** Estimated seconds for a step (null when we have no data). */
+    public static Double etaFor(String step) { return STAGE_EMA.get(step); }
+
+    /** Feed a real measurement back in (EMA, weighted toward recent runs). */
+    private static void recordStage(String step, double seconds) {
+        if (seconds <= 0) return;
+        STAGE_EMA.merge(step, seconds, (old, cur) -> old * 0.6 + cur * 0.4);
+    }
+
+    /**
+     * Scale the media ETA by clip length once we know it — transcription cost is
+     * roughly proportional to audio duration.
+     */
+    private static Double mediaEtaFor(Integer videoSeconds) {
+        Double base = STAGE_EMA.get("media");
+        if (base == null) return null;
+        if (videoSeconds == null || videoSeconds <= 0) return base;
+        // Calibrated on a 22s clip → per-second cost, floored for fixed overhead.
+        double perSec = base / 22.0;
+        return Math.max(6.0, Math.round(videoSeconds * perSec * 10.0) / 10.0);
+    }
+
+    /** Null-safe map builder (Map.of rejects nulls). */
+    private static Map<String, Object> mapOf(Object... kv) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        for (int i = 0; i + 1 < kv.length; i += 2) {
+            m.put(String.valueOf(kv[i]), kv[i + 1] == null ? "" : kv[i + 1]);
+        }
+        return m;
+    }
+
     private static String str(Object o) { return o == null ? "" : String.valueOf(o); }
+
+    /** Base URL of the self-hosted pitch media pipeline (Whisper + vision). */
+    @org.springframework.beans.factory.annotation.Value(
+            "${PITCH_MEDIA_SERVICE_URL:http://pitch-media-service:8087}")
+    private String pitchMediaUrl;
+
+    /**
+     * Call pitch-media-service to auto-transcribe + visually analyse a video.
+     * Returns {} on any failure (the caller degrades to manual transcript).
+     * Long timeout — CPU Whisper on a few-minute clip can take a while.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> callPitchMedia(String videoUrl) {
+        try {
+            var body = json.writeValueAsString(Map.of(
+                    "videoUrl", videoUrl, "transcribe", true, "vision", true));
+            // Force HTTP/1.1 — the media service runs on uvicorn (h11), which does
+            // not speak h2c; Java's default HTTP/2 upgrade makes it reject the body.
+            var client = java.net.http.HttpClient.newBuilder()
+                    .version(java.net.http.HttpClient.Version.HTTP_1_1)
+                    .connectTimeout(java.time.Duration.ofSeconds(10)).build();
+            var request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(pitchMediaUrl + "/analyze"))
+                    .timeout(java.time.Duration.ofMinutes(15))
+                    .header("Content-Type", "application/json")
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+            var resp = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() / 100 != 2) {
+                log.warn("pitch-media-service returned {} for {}", resp.statusCode(), videoUrl);
+                return Map.of();
+            }
+            return json.readValue(resp.body(), Map.class);
+        } catch (Exception e) {
+            log.warn("pitch-media-service call failed ({}): {}", pitchMediaUrl, e.getMessage());
+            return Map.of();
+        }
+    }
 
     // ── Plan execution (batch from a propose_plan wizard submission) ─────
 
