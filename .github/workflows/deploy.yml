@@ -83,10 +83,11 @@ jobs:
           # $DEST expands here; \$svc runs on the server.
           ssh $SSHOPTS "$USER@$HOST" "cd $DEST && \
             for svc in \$(docker compose -f docker-compose.prod.yml config --services); do echo \"==> pulling \$svc\"; docker compose -f docker-compose.prod.yml pull \$svc; done && \
-            echo '==> phase 1: databases + infra (wait until healthy)' && \
-            docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 300 \
-              postgres-auth postgres-candidature postgres-notification postgres-programme postgres-admin-ai \
-              rabbitmq minio eureka-server && \
+            echo '==> phase 1a: databases ONE-BY-ONE (avoids a simultaneous startup RAM spike that flakes a random Postgres healthcheck on a small server)' && \
+            for db in postgres-auth postgres-candidature postgres-notification postgres-programme postgres-admin-ai; do \
+              echo \"==> starting \$db\"; docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 180 \$db; done && \
+            echo '==> phase 1b: broker + object store + discovery' && \
+            docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 240 rabbitmq minio eureka-server && \
             echo '==> phase 2: application services' && \
             docker compose -f docker-compose.prod.yml up -d --remove-orphans && \
             docker image prune -f"
