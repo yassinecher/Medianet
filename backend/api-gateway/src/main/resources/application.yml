@@ -84,9 +84,10 @@ spring:
       globalcors:
         cors-configurations:
           '[/**]':
-            allowedOriginPatterns:
-              - "http://localhost:[*]"
-              - "http://127.0.0.1:[*]"
+            # JWT is sent in the Authorization header (not cookies), so a browser
+            # on another origin can't ride a user's session — allowing all origins
+            # is safe here. Override with GATEWAY_CORS_ORIGINS to restrict later.
+            allowedOriginPatterns: "${GATEWAY_CORS_ORIGINS:*}"
             allowedMethods:
               - GET
               - POST

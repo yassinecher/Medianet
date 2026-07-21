@@ -279,7 +279,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_AUTH_DB:-auth_db}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 90s
 
   postgres-candidature:
     image: postgres:15
@@ -295,7 +296,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_CANDIDATURE_DB:-candidature_db}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 90s
 
   postgres-notification:
     image: postgres:15
@@ -311,7 +313,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_NOTIFICATION_DB:-notification_db}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 90s
 
   postgres-programme:
     image: postgres:15
@@ -327,7 +330,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_PROGRAMME_DB:-programme_db}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 90s
 
   postgres-admin-ai:
     image: postgres:15
@@ -343,7 +347,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_ADMIN_AI_DB:-admin_ai_db}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 90s
 
   minio:
     image: minio/minio:latest
