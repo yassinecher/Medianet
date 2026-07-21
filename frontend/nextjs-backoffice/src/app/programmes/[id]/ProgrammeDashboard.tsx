@@ -8,15 +8,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
-  Users, CheckCircle2, Clock, ListChecks, AlertTriangle, ArrowRight,
+  Users, CheckCircle2, XCircle, Clock, ListChecks, AlertTriangle, ArrowRight,
   Trophy, FileText, ClipboardList, CalendarRange, Loader2, Gauge,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
+import toast from 'react-hot-toast'
 import { candidaturesApi } from '@/lib/api'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { statusColor } from '@/lib/utils'
+import { useCan } from '@/hooks/useCan'
 import { SessionNotifier } from './SessionNotifier'
 
 interface Phase {
@@ -46,9 +48,12 @@ export function ProgrammeDashboard({
   criteria: { id: number; name: string }[]
   onOpenTab: (tab: 'info' | 'phases' | 'criteria' | 'partners' | 'invitations') => void
 }) {
+  const { can } = useCan()
+  const canDecide = can('candidatures:update')
   const [cands, setCands] = useState<Cand[]>([])
   const [stats, setStats] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -126,6 +131,33 @@ export function ProgrammeDashboard({
     }
   } else {
     nextActions.push({ text: 'Aucune session planifiée — créez le parcours du programme.', cta: { label: 'Ouvrir le Parcours', tab: 'phases' } })
+  }
+
+  // ── Accept / reject a candidature straight from the dashboard ───────────────
+  const candLabel = (c: Cand) => c.projectName || c.companyName || `Candidature #${c.id}`
+  const applyUpdate = (u: Cand) => setCands(prev => prev.map(x => (x.id === u.id ? { ...x, ...u } : x)))
+
+  const doAccept = async (c: Cand) => {
+    if (!window.confirm(`Accepter « ${candLabel(c)} » ? Le porteur sera admis au programme.`)) return
+    setBusyId(c.id)
+    try {
+      const r = await candidaturesApi.accept(c.id)
+      applyUpdate(r.data ?? { ...c, status: 'ACCEPTED' })
+      toast.success('Candidature acceptée')
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? "Échec de l'acceptation") }
+    finally { setBusyId(null) }
+  }
+
+  const doReject = async (c: Cand) => {
+    const reason = window.prompt(`Motif du refus de « ${candLabel(c)} » (optionnel) :`, '')
+    if (reason === null) return // cancelled
+    setBusyId(c.id)
+    try {
+      const r = await candidaturesApi.reject(c.id, reason.trim() || 'Non retenue')
+      applyUpdate(r.data ?? { ...c, status: 'REJECTED' })
+      toast.success('Candidature refusée')
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Échec du refus') }
+    finally { setBusyId(null) }
   }
 
   if (loading) {
@@ -236,18 +268,33 @@ export function ProgrammeDashboard({
           </div>
         ) : (
           <div className="space-y-2">
-            {topCandidates.map((c, i) => (
-              <Link key={c.id} href={`/candidatures/${c.id}`}
-                className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-brand-400 hover:bg-accent">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-xs font-bold text-amber-600">{i + 1}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-foreground">{c.projectName || c.companyName || `Candidature #${c.id}`}</p>
-                  <p className="truncate text-[11px] text-muted-foreground">{c.porteurName || ''}{c.sector ? ` · ${c.sector}` : ''}</p>
+            {topCandidates.map((c, i) => {
+              const busy = busyId === c.id
+              return (
+                <div key={c.id}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-brand-400">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-xs font-bold text-amber-600">{i + 1}</span>
+                  <Link href={`/candidatures/${c.id}`} className="min-w-0 flex-1 hover:text-brand-600">
+                    <p className="truncate text-sm font-semibold text-foreground">{c.projectName || c.companyName || `Candidature #${c.id}`}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">{c.porteurName || ''}{c.sector ? ` · ${c.sector}` : ''}</p>
+                  </Link>
+                  {c.status && <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusColor(c.status)}`}>{STATUS_LABEL[c.status] ?? c.status}</span>}
+                  <span className="shrink-0 text-sm font-bold text-amber-600">{Number(c.totalScore).toFixed(1)}</span>
+                  {canDecide && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button onClick={() => doAccept(c)} disabled={busy || c.status === 'ACCEPTED'} title="Accepter la candidature"
+                        className="rounded-lg border border-emerald-500/40 p-1.5 text-emerald-600 hover:bg-emerald-500/10 disabled:opacity-40 dark:text-emerald-400">
+                        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                      </button>
+                      <button onClick={() => doReject(c)} disabled={busy || c.status === 'REJECTED'} title="Refuser la candidature"
+                        className="rounded-lg border border-rose-500/40 p-1.5 text-rose-600 hover:bg-rose-500/10 disabled:opacity-40 dark:text-rose-400">
+                        <XCircle className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {c.status && <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusColor(c.status)}`}>{STATUS_LABEL[c.status] ?? c.status}</span>}
-                <span className="shrink-0 text-sm font-bold text-amber-600">{Number(c.totalScore).toFixed(1)}</span>
-              </Link>
-            ))}
+              )
+            })}
           </div>
         )}
       </MagicCard>

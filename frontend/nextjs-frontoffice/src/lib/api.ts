@@ -160,6 +160,7 @@ export interface PitchSubmission {
   status: 'DRAFT' | 'SUBMITTED' | 'PROCESSING' | 'ANALYZED' | 'FAILED'
   aiScore?: number | null
   aiAnalysisJson?: string | null
+  archived?: boolean
   analyzedAt?: string
   updatedAt?: string
 }
@@ -167,6 +168,8 @@ export const pitchApi = {
   mine: () => api.get<PitchSubmission[]>('/api/pitch/submissions/mine'),
   get: (id: number) => api.get<PitchSubmission>(`/api/pitch/submissions/${id}`),
   upsert: (data: Partial<PitchSubmission>) => api.post<PitchSubmission>('/api/pitch/submissions', data),
+  /** Archive / unarchive a submission (keeps it, moves it out of the active view). */
+  archive: (id: number, archived: boolean) => api.patch<PitchSubmission>(`/api/pitch/submissions/${id}/archive`, { archived }),
   /** Presentation sessions of a programme + my submissions per session. */
   presentations: (programmeId: number) => api.get<any[]>(`/api/pitch/presentations/${programmeId}`),
   /** Move a submission to PROCESSING / FAILED. */
@@ -246,6 +249,9 @@ export const orgInvitationsApi = {
 
 export const programmesApi = {
   list: (params?: object) => api.get('/api/programmes', { params }),
+  /** Private (invitation-only) programmes the current user was invited to.
+   *  Ids are resolved server-side from the caller's token. Empty for anonymous. */
+  invited: () => api.get('/api/programmes/invited'),
   get: (id: number) => api.get(`/api/programmes/${id}`),
   phases: (id: number) => api.get(`/api/programmes/${id}/phases`),
   criteria: (id: number) => api.get(`/api/programmes/${id}/criteria`),
@@ -280,6 +286,8 @@ export const juryApi = {
 export const tasksApi = {
   myTasks: () => api.get('/api/tasks/my'),
   updateStatus: (id: number, data: { status: string }) => api.patch(`/api/tasks/${id}/status`, data),
+  /** Submit the deliverable (rendu) for my task → status SUBMITTED, awaiting review. */
+  submit: (id: number, data: { submissionText?: string; submissionUrl?: string }) => api.patch(`/api/tasks/${id}/submit`, data),
 }
 
 /** Organizations — porteurs list and pick their own; the same API also exposes
@@ -327,6 +335,8 @@ export const CATALOG_CATEGORIES = {
 } as const
 
 export const notificationsApi = {
+  /** Full invitations addressed to the logged-in user — feeds the notifications bell/page. */
+  myInvitations: () => api.get('/api/notifications/invitations/my'),
   rsvpAccept: (token: string) => axios.post(`${API_URL}/api/notifications/invitations/rsvp/${token}/accept`),
   rsvpDecline: (token: string) => axios.post(`${API_URL}/api/notifications/invitations/rsvp/${token}/decline`),
 }

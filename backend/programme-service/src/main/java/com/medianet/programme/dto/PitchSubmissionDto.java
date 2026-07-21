@@ -30,6 +30,7 @@ public class PitchSubmissionDto {
     private Double aiScore;
     private String aiAnalysisJson;
     private Boolean aiEnhanced;
+    private Boolean archived;
     private LocalDateTime analyzedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

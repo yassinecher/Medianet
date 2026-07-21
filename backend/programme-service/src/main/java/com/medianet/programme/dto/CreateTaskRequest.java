@@ -31,6 +31,8 @@ public class CreateTaskRequest {
     private String title;
 
     private String description;
+    /** What the assignee must deliver (the "rendu"). */
+    private String expectedDeliverable;
     private LocalDate dueDate;
 
     /** LOW | MEDIUM | HIGH | URGENT — defaults to MEDIUM */

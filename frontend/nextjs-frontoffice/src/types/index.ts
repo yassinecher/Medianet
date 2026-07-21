@@ -114,16 +114,26 @@ export interface Candidature {
   evaluation?: { weightedScore?: number; recommendation?: string }
 }
 
-export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'SUBMITTED' | 'COMPLETED' | 'CANCELLED'
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
 
 export interface Task {
   id: number
   title: string
   description?: string
+  /** What the assignee must deliver (the "rendu"), set by the admin/mentor. */
+  expectedDeliverable?: string
   programmeName?: string
+  phaseName?: string
   assignedByName?: string
   dueDate?: string
   priority: TaskPriority
   status: TaskStatus
+  /** The assignee's submitted result. */
+  submissionText?: string
+  submissionUrl?: string
+  submittedAt?: string
+  /** Admin/mentor feedback (esp. when changes are requested). */
+  reviewNote?: string
+  completedAt?: string
 }

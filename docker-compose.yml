@@ -139,6 +139,7 @@ services:
   # + Ollama vision (frame captioning). Called by admin-ai-service.
   pitch-media-service:
     build: ./backend/pitch-media-service
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-pitch-media-service:${TAG:-latest}
     container_name: pitch-media-service
     ports:
       - "8089:8087"
@@ -224,6 +225,7 @@ services:
 
   eureka-server:
     build: ./backend/eureka-server
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-eureka-server:${TAG:-latest}
     container_name: eureka-server
     ports:
       - "8761:8761"
@@ -237,6 +239,7 @@ services:
 
   auth-service:
     build: ./backend/auth-service
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-auth-service:${TAG:-latest}
     container_name: auth-service
     ports:
       - "8081:8081"
@@ -261,6 +264,7 @@ services:
 
   candidature-service:
     build: ./backend/candidature-service
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-candidature-service:${TAG:-latest}
     container_name: candidature-service
     ports:
       - "8083:8083"
@@ -287,6 +291,7 @@ services:
 
   notification-service:
     build: ./backend/notification-service
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-notification-service:${TAG:-latest}
     container_name: notification-service
     ports:
       - "8087:8087"
@@ -313,6 +318,7 @@ services:
 
   programme-service:
     build: ./backend/programme-service
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-programme-service:${TAG:-latest}
     container_name: programme-service
     ports:
       - "8086:8086"
@@ -345,6 +351,7 @@ services:
 
   ai-scoring-service:
     build: ./backend/ai-scoring-service
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-ai-scoring-service:${TAG:-latest}
     container_name: ai-scoring-service
     ports:
       - "8084:8084"
@@ -369,6 +376,7 @@ services:
 
   ai-matching-service:
     build: ./backend/ai-matching-service
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-ai-matching-service:${TAG:-latest}
     container_name: ai-matching-service
     ports:
       - "8085:8085"
@@ -393,6 +401,7 @@ services:
 
   admin-ai-service:
     build: ./backend/admin-ai-service
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-admin-ai-service:${TAG:-latest}
     container_name: admin-ai-service
     ports:
       - "8088:8088"
@@ -426,6 +435,7 @@ services:
 
   api-gateway:
     build: ./backend/api-gateway
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-api-gateway:${TAG:-latest}
     container_name: api-gateway
     ports:
       - "8080:8080"
@@ -444,7 +454,7 @@ services:
       - medianet-network
 
   nextjs-frontoffice:
-    image: ${DOCKER_USERNAME:-medianet}/medianet-frontoffice:latest
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-frontoffice:${TAG:-latest}
     build:
       context: ./frontend/nextjs-frontoffice
       args:
@@ -461,7 +471,7 @@ services:
       - medianet-network
 
   nextjs-backoffice:
-    image: ${DOCKER_USERNAME:-medianet}/medianet-backoffice:latest
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-backoffice:${TAG:-latest}
     build:
       context: ./frontend/nextjs-backoffice
       args:
@@ -474,6 +484,17 @@ services:
     depends_on:
       api-gateway:
         condition: service_started
+    networks:
+      - medianet-network
+
+  # Reverse proxy — only used in production (docker-compose.prod.yml). Behind the
+  # "proxy" profile so `docker compose up` in dev doesn't start it; it is still
+  # built & pushed via `docker compose --profile proxy build|push`.
+  nginx:
+    profiles: ["proxy"]
+    build: ./nginx
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-nginx:${TAG:-latest}
+    container_name: nginx
     networks:
       - medianet-network
 

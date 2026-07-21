@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Wand2, ChevronRight, Calendar, Tag } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Wand2, ChevronRight, Calendar, Tag,
+  LayoutDashboard, Info, CalendarClock, Users, Mail, Presentation, ClipboardList, Inbox } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { programmesApi, partnersApi, sessionsApi, CATALOG_CATEGORIES } from '@/lib/api'
 import { useCatalog } from '@/hooks/useCatalog'
@@ -21,9 +22,12 @@ import { ProgrammeReports } from '@/components/ProgrammeReports'
 import { ProgrammePresentations } from './ProgrammePresentations'
 import { TimelineTab } from '../builder/TimelineTab'
 import { InvitationsPanel } from './InvitationsPanel'
+import { TasksPanel } from './TasksPanel'
+import { performDelete } from '@/lib/deleteChoice'
 import { ParcoursFlow } from './ParcoursFlow'
 import { ProgrammeDashboard } from './ProgrammeDashboard'
 import { EvaluationDashboard } from './EvaluationDashboard'
+import { CandidaturesPanel } from './CandidaturesPanel'
 import { ParticipantsPanel } from './ParticipantsPanel'
 
 const statusLabel: Record<string, string> = {
@@ -69,9 +73,9 @@ export default function ProgrammeDetailPage() {
   const [programme, setProgramme] = useState<Programme | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'info' | 'phases' | 'criteria' | 'evaluations' | 'participants' | 'partners' | 'invitations' | 'presentations' | 'reports'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'info' | 'phases' | 'criteria' | 'candidatures' | 'evaluations' | 'participants' | 'partners' | 'invitations' | 'presentations' | 'tasks' | 'reports'>('dashboard')
   type Tab = typeof activeTab
-  const TABS: Tab[] = ['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'participants', 'partners', 'invitations', 'presentations', 'reports']
+  const TABS: Tab[] = ['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'participants', 'partners', 'invitations', 'presentations', 'tasks', 'reports']
 
   // Reflect the active tab in the URL (?tab=) so the browser Back button moves
   // between tabs and only leaves the programme once you're back on the first one.
@@ -228,12 +232,13 @@ export default function ProgrammeDetailPage() {
   }
 
   const handleDeletePhase = async (phaseId: number) => {
-    if (!confirm('Supprimer cette session ?')) return
-    try {
-      await programmesApi.deletePhase(Number(id), phaseId)
-      setPhases((prev) => prev.filter((p) => p.id !== phaseId))
-      toast.success('Session supprimée')
-    } catch { toast.error('Erreur') }
+    const ph = phases.find((p) => p.id === phaseId)
+    const outcome = await performDelete('session', phaseId, () => programmesApi.deletePhase(Number(id), phaseId), {
+      label: `la session « ${ph?.title ?? '?'} »`,
+    })
+    if (!outcome) return
+    setPhases((prev) => prev.filter((p) => p.id !== phaseId))
+    toast.success(outcome === 'purge' ? 'Session supprimée définitivement' : 'Session mise à la corbeille')
   }
 
   const handleAddCriterion = async () => {
@@ -396,26 +401,43 @@ export default function ProgrammeDetailPage() {
           )}
         </motion.div>
 
-        {/* Tabs — "Rapports" only shows with the reports:read permission */}
-        <div className="flex gap-1 border-b border-border overflow-x-auto">
-          {(['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'participants', 'partners', 'invitations', 'presentations', 'reports'] as const)
-            .filter((tab) => tab !== 'reports' || can('reports:read'))
-            .map((tab) => (
-            <button key={tab} onClick={() => selectTab(tab)}
-              title={tab === 'reports' ? 'Accès : permission reports:read' : undefined}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${activeTab === tab ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-              {tab === 'dashboard' ? 'Tableau de bord'
-                : tab === 'info' ? 'Informations'
-                : tab === 'phases' ? `Sessions (${phases.length})`
-                : tab === 'criteria' ? `Critères (${criteria.length})`
-                : tab === 'evaluations' ? 'Évaluations'
-                : tab === 'participants' ? 'Participants'
-                : tab === 'partners' ? `Partenaires (${programmePartners.length})`
-                : tab === 'invitations' ? 'Invitations'
-                : tab === 'presentations' ? 'Présentations'
-                : 'Rapports'}
-            </button>
-          ))}
+        {/* Tabs — icon + label so the bar is scannable; "Rapports" needs reports:read */}
+        <div className="flex gap-0.5 border-b border-border overflow-x-auto pb-px">
+          {([
+            { key: 'dashboard',     label: 'Tableau de bord', Icon: LayoutDashboard },
+            { key: 'info',          label: 'Informations',    Icon: Info },
+            { key: 'phases',        label: 'Sessions',        Icon: CalendarClock, count: phases.length },
+            { key: 'criteria',      label: 'Critères',        Icon: Target,        count: criteria.length },
+            { key: 'candidatures',  label: 'Candidatures',    Icon: Inbox },
+            { key: 'evaluations',   label: 'Évaluations',     Icon: Star },
+            { key: 'participants',  label: 'Participants',    Icon: Users },
+            { key: 'partners',      label: 'Partenaires',     Icon: Building2,     count: programmePartners.length },
+            { key: 'invitations',   label: 'Invitations',     Icon: Mail },
+            { key: 'presentations', label: 'Présentations',   Icon: Presentation },
+            { key: 'tasks',         label: 'Tâches',          Icon: ClipboardList },
+            { key: 'reports',       label: 'Rapports',        Icon: BarChart3 },
+          ] as { key: Tab; label: string; Icon: typeof BarChart3; count?: number }[])
+            .filter((t) => t.key !== 'reports' || can('reports:read'))
+            .map(({ key, label, Icon, count }) => {
+              const active = activeTab === key
+              return (
+                <button key={key} onClick={() => selectTab(key)}
+                  title={key === 'reports' ? 'Accès : permission reports:read' : label}
+                  className={`group -mb-px flex items-center gap-1.5 whitespace-nowrap rounded-t-lg border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                    active
+                      ? 'border-brand-500 bg-brand-500/5 text-brand-600 dark:text-brand-400'
+                      : 'border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground'}`}>
+                  <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-brand-500' : 'text-muted-foreground group-hover:text-foreground'}`} />
+                  {label}
+                  {count != null && (
+                    <span className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      active ? 'bg-brand-500/15 text-brand-600 dark:text-brand-300' : 'bg-muted text-muted-foreground'}`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
         </div>
 
         {loading ? (
@@ -441,7 +463,7 @@ export default function ProgrammeDetailPage() {
             {/* REPORTS TAB */}
             {activeTab === 'reports' && programme && can('reports:read') && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <ProgrammeReports programmeId={programme.id} />
+                <ProgrammeReports programmeId={programme.id} programmeName={programme.title ?? programme.name ?? 'Programme'} />
               </motion.div>
             )}
 
@@ -869,6 +891,13 @@ export default function ProgrammeDetailPage() {
               </motion.div>
             )}
 
+            {/* CANDIDATURES TAB — intake grouped by candidature session (assign jury + accept/reject) */}
+            {activeTab === 'candidatures' && programme && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <CandidaturesPanel programmeId={programme.id} phases={phases as any} criteria={criteria as any} />
+              </motion.div>
+            )}
+
             {/* EVALUATIONS TAB — consolidated evaluation dashboard */}
             {activeTab === 'evaluations' && programme && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -982,7 +1011,15 @@ export default function ProgrammeDetailPage() {
 
             {activeTab === 'invitations' && programme && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <InvitationsPanel programmeId={programme.id} />
+                <InvitationsPanel programmeId={programme.id}
+                  programmeName={programme.title ?? programme.name ?? 'Programme'}
+                  programmeType={programme.type} />
+              </motion.div>
+            )}
+
+            {activeTab === 'tasks' && programme && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <TasksPanel programmeId={programme.id} programmeName={programme.title ?? programme.name ?? 'Programme'} />
               </motion.div>
             )}
           </>

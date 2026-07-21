@@ -190,6 +190,31 @@ public class TaskController {
     }
 
     /**
+     * The assignee submits their deliverable (rendu) → task moves to SUBMITTED,
+     * awaiting admin/mentor review. Only the assignee (or a privileged user) may submit.
+     */
+    @PatchMapping("/api/tasks/{taskId}/submit")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TaskDto> submitTask(
+            @PathVariable Long taskId,
+            @RequestBody SubmitTaskRequest req,
+            @RequestAttribute("userId") Long userId) {
+        return ResponseEntity.ok(taskService.submitTask(taskId, userId, req));
+    }
+
+    /**
+     * Admin/mentor reviews a submitted deliverable: approve → COMPLETED,
+     * or request changes → back to IN_PROGRESS with a note.
+     */
+    @PatchMapping("/api/tasks/{taskId}/review")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
+    public ResponseEntity<TaskDto> reviewTask(
+            @PathVariable Long taskId,
+            @RequestBody ReviewTaskRequest req) {
+        return ResponseEntity.ok(taskService.reviewTask(taskId, req));
+    }
+
+    /**
      * "My tasks" — porteur/team-member sees all tasks assigned to them
      * across every programme, optionally filtered by ?status=
      */

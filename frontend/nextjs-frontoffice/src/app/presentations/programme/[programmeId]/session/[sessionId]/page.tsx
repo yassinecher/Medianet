@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { ChevronLeft, Dumbbell, Trophy, Presentation, Info } from 'lucide-react'
+import { ChevronLeft, Dumbbell, Trophy, Presentation, Info, Archive } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -28,14 +28,26 @@ export default function SessionPhasePage() {
 
   const prog = programmes.find((p) => p.programmeId === programmeId)
   const session = (sessionsByProg[programmeId] ?? []).find((s) => s.sessionId === sessionId)
-  const subs = useMemo(() => session?.submissions ?? [], [session])
+  const allSubs = useMemo(() => session?.submissions ?? [], [session])
+  const subs = useMemo(() => allSubs.filter((s) => !s.archived), [allSubs])
+  const archived = useMemo(() => chronological(allSubs.filter((s) => s.archived)), [allSubs])
 
   const trainings = useMemo(() => chronological(subs.filter((s) => s.kind === 'TRAINING')), [subs])
   const final = useMemo(() => subs.find((s) => s.kind === 'FINAL'), [subs])
+  // Analytics run on the active (non-archived) videos.
   const stats = useMemo(() => computeStats(subs), [subs])
 
   const deadlinePassed = session?.pitchDeadline
     && new Date(session.pitchDeadline) < new Date(new Date().toDateString())
+
+  // Upload gating (server-computed; fall back to local derivation if absent).
+  const maxTraining = session?.maxTrainingVideos ?? 3
+  const trainingCount = session?.trainingCount ?? trainings.length
+  const finalSubmitted = session?.finalSubmitted ?? !!final
+  const canUploadTraining = session?.canUploadTraining
+    ?? (session?.open !== false && !finalSubmitted && trainingCount < maxTraining)
+  const canUploadFinal = session?.canUploadFinal
+    ?? (session?.open !== false && !finalSubmitted)
 
   return (
     <AppShell>
@@ -95,12 +107,15 @@ export default function SessionPhasePage() {
               </section>
             )}
 
-            {/* Training — repeat as often as you like */}
+            {/* Training — repeat up to the session's limit */}
             <section className="space-y-2">
-              <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              <h2 className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-foreground">
                 <Dumbbell className="h-4 w-4 text-sky-500" />Entraînement
                 <span className="text-xs font-normal text-muted-foreground">
-                  — répétez autant que vous voulez, seul le pitch final compte
+                  — répétez pour progresser, seul le pitch final compte
+                </span>
+                <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {trainingCount} / {maxTraining} utilisé{trainingCount > 1 ? 's' : ''}
                 </span>
               </h2>
               {trainings.length > 0 ? (
@@ -113,13 +128,22 @@ export default function SessionPhasePage() {
                   donnera une base de comparaison.
                 </p>
               )}
-              {session.open !== false && (
+              {canUploadTraining ? (
                 <PitchUpload
                   ctx={{ programmeId, organizationId: prog?.organizationId, companyName: prog?.companyName, projectName: prog?.projectName }}
                   sessionId={sessionId} kind="TRAINING"
                   label={trainings.length ? 'Nouvelle vidéo d’entraînement' : 'Déposer une première vidéo d’entraînement'}
                   onSaved={reload}
                 />
+              ) : (
+                <p className="flex items-center gap-1.5 rounded-xl border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                  <Info className="h-3.5 w-3.5" />
+                  {finalSubmitted
+                    ? 'Entraînement clôturé — votre pitch final a été envoyé.'
+                    : session.open === false
+                      ? 'Phase clôturée — le dépôt d’entraînement est fermé.'
+                      : `Limite d’entraînements atteinte (${maxTraining}). Passez à votre pitch final quand vous êtes prêt.`}
+                </p>
               )}
             </section>
 
@@ -127,11 +151,16 @@ export default function SessionPhasePage() {
             <section className="space-y-2">
               <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                 <Trophy className="h-4 w-4 text-purple-500" />Pitch final
-                <span className="text-xs font-normal text-muted-foreground">— votre présentation officielle</span>
+                <span className="text-xs font-normal text-muted-foreground">— une seule soumission, définitive</span>
               </h2>
               {final ? (
-                <PitchVideoCard sub={final} />
-              ) : session.open !== false ? (
+                <>
+                  <PitchVideoCard sub={final} />
+                  <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <Info className="h-3 w-3" />Pitch final envoyé — il ne peut plus être remplacé.
+                  </p>
+                </>
+              ) : canUploadFinal ? (
                 <PitchUpload
                   ctx={{ programmeId, organizationId: prog?.organizationId, companyName: prog?.companyName, projectName: prog?.projectName }}
                   sessionId={sessionId} kind="FINAL"
@@ -144,6 +173,21 @@ export default function SessionPhasePage() {
                 </p>
               )}
             </section>
+
+            {/* Archives — saved videos kept out of the active view, still viewable */}
+            {archived.length > 0 && (
+              <details className="group rounded-xl border border-border bg-muted/20">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 p-3 text-sm font-semibold text-foreground">
+                  <Archive className="h-4 w-4 text-muted-foreground" />Archives
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{archived.length}</span>
+                  <span className="ml-auto text-[11px] font-normal text-muted-foreground group-open:hidden">afficher</span>
+                  <span className="ml-auto hidden text-[11px] font-normal text-muted-foreground group-open:inline">masquer</span>
+                </summary>
+                <div className="grid gap-2 p-3 pt-0 lg:grid-cols-2">
+                  {archived.map((a, i) => <PitchVideoCard key={a.id} sub={a} index={i + 1} />)}
+                </div>
+              </details>
+            )}
           </>
         )}
       </div>

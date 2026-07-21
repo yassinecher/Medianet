@@ -3,6 +3,7 @@ package com.medianet.programme.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
@@ -17,6 +18,7 @@ import java.util.List;
  */
 @Entity
 @Table(name = "programmes")
+@SQLRestriction("deleted_at is null")   // soft-deleted (trashed) rows are hidden from every query
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
 @Builder
@@ -141,6 +143,10 @@ public class Programme {
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    /** Soft-delete timestamp — non-null means the programme is in the trash. */
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     // ── Relationships ──────────────────────────────────────────────────────
 

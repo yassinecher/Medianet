@@ -44,4 +44,6 @@ public class UpdatePhaseRequest {
     private Boolean         collectPitchVideos;
     /** Pitch upload deadline (send a pre-1971 date to clear it). */
     private LocalDate       pitchDeadline;
+    /** Max TRAINING videos per porteur for this session (send <=0 to clear → default). */
+    private Integer         maxTrainingVideos;
 }

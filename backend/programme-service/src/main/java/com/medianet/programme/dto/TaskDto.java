@@ -25,9 +25,14 @@ public class TaskDto {
     private String assignedByName;
     private String title;
     private String description;
+    private String expectedDeliverable;
     private LocalDate dueDate;
     private String priority;
     private String status;
+    private String submissionText;
+    private String submissionUrl;
+    private LocalDateTime submittedAt;
+    private String reviewNote;
     private LocalDateTime completedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

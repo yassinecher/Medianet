@@ -568,6 +568,12 @@ function BuilderInner(props: BuilderProps = {}) {
   const selectedNode = useMemo(() => nodes.find((n) => n.id === selectedId) ?? null, [nodes, selectedId])
   const criteria = nodes.filter((n): n is Node<CriterionData, 'criterion'> => n.data.kind === 'criterion')
   const sessions = nodes.filter((n): n is Node<SessionData,   'session'>   => n.data.kind === 'session')
+  // The programme's own window — sessions must stay inside it (mirrors the backend
+  // PROGRAM_DATE_CONFLICT rule), so we clamp every session date picker to it.
+  const progWindow = useMemo(() => {
+    const p = nodes.find((n): n is Node<ProgrammeData, 'programme'> => n.data.kind === 'programme')
+    return { start: p?.data.startDate || undefined, end: p?.data.endDate || undefined }
+  }, [nodes])
 
   // ── Save ─────────────────────────────────────────────────────────────────
 
@@ -855,6 +861,7 @@ function BuilderInner(props: BuilderProps = {}) {
             node={selectedNode}
             allCriteria={criteria}
             allSessions={sessions}
+            progWindow={progWindow}
             onChange={(patch) => updateData(selectedNode.id, patch)}
             onSelectNode={setSelectedId}
             onDelete={(selectedNode.id === 'programme' || selectedNode.id === 'timeline') ? undefined : removeSelected}
@@ -868,10 +875,11 @@ function BuilderInner(props: BuilderProps = {}) {
 
 // ── Inspector dispatcher ────────────────────────────────────────────────────
 
-function Inspector({ node, allCriteria, allSessions, onChange, onSelectNode, onDelete }: {
+function Inspector({ node, allCriteria, allSessions, progWindow, onChange, onSelectNode, onDelete }: {
   node: BuilderNode
   allCriteria: Node<CriterionData, 'criterion'>[]
   allSessions: Node<SessionData, 'session'>[]
+  progWindow: { start?: string; end?: string }
   onChange: (patch: any) => void
   onSelectNode: (id: string) => void
   onDelete?: () => void
@@ -910,7 +918,7 @@ function Inspector({ node, allCriteria, allSessions, onChange, onSelectNode, onD
         {node.data.kind === 'criterion'    && <CriterionInspector  d={node.data as CriterionData} node={node as Node<CriterionData,'criterion'>}
                                                                     allSessions={allSessions} onChange={onChange} onSelectNode={onSelectNode} />}
         {node.data.kind === 'session'      && <SessionInspector    d={node.data as SessionData} node={node as Node<SessionData,'session'>}
-                                                                    allCriteria={allCriteria} onChange={onChange} onSelectNode={onSelectNode} />}
+                                                                    allCriteria={allCriteria} progWindow={progWindow} onChange={onChange} onSelectNode={onSelectNode} />}
       </div>
     </div>
   )
@@ -1189,10 +1197,11 @@ function CriterionInspector({ d, node, allSessions, onChange, onSelectNode }: {
   )
 }
 
-function SessionInspector({ d, node, allCriteria, onChange, onSelectNode }: {
+function SessionInspector({ d, node, allCriteria, progWindow, onChange, onSelectNode }: {
   d: SessionData
   node: Node<SessionData, 'session'>
   allCriteria: Node<CriterionData, 'criterion'>[]
+  progWindow: { start?: string; end?: string }
   onChange: (p: any) => void
   onSelectNode: (id: string) => void
 }) {
@@ -1295,7 +1304,9 @@ function SessionInspector({ d, node, allCriteria, onChange, onSelectNode }: {
           </Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Début">
-              <Input type="date" value={d.startDate ?? ''} onChange={(e) => {
+              <Input type="date" value={d.startDate ?? ''}
+                min={progWindow.start} max={progWindow.end}
+                onChange={(e) => {
                 const sd = e.target.value
                 // For "day" sessions, lock endDate to startDate.
                 const patch: any = { startDate: sd }
@@ -1312,6 +1323,7 @@ function SessionInspector({ d, node, allCriteria, onChange, onSelectNode }: {
               <Input
                 type="date"
                 value={d.endDate ?? ''}
+                min={d.startDate || progWindow.start} max={progWindow.end}
                 disabled={d.durationKind === 'day'}
                 title={d.durationKind === 'day'
                   ? 'Verrouillé — passez à "Semaine" ou "Personnalisé" pour modifier'
@@ -1321,6 +1333,11 @@ function SessionInspector({ d, node, allCriteria, onChange, onSelectNode }: {
               />
             </Field>
           </div>
+          {(progWindow.start || progWindow.end) && (
+            <p className="text-[10px] text-muted-foreground -mt-1">
+              La session doit rester dans la fenêtre du programme ({progWindow.start ?? '?'} → {progWindow.end ?? '?'}).
+            </p>
+          )}
           <Field label="Lieu"><Input value={d.location} placeholder="Salle A, en ligne, …" onChange={(e) => onChange({ location: e.target.value })} /></Field>
         </div>
       )}

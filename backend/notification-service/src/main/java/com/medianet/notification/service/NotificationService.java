@@ -215,6 +215,15 @@ public class NotificationService {
         return invitationRepository.findInvitedProgrammeIds(email);
     }
 
+    /** Full invitations addressed to the given recipient — newest first.
+     *  Feeds the front-office notifications feed (bell + /notifications page). */
+    @Transactional(readOnly = true)
+    public List<InvitationDto> getMyInvitations(String email) {
+        if (email == null || email.isBlank()) return List.of();
+        return invitationRepository.findByRecipientEmailOrderByCreatedAtDesc(email.toLowerCase())
+                .stream().map(this::toDto).collect(Collectors.toList());
+    }
+
     @Transactional(readOnly = true)
     public List<InvitationDto> getByPhase(Long phaseId) {
         return invitationRepository.findByPhaseIdOrderByCreatedAtDesc(phaseId)

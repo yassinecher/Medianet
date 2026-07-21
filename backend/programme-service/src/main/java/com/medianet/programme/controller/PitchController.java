@@ -82,6 +82,22 @@ public class PitchController {
         return ResponseEntity.ok(pitchService.presentationsForProgramme(programmeId, userId));
     }
 
+    /** Archive / unarchive a submission (owner or admin). Body: {archived: bool}. */
+    @PatchMapping("/submissions/{id}/archive")
+    public ResponseEntity<PitchSubmissionDto> archive(
+            @PathVariable Long id, @RequestAttribute("userId") Long userId,
+            @RequestBody Map<String, Object> body) {
+        boolean archived = body.get("archived") == null || Boolean.parseBoolean(String.valueOf(body.get("archived")));
+        return ResponseEntity.ok(pitchService.setArchived(id, userId, isAdminOrReviewer(), archived));
+    }
+
+    /** Soft-delete a submission (owner or admin) — moves it to the trash. */
+    @DeleteMapping("/submissions/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id, @RequestAttribute("userId") Long userId) {
+        pitchService.softDelete(id, userId, isAdminOrReviewer());
+        return ResponseEntity.noContent().build();
+    }
+
     // ── Admin / reviewer ─────────────────────────────────────────────────────
 
     /** All submissions for a programme (or session) — reviewers only. */

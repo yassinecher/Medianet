@@ -1,0 +1,89 @@
+name: Build & Deploy
+
+# Builds the Medianet images natively for arm64 (no QEMU emulation), pushes them
+# to Docker Hub, then pulls & restarts the stack on the server over SSH.
+#
+# Nothing secret lives in this file — every credential is read from GitHub
+# "Secrets" you set yourself (Settings → Secrets and variables → Actions):
+#   DOCKERHUB_USERNAME   your Docker Hub user (yassinecherni9)
+#   DOCKERHUB_TOKEN      a Docker Hub *access token* (NOT your password)
+#   SSH_PRIVATE_KEY      the deploy key's PRIVATE half (a dedicated deploy key)
+#   SERVER_HOST          server IP / hostname
+#   SERVER_USER          SSH username on the server
+# Optional repo "Variables" (with sensible defaults):
+#   SERVER_SSH_PORT (22) · SERVER_PATH (~/medianet)
+#   FRONTOFFICE_API_URL · BACKOFFICE_API_URL
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build-and-push:
+    # Native arm64 runner — no emulation. Free on PUBLIC repos; on private repos
+    # it needs a paid plan. If unavailable, use a self-hosted runner on the
+    # server instead:  runs-on: [self-hosted, linux, ARM64]
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push (native linux/arm64)
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          TAG: latest
+          PLATFORMS: linux/arm64
+          FRONTOFFICE_API_URL: ${{ vars.FRONTOFFICE_API_URL || 'https://app.medianet.dz' }}
+          BACKOFFICE_API_URL: ${{ vars.BACKOFFICE_API_URL || 'https://admin.medianet.dz' }}
+        run: docker buildx bake -f docker-bake.hcl --push
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          PORT: ${{ vars.SERVER_SSH_PORT || '22' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Upload compose file
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER: ${{ secrets.SERVER_USER }}
+          PORT: ${{ vars.SERVER_SSH_PORT || '22' }}
+          DEST: ${{ vars.SERVER_PATH || '~/medianet' }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "$PORT" "$USER@$HOST" "mkdir -p $DEST"
+          scp -i ~/.ssh/id_deploy -P "$PORT" docker-compose.prod.yml "$USER@$HOST:$DEST/docker-compose.prod.yml"
+
+      - name: Pull & restart on the server
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER: ${{ secrets.SERVER_USER }}
+          PORT: ${{ vars.SERVER_SSH_PORT || '22' }}
+          DEST: ${{ vars.SERVER_PATH || '~/medianet' }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "$PORT" "$USER@$HOST" bash -s <<'EOF'
+          set -e
+          cd ${{ vars.SERVER_PATH || '~/medianet' }}
+          docker compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+          docker image prune -f
+          EOF

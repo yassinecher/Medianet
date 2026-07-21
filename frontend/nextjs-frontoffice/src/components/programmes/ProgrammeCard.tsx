@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Calendar, Users, ArrowRight, Trophy, MapPin, Timer, CheckCircle2 } from 'lucide-react'
+import { Calendar, Users, ArrowRight, Trophy, MapPin, Timer, CheckCircle2, Lock } from 'lucide-react'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { cn, formatDate, statusColor } from '@/lib/utils'
 import type { Programme } from '@/types'
@@ -30,7 +30,7 @@ function daysLeft(programme: Programme): number | null {
   return Math.ceil((d.getTime() - Date.now()) / 86_400_000)
 }
 
-export function ProgrammeCard({ programme, appliedStatus }: { programme: Programme; appliedStatus?: string }) {
+export function ProgrammeCard({ programme, appliedStatus, invited }: { programme: Programme; appliedStatus?: string; invited?: boolean }) {
   const title = programme.title ?? programme.name ?? ''
   const accepting = (programme as any).acceptingApplications
   const left = daysLeft(programme)
@@ -43,7 +43,10 @@ export function ProgrammeCard({ programme, appliedStatus }: { programme: Program
 
   return (
     <Link href={`/programmes/${programme.id}`} className="group block h-full">
-      <MagicCard className="h-full overflow-hidden transition-shadow group-hover:shadow-lg">
+      <MagicCard className={cn(
+        'h-full overflow-hidden transition-shadow group-hover:shadow-lg',
+        invited && 'ring-2 ring-violet-500/60 ring-offset-2 ring-offset-background shadow-md shadow-violet-500/10',
+      )}>
         {/* Banner */}
         {programme.bannerImageUrl ? (
           <div className="relative h-36 overflow-hidden">
@@ -75,6 +78,13 @@ export function ProgrammeCard({ programme, appliedStatus }: { programme: Program
         )}
 
         <div className="flex flex-col gap-3 p-5">
+          {/* Invitation badge — this private programme is visible because you were invited */}
+          {invited && (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-[11px] font-bold text-violet-700 dark:text-violet-300">
+              <Lock className="h-3 w-3" />Invitation privée
+            </span>
+          )}
+
           {/* Title + tagline */}
           <div>
             <h3 className="font-bold text-foreground text-base leading-tight group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">

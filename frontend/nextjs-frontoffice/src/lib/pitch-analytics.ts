@@ -49,6 +49,13 @@ export const parseAnalysis = (s: PitchSubmission): PitchAnalysis | null => {
   try { return JSON.parse(s.aiAnalysisJson) as PitchAnalysis } catch { return null }
 }
 
+/** A video the analyser judged not to be a pitch (fiction, course, no person…).
+ *  Its score is meaningless, so it is shown apart and kept out of every average. */
+export const isOutOfContext = (s: PitchSubmission): boolean => {
+  const a = parseAnalysis(s)
+  return !!a && (a.outOfContext === true || a.pitchFormat === 'NOT_A_PITCH')
+}
+
 const round1 = (n: number) => Math.round(n * 10) / 10
 const mean = (xs: number[]) => (xs.length ? round1(xs.reduce((a, b) => a + b, 0) / xs.length) : null)
 
@@ -70,7 +77,9 @@ const avgDelivery = (list: PitchAnalysis[], key: keyof Delivery): number | null 
 
 export function computeStats(subs: PitchSubmission[]): PitchStats {
   const ordered = chronological(subs)
-  const analyzedSubs = ordered.filter((s) => s.aiScore != null)
+  // Out-of-context clips (not a pitch) carry a score that means nothing — exclude
+  // them from every aggregate so they can't drag the averages or the trend.
+  const analyzedSubs = ordered.filter((s) => s.aiScore != null && !isOutOfContext(s))
   const analyses = analyzedSubs.map(parseAnalysis).filter((a): a is PitchAnalysis => !!a)
   const scores = analyzedSubs.map((s) => s.aiScore as number)
 

@@ -114,6 +114,9 @@ export interface PitchAnalysis {
   /** Detected delivery format — expectations are calibrated to it. */
   pitchFormat?: PitchFormat
   formatReason?: string
+  /** True when the video is not a pitch at all (fiction, course, no person…). */
+  outOfContext?: boolean
+  outOfContextReason?: string
   dimensions?: Dimension[]
   highlights?: Highlight[]
   sections?: Section[]

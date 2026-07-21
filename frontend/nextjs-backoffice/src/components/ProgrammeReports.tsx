@@ -8,7 +8,9 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
-import { reportsApi } from '@/lib/api'
+import { reportsApi, candidaturesApi, sessionsApi, programmesApi } from '@/lib/api'
+import { downloadScoresWorkbook, downloadApplicationsWorkbook, downloadScheduleWorkbook } from '@/lib/reports-excel'
+import { FileSpreadsheet } from 'lucide-react'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -41,11 +43,48 @@ const tooltipStyle = {
 }
 
 /** Programme-scoped analytics — rendered in the "Rapports" tab of a programme. */
-export function ProgrammeReports({ programmeId }: { programmeId: number }) {
+export function ProgrammeReports({ programmeId, programmeName = 'Programme' }: { programmeId: number; programmeName?: string }) {
   const [cand, setCand] = useState<AnyReport | null>(null)
   const [prog, setProg] = useState<AnyReport | null>(null)
   const [inv, setInv] = useState<AnyReport | null>(null)
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState<'scores' | 'applications' | 'schedule' | null>(null)
+
+  const arr = (r: any) => r?.data?.content ?? r?.data ?? []
+
+  const exportScores = async () => {
+    setExporting('scores')
+    try {
+      const [c, cr] = await Promise.all([candidaturesApi.byProgramme(programmeId), programmesApi.criteria(programmeId)])
+      const list = arr(c)
+      if (!list.length) { toast.error('Aucune candidature à exporter'); return }
+      downloadScoresWorkbook(programmeName, list, arr(cr))
+      toast.success('Export Excel — scores & sélection téléchargé')
+    } catch { toast.error('Échec de l’export des scores') }
+    finally { setExporting(null) }
+  }
+  const exportApplications = async () => {
+    setExporting('applications')
+    try {
+      const [c, cr] = await Promise.all([candidaturesApi.byProgramme(programmeId), programmesApi.criteria(programmeId)])
+      const list = arr(c)
+      if (!list.length) { toast.error('Aucune candidature à exporter'); return }
+      downloadApplicationsWorkbook(programmeName, list, arr(cr))
+      toast.success('Export Excel — fiches projets & entretiens téléchargé')
+    } catch { toast.error('Échec de l’export des fiches projets') }
+    finally { setExporting(null) }
+  }
+  const exportSchedule = async () => {
+    setExporting('schedule')
+    try {
+      const [s, c] = await Promise.all([sessionsApi.list(programmeId), candidaturesApi.byProgramme(programmeId)])
+      const list = arr(s)
+      if (!list.length) { toast.error('Aucune session à exporter'); return }
+      downloadScheduleWorkbook(programmeName, list, arr(c))
+      toast.success('Export Excel — programme workshops / conférences téléchargé')
+    } catch { toast.error('Échec de l’export du programme') }
+    finally { setExporting(null) }
+  }
 
   const load = async () => {
     setLoading(true)
@@ -123,7 +162,23 @@ export function ProgrammeReports({ programmeId }: { programmeId: number }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <span className="mr-auto text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Exports Excel</span>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={exportScores} disabled={!!exporting}
+          title="Scores du jury par critère, un onglet par projet + synthèse & sélection (Excel)">
+          <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+          {exporting === 'scores' ? 'Export…' : 'Scores & sélection'}
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={exportApplications} disabled={!!exporting}
+          title="Fiches projets (formulaires) + liste des entretiens + grille de notation (Excel)">
+          <FileSpreadsheet className="h-3.5 w-3.5 text-indigo-600" />
+          {exporting === 'applications' ? 'Export…' : 'Fiches projets & entretiens'}
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={exportSchedule} disabled={!!exporting}
+          title="Programme des conférences / workshops + startups accompagnées (Excel)">
+          <FileSpreadsheet className="h-3.5 w-3.5 text-sky-600" />
+          {exporting === 'schedule' ? 'Export…' : 'Workshops & conférences'}
+        </Button>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={load} disabled={loading}>
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />Actualiser
         </Button>

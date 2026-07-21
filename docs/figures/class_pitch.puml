@@ -1,0 +1,81 @@
+@startuml
+' Figure 4.2 — Pitch submission model (persistence side)
+skinparam classAttributeIconSize 0
+skinparam nodesep 25
+skinparam ranksep 40
+hide circle
+
+class Programme <<context>> #EEEEEE {
+  +id
+  +title
+}
+
+class ProgrammePhase <<context>> #EEEEEE {
+  +id
+  +sessionType
+  +collectPitchVideos
+}
+
+class PitchSubmission {
+  +id
+  +carrierEmail
+  +kind
+  +status
+  --
+  +videoUrl
+  +videoFilename
+  +durationSeconds
+  --
+  +transcript
+  +autoTranscribed
+  +segmentsJson
+  --
+  +aiScore
+  +aiAnalysisJson
+  +analyzedAt
+}
+
+enum PitchKind {
+  TRAINING
+  FINAL
+}
+
+enum PitchStatus {
+  DRAFT
+  SUBMITTED
+  PROCESSING
+  ANALYZED
+  FAILED
+}
+
+class TranscriptSegment {
+  +start
+  +end
+  +text
+}
+
+class PitchAnalysis <<see Figure 4.3>> #EEEEEE {
+  +pitchFormat
+  +overallScore
+}
+
+Programme "1" <-- "many" PitchSubmission
+ProgrammePhase "1" <-- "many" PitchSubmission
+PitchSubmission "1" --> "1" PitchKind
+PitchSubmission "1" --> "1" PitchStatus
+PitchSubmission "1" *-- "many" TranscriptSegment
+PitchSubmission "1" *-- "0..1" PitchAnalysis
+
+note right of PitchSubmission
+  A session flagged collectPitchVideos
+  accepts several TRAINING videos
+  and a single FINAL pitch.
+  The transcript is cached so a
+  re-analysis costs only the LLM call.
+end note
+
+note bottom of PitchAnalysis
+  Serialized in aiAnalysisJson.
+  Detailed in Figure 4.3.
+end note
+@enduml

@@ -28,13 +28,34 @@ export default function ProgrammesPage() {
   const [status, setStatus] = useState('')
   /** programmeId → the porteur's candidature status on it. */
   const [appliedMap, setAppliedMap] = useState<Record<number, string>>({})
+  /** Ids of PRIVATE programmes the user was invited to — highlighted + sorted first. */
+  const [invitedIds, setInvitedIds] = useState<Set<number>>(new Set())
 
   useEffect(() => {
-    // publicOnly hides DRAFT / ARCHIVED / CANCELLED programmes from porteurs.
-    programmesApi.list({ publicOnly: true, ...(status ? { status } : {}) })
-      .then((r) => setProgrammes(r.data?.content ?? r.data ?? []))
-      .finally(() => setLoading(false))
-  }, [status])
+    // publicOnly hides DRAFT / ARCHIVED / CANCELLED (and PRIVATE) programmes from porteurs.
+    const publicP = programmesApi.list({ publicOnly: true, ...(status ? { status } : {}) })
+      .then((r) => (r.data?.content ?? r.data ?? []) as Programme[])
+      .catch(() => [] as Programme[])
+    // Invitation-only programmes the caller can reach (empty for anonymous). These
+    // are the only way a porteur discovers a PRIVATE programme.
+    const invitedP = isAuthenticated
+      ? programmesApi.invited().then((r) => (r.data ?? []) as Programme[]).catch(() => [] as Programme[])
+      : Promise.resolve([] as Programme[])
+
+    Promise.all([publicP, invitedP]).then(([pub, inv]) => {
+      const invSet = new Set(inv.map((p) => p.id!).filter((id) => id != null))
+      setInvitedIds(invSet)
+      // Merge, invited first, de-duplicated by id.
+      const byId = new Map<number, Programme>()
+      for (const p of inv) if (p.id != null) byId.set(p.id, p)
+      for (const p of pub) if (p.id != null && !byId.has(p.id)) byId.set(p.id, p)
+      const merged = Array.from(byId.values()).sort((a, b) => {
+        const ai = invSet.has(a.id!) ? 0 : 1, bi = invSet.has(b.id!) ? 0 : 1
+        return ai - bi
+      })
+      setProgrammes(merged)
+    }).finally(() => setLoading(false))
+  }, [status, isAuthenticated])
 
   // Which programmes has this porteur already applied to (drives the badges)?
   useEffect(() => {
@@ -55,7 +76,14 @@ export default function ProgrammesPage() {
     <div className="mx-auto max-w-6xl">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Programmes d&apos;incubation</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{filtered.length} programme(s) disponible(s)</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {filtered.length} programme(s) disponible(s)
+          {invitedIds.size > 0 && (
+            <span className="ml-1 text-violet-600 dark:text-violet-400">
+              · dont {invitedIds.size} sur invitation privée
+            </span>
+          )}
+        </p>
       </motion.div>
 
       <div className="mb-6 flex flex-col gap-3 sm:flex-row">
@@ -81,7 +109,7 @@ export default function ProgrammesPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((p, i) => (
             <motion.div key={p.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-              <ProgrammeCard programme={p} appliedStatus={appliedMap[p.id!]} />
+              <ProgrammeCard programme={p} appliedStatus={appliedMap[p.id!]} invited={invitedIds.has(p.id!)} />
             </motion.div>
           ))}
           {filtered.length === 0 && <div className="col-span-full py-16 text-center text-muted-foreground">Aucun programme trouvé</div>}

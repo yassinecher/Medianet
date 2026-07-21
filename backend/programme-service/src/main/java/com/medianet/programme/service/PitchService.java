@@ -29,13 +29,19 @@ public class PitchService {
     private final PitchSubmissionRepository pitchRepository;
     private final ProgrammePhaseRepository  phaseRepository;
 
+    /** Default number of TRAINING videos a porteur may analyse per session when
+     *  the admin hasn't set a session-specific cap. */
+    static final int DEFAULT_MAX_TRAINING = 3;
+
     // ── Porteur ──────────────────────────────────────────────────────────────
 
     /**
      * Create or update the caller's submission.
      * <p>FINAL pitches are upserted (one per porteur+session). TRAINING pitches
-     * are multiple: a new one is created each time unless an explicit id is given
-     * (to update a specific practice run).
+     * are multiple up to the session's {@code maxTrainingVideos} cap.
+     * <p>Once the FINAL pitch has been sent for a session, that session locks:
+     * the final can no longer be replaced and no further TRAINING run may be
+     * uploaded (the practice phase is closed).
      */
     public PitchSubmissionDto upsertOwn(Long porteurId, String porteurName, PitchSubmissionRequest req) {
         if (req.getProgrammeId() == null) throw new IllegalArgumentException("programmeId requis");
@@ -49,6 +55,37 @@ public class PitchService {
         } else if (kind == PitchKind.FINAL && req.getSessionId() != null) {
             sub = pitchRepository.findByPorteurIdAndSessionIdAndKind(porteurId, req.getSessionId(), PitchKind.FINAL).orElse(null);
         }
+
+        // ── Lock rules (only when creating/replacing against a session) ─────────
+        if (req.getSessionId() != null) {
+            boolean finalSent = pitchRepository
+                    .findByPorteurIdAndSessionIdAndKind(porteurId, req.getSessionId(), PitchKind.FINAL)
+                    .map(PitchService::isSent).orElse(false);
+            boolean editingExisting = sub != null && sub.getId() != null;
+
+            if (finalSent) {
+                // The session is closed once the real pitch is in. Re-sending the same
+                // FINAL row (editingExisting) is blocked too — it can't be replaced.
+                if (kind == PitchKind.FINAL)
+                    throw new IllegalStateException(
+                            "Votre pitch final a déjà été envoyé pour cette session — il ne peut plus être remplacé.");
+                throw new IllegalStateException(
+                        "Votre pitch final a été envoyé : la phase d'entraînement est clôturée pour cette session.");
+            }
+
+            // Training cap — only when creating a NEW practice run (not editing one).
+            if (kind == PitchKind.TRAINING && !editingExisting) {
+                long used = pitchRepository
+                        .findByPorteurIdAndSessionIdOrderByCreatedAtAsc(porteurId, req.getSessionId())
+                        .stream().filter(s -> s.getKind() == PitchKind.TRAINING).count();
+                int max = resolveMaxTraining(req.getSessionId());
+                if (used >= max)
+                    throw new IllegalStateException(
+                            "Limite de vidéos d'entraînement atteinte pour cette session (" + max + "). "
+                            + "Passez au pitch final quand vous êtes prêt.");
+            }
+        }
+
         if (sub == null) {
             sub = PitchSubmission.builder()
                     .porteurId(porteurId)
@@ -105,10 +142,38 @@ public class PitchService {
         return toDto(pitchRepository.save(sub));
     }
 
+    /** Archive / unarchive a submission (owner or admin). Archived videos stay
+     *  fully viewable but move out of the active session view into the archive. */
+    public PitchSubmissionDto setArchived(Long submissionId, Long callerId, boolean isAdmin, boolean archived) {
+        PitchSubmission sub = requireOwnedOrAdmin(submissionId, callerId, isAdmin);
+        sub.setArchived(archived);
+        return toDto(pitchRepository.save(sub));
+    }
+
+    /** Soft-delete a submission (owner or admin) → moves to the trash, restorable. */
+    public void softDelete(Long submissionId, Long callerId, boolean isAdmin) {
+        PitchSubmission sub = requireOwnedOrAdmin(submissionId, callerId, isAdmin);
+        sub.setDeletedAt(LocalDateTime.now());
+        pitchRepository.save(sub);
+    }
+
     private static PitchKind parseKind(String kind) {
         if (kind == null || kind.isBlank()) return PitchKind.FINAL;
         try { return PitchKind.valueOf(kind.toUpperCase()); }
         catch (IllegalArgumentException e) { return PitchKind.FINAL; }
+    }
+
+    /** A submission is "sent" once it carries a video and left the DRAFT state. */
+    private static boolean isSent(PitchSubmission s) {
+        return s != null && s.getVideoUrl() != null && !s.getVideoUrl().isBlank()
+                && s.getStatus() != null && s.getStatus() != PitchStatus.DRAFT;
+    }
+
+    /** The training cap for a session: the admin's value, or the default. */
+    private int resolveMaxTraining(Long sessionId) {
+        Integer configured = phaseRepository.findById(sessionId)
+                .map(ProgrammePhase::getMaxTrainingVideos).orElse(null);
+        return (configured != null && configured > 0) ? configured : DEFAULT_MAX_TRAINING;
     }
 
     @Transactional(readOnly = true)
@@ -155,15 +220,29 @@ public class PitchService {
             m.put("location", s.getLocation());
             m.put("collectPitchVideos", true);
             m.put("pitchDeadline", s.getPitchDeadline());
-            m.put("open", true);
+            int maxTraining = resolveMaxTraining(s.getId());
+            m.put("maxTrainingVideos", maxTraining);
+            boolean deadlinePassed = s.getPitchDeadline() != null
+                    && s.getPitchDeadline().isBefore(java.time.LocalDate.now());
+            m.put("open", !deadlinePassed);
             if (porteurId != null) {
                 // All of the porteur's runs for this session (training + final).
-                List<PitchSubmissionDto> subs = pitchRepository
-                        .findByPorteurIdAndSessionIdOrderByCreatedAtAsc(porteurId, s.getId())
-                        .stream().map(this::toDto).collect(Collectors.toList());
+                List<PitchSubmission> raw = pitchRepository
+                        .findByPorteurIdAndSessionIdOrderByCreatedAtAsc(porteurId, s.getId());
+                List<PitchSubmissionDto> subs = raw.stream().map(this::toDto).collect(Collectors.toList());
                 m.put("submissions", subs);
                 subs.stream().filter(d -> "FINAL".equals(d.getKind())).findFirst()
                         .ifPresent(d -> m.put("submission", d));
+
+                long trainingCount = raw.stream().filter(x -> x.getKind() == PitchKind.TRAINING).count();
+                boolean finalSubmitted = raw.stream()
+                        .anyMatch(x -> x.getKind() == PitchKind.FINAL && isSent(x));
+                m.put("trainingCount", trainingCount);
+                m.put("finalSubmitted", finalSubmitted);
+                // Practice phase closes once the real pitch is in (or the deadline passed).
+                m.put("trainingClosed", finalSubmitted || deadlinePassed);
+                m.put("canUploadTraining", !deadlinePassed && !finalSubmitted && trainingCount < maxTraining);
+                m.put("canUploadFinal", !deadlinePassed && !finalSubmitted);
             }
             out.add(m);
         }
@@ -206,6 +285,7 @@ public class PitchService {
                 .aiScore(s.getAiScore())
                 .aiAnalysisJson(s.getAiAnalysisJson())
                 .aiEnhanced(s.getAiEnhanced())
+                .archived(Boolean.TRUE.equals(s.getArchived()))
                 .analyzedAt(s.getAnalyzedAt())
                 .createdAt(s.getCreatedAt())
                 .updatedAt(s.getUpdatedAt())

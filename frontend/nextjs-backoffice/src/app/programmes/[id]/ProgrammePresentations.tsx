@@ -35,6 +35,7 @@ interface Session {
   startDate?: string
   collectPitchVideos?: boolean
   pitchDeadline?: string
+  maxTrainingVideos?: number
 }
 
 /** Render a saved AI pitch analysis (parsed from aiAnalysisJson). */
@@ -203,6 +204,17 @@ export function ProgrammePresentations({ programmeId, sessions, onSessionsChange
     } catch (e: any) { toast.error(e.response?.data?.message ?? 'Erreur') }
     finally { setSavingSession(null) }
   }
+  const setMaxTraining = async (s: Session, value: string) => {
+    const n = parseInt(value, 10)
+    setSavingSession(s.id)
+    try {
+      // <=0 / empty clears the override → back to the service default (3).
+      await sessionsApi.update(programmeId, s.id, { maxTrainingVideos: Number.isFinite(n) ? n : 0 })
+      toast.success('Nombre maximum d’entraînements mis à jour')
+      onSessionsChanged?.()
+    } catch (e: any) { toast.error(e.response?.data?.message ?? 'Erreur') }
+    finally { setSavingSession(null) }
+  }
 
   const subsBySession = (sid: number) => subs.filter((x) => x.sessionId === sid)
   const enabledCount = sessions.filter((s) => s.collectPitchVideos).length
@@ -268,11 +280,21 @@ export function ProgrammePresentations({ programmeId, sessions, onSessionsChange
                       Analyse vidéo IA
                     </label>
                     {enabled && (
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                        <Input type="date" value={s.pitchDeadline?.slice(0, 10) ?? ''} disabled={savingSession === s.id}
-                          onChange={(e) => setDeadline(s, e.target.value)} className="h-8 w-36 text-xs" title="Date limite de dépôt" />
-                      </div>
+                      <>
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Input type="date" value={s.pitchDeadline?.slice(0, 10) ?? ''} disabled={savingSession === s.id}
+                            onChange={(e) => setDeadline(s, e.target.value)} className="h-8 w-36 text-xs" title="Date limite de dépôt" />
+                        </div>
+                        <div className="flex items-center gap-1" title="Nombre maximum de vidéos d'entraînement analysables par porteur">
+                          <Dumbbell className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Input type="number" min={1} max={20} step={1}
+                            value={s.maxTrainingVideos ?? 3} disabled={savingSession === s.id}
+                            onChange={(e) => setMaxTraining(s, e.target.value)}
+                            className="h-8 w-16 text-xs" title="Max entraînements / porteur" />
+                          <span className="text-[10px] text-muted-foreground">entraîn. max</span>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>

@@ -21,6 +21,7 @@ import {
 import toast from 'react-hot-toast'
 import { sessionsApi, SESSION_TYPES, ACTIVITY_TYPES } from '@/lib/api'
 import type { SessionType, ActivityType } from '@/lib/api'
+import { performDelete } from '@/lib/deleteChoice'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -168,12 +169,13 @@ export function SessionsPanel({ programmeId, criteria = [], onCountChange }: Ses
   }
 
   const onDelete = async (id: number) => {
-    if (!confirm('Supprimer cette session ?')) return
-    try {
-      await sessionsApi.delete(programmeId, id)
-      setSessions(s => s.filter(x => x.id !== id))
-      toast.success('Session supprimée')
-    } catch { toast.error('Erreur') }
+    const s = sessions.find(x => x.id === id)
+    const outcome = await performDelete('session', id, () => sessionsApi.delete(programmeId, id), {
+      label: `la session « ${s?.title ?? '?'} »`,
+    })
+    if (!outcome) return
+    setSessions(s => s.filter(x => x.id !== id))
+    toast.success(outcome === 'purge' ? 'Session supprimée définitivement' : 'Session mise à la corbeille')
   }
 
   const startEdit = (s: Session) => {

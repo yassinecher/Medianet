@@ -1516,6 +1516,16 @@ public class AdminAiService {
                 + "- \"NOT_A_PITCH\" (cours, exposé général, aucune entreprise présentée): SEUL ce cas plafonne "
                 + "overallScore à 3. Dis-le clairement dans globalCommentary.\n"
 
+                + "ÉTAPE 1 bis — HORS CONTEXTE (champ outOfContext). Mets outOfContext=true, et outOfContextReason "
+                + "(une phrase), quand la vidéo N'EST PAS une présentation de projet/startup du tout — par exemple: "
+                + "aucune entreprise ni produit présenté, contenu de fiction ou récit/dialogue, clip, musique, cours "
+                + "magistral, ou AUCUNE personne réelle qui parle (dessin animé, images d'illustration, écran, "
+                + "paysage). Les observations visuelles horodatées font foi: si elles ne décrivent AUCUNE personne "
+                + "réelle en train de présenter, considère la vidéo hors contexte. Quand outOfContext=true, ne "
+                + "cherche pas à noter un pitch qui n'existe pas: mets pitchFormat=NOT_A_PITCH, des dimensions basses, "
+                + "et explique en une phrase dans globalCommentary que ce n'est pas un pitch et qu'il faut redéposer "
+                + "une vraie présentation. Sinon outOfContext=false.\n"
+
                 + "BARÈME — UTILISE TOUTE L'ÉCHELLE (0 à 10):\n"
                 + "- 9-10 = exceptionnel, prêt pour des investisseurs. 7-8 = solide. 5-6 = moyen, lacunes nettes. "
                 + "3-4 = faible. 1-2 = inexploitable.\n"
@@ -1546,7 +1556,8 @@ public class AdminAiService {
                 + "dans confidence.limits. N'invente jamais une 'présence assurée'.\n"
                 + "PRODUIS:\n"
                 + "0) pitchFormat: un de DEMO_DAY | COMPETITION | INVESTOR | INTERNAL | NOT_A_PITCH, et "
-                + "formatReason: une phrase justifiant ce choix (durée, public, contenu).\n"
+                + "formatReason: une phrase justifiant ce choix (durée, public, contenu). "
+                + "outOfContext (booléen) et outOfContextReason (phrase) selon l'ÉTAPE 1 bis.\n"
                 + "1) dimensions: note /10 pour CHACUNE de: " + dims + ", avec un commentaire court.\n"
                 + "2) overallScore (0-10) = la MOYENNE de tes notes de dimensions, arrondie à 0,1. "
                 + "Ne t'en écarte pas: la note globale se DÉDUIT des dimensions, elle ne se décide pas à part.\n"
@@ -1581,7 +1592,8 @@ public class AdminAiService {
                 + "7) confidence: {score (0-1), reasons[] (ce qui rend l'analyse fiable), limits[] (ce qui la limite)}.\n"
                 + "8) globalCommentary: synthèse courte.\n"
                 + "RÉPONDS UNIQUEMENT avec un objet JSON brut (pas de markdown), commençant par { et finissant par }, "
-                + "de la forme: {\"overallScore\":0,\"dimensions\":[{\"name\":\"\",\"score\":0,\"comment\":\"\"}],"
+                + "de la forme: {\"pitchFormat\":\"\",\"formatReason\":\"\",\"outOfContext\":false,\"outOfContextReason\":\"\","
+                + "\"overallScore\":0,\"dimensions\":[{\"name\":\"\",\"score\":0,\"comment\":\"\"}],"
                 + "\"highlights\":[{\"timeSec\":0,\"topic\":\"\",\"severity\":\"medium\",\"observation\":\"\",\"advice\":\"\","
                 + "\"scoreImpact\":0,\"criterion\":\"\",\"confidence\":0.8}],"
                 + "\"sections\":[{\"name\":\"\",\"startSec\":0,\"endSec\":0,\"score\":0,\"missing\":[\"\"]}],"
@@ -1661,6 +1673,21 @@ public class AdminAiService {
                     out.put("overallScore", derived);
                     reconcileCoaching(out, dl, derived, n);
                 }
+            }
+            // Out-of-context = the model flagged it, OR it classified the clip as
+            // NOT_A_PITCH. Either way the front office renders a distinct "ce n'est pas
+            // un pitch" state instead of a misleading grade, and the analytics exclude it.
+            boolean flagged = Boolean.TRUE.equals(parsed.get("outOfContext"))
+                    || "true".equalsIgnoreCase(str(parsed.get("outOfContext")))
+                    || "NOT_A_PITCH".equals(str(parsed.get("pitchFormat")));
+            out.put("outOfContext", flagged);
+            if (flagged) {
+                String reason = str(parsed.get("outOfContextReason"));
+                if (reason == null || reason.isBlank()) reason = str(parsed.get("formatReason"));
+                if (reason == null || reason.isBlank())
+                    reason = "La vidéo ne présente pas de projet ou de startup — ce n'est pas un pitch analysable.";
+                out.put("outOfContextReason", reason);
+                log.info("Pitch {}: flagged OUT OF CONTEXT ({})", submissionId, reason);
             }
             out.put("aiEnhanced", true);
             int hl = parsed.get("highlights") instanceof List<?> hll ? hll.size() : 0;

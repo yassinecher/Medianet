@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { CandidaturePhasePanel, PreselectionPhasePanel } from './PhasePanels'
 import { SessionNotifyButton } from '@/app/programmes/[id]/SessionNotify'
 import { confirmDialog } from '@/lib/confirmDialog'
+import { performDelete } from '@/lib/deleteChoice'
 
 // ── Color palette ───────────────────────────────────────────────────────────
 // Sessions / presets / activities are type-free — color is their only marker.
@@ -583,14 +584,14 @@ function TimelineBoard({ programmeId, programme }: {
   const remove = async (id: number) => {
     const s = sessions.find(x => x.id === id)
     const kids = childrenOf(id).length
-    const extra = kids > 0 ? `\n(${kids} journée(s) imbriquée(s) seront aussi supprimées)` : ''
-    if (!confirm(`Supprimer "${s?.title ?? '?'}" ?${extra}`)) return
-    try {
-      await sessionsApi.delete(programmeId, id)
-      if (selectedId === id) setSelectedId(null)
-      await reload()
-      toast.success('Supprimée')
-    } catch { toast.error('Erreur') }
+    const outcome = await performDelete('session', id, () => sessionsApi.delete(programmeId, id), {
+      label: `la session « ${s?.title ?? '?'} »`,
+      detail: kids > 0 ? `${kids} journée(s) imbriquée(s) partiront avec elle (et reviennent à la restauration).` : undefined,
+    })
+    if (!outcome) return
+    if (selectedId === id) setSelectedId(null)
+    await reload()
+    toast.success(outcome === 'purge' ? 'Supprimée définitivement' : 'Mise à la corbeille')
   }
 
   // ── Drag-from-library ────────────────────────────────────────────────

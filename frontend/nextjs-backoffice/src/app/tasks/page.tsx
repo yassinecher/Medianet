@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Plus, Trash2, CheckCircle2, Clock, Circle, Loader2, ClipboardList, X, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tasksApi, usersApi, programmesApi } from '@/lib/api'
+import { performDelete } from '@/lib/deleteChoice'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
@@ -121,14 +122,10 @@ export default function TasksPage() {
   }
 
   const handleDelete = async (id: number, title: string) => {
-    if (!confirm(`Supprimer la tâche "${title}" ?`)) return
-    try {
-      await tasksApi.delete(id)
-      setTasks((prev) => prev.filter((t) => t.id !== id))
-      toast.success('Tâche supprimée')
-    } catch (err: any) {
-      toast.error(err.response?.data?.message ?? 'Erreur')
-    }
+    const outcome = await performDelete('task', id, () => tasksApi.delete(id), { label: `la tâche « ${title} »` })
+    if (!outcome) return
+    setTasks((prev) => prev.filter((t) => t.id !== id))
+    toast.success(outcome === 'purge' ? 'Tâche supprimée définitivement' : 'Tâche mise à la corbeille')
   }
 
   const filtered = tasks.filter((t) => statusFilter === 'ALL' || t.status === statusFilter)

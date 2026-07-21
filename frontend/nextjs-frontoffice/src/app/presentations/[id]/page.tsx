@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
-  ArrowLeft, Sparkles, Trophy, Gauge, Eye, Dumbbell, RefreshCw, Loader2,
+  ArrowLeft, Sparkles, Trophy, Gauge, Eye, Dumbbell, RefreshCw, Loader2, Archive,
   Radar as RadarIcon, ListChecks, Target, AlertTriangle, Video, Activity, Volume2, Presentation,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -107,6 +107,18 @@ export default function PitchWorkspacePage() {
     }
   }
 
+  const toggleArchive = async () => {
+    if (!sub) return
+    try {
+      const next = !sub.archived
+      const { data } = await pitchApi.archive(sub.id, next)
+      setSub(data)
+      toast.success(next ? 'Vidéo archivée' : 'Vidéo désarchivée')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Erreur')
+    }
+  }
+
   // Land already analysing when arriving straight from an upload. Read from
   // location rather than useSearchParams(): the latter forces this page under a
   // Suspense boundary at build time for a one-off flag.
@@ -134,7 +146,9 @@ export default function PitchWorkspacePage() {
   }
   if (!sub) return null
 
-  const score = sub.aiScore ?? analysis?.overallScore ?? null
+  const outOfContext = !!analysis && (analysis.outOfContext === true || analysis.pitchFormat === 'NOT_A_PITCH')
+  // The out-of-context score is meaningless — never headline it.
+  const score = outOfContext ? null : (sub.aiScore ?? analysis?.overallScore ?? null)
   const highlights = analysis?.highlights ?? []
   const duration = sub.durationSeconds ?? analysis?.durationSeconds ?? 0
   const d = analysis?.delivery ?? {}
@@ -167,6 +181,10 @@ export default function PitchWorkspacePage() {
               <span className="text-[9px] opacity-80">/ 10</span>
             </div>
           )}
+          <Button onClick={toggleArchive} variant="outline" className="gap-1.5"
+            title={sub.archived ? 'Sortir des archives' : 'Archiver (conserver hors de la vue active)'}>
+            <Archive className="h-3.5 w-3.5" />{sub.archived ? 'Désarchiver' : 'Archiver'}
+          </Button>
           <Button onClick={analyze} disabled={running || !sub.videoUrl} variant="brand" className="gap-1.5">
             {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             {analysis ? 'Relancer l’analyse' : 'Analyser'}
@@ -178,6 +196,23 @@ export default function PitchWorkspacePage() {
             <Video className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">Aucune vidéo déposée pour cette présentation.</p>
           </div>
+        )}
+
+        {/* Out-of-context: the clip isn't a pitch at all. Say so plainly instead of
+            showing a score that would mislead — and invite a real upload. */}
+        {outOfContext && (
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+            className="flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-amber-800 dark:text-amber-200">Vidéo hors contexte — ce n’est pas un pitch</p>
+              <p className="mt-0.5 text-xs text-amber-800/90 dark:text-amber-200/90">
+                {analysis?.outOfContextReason || analysis?.formatReason
+                  || "L’analyseur n’a pas reconnu une présentation de projet (pas d’entreprise présentée, ou aucune personne qui pitche)."}
+                {' '}Aucune note n’est attribuée. Déposez une vraie vidéo de pitch — vous face caméra, présentant votre projet — pour obtenir une analyse.
+              </p>
+            </div>
+          </motion.div>
         )}
 
         {sub.videoUrl && (

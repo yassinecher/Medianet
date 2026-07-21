@@ -39,6 +39,8 @@ public class ProgrammePhaseDto {
     private Boolean         collectPitchVideos;
     /** Deadline for pitch-video uploads (optional). */
     private java.time.LocalDate pitchDeadline;
+    /** Max TRAINING videos a porteur may analyse for this session (null = default). */
+    private Integer         maxTrainingVideos;
     /** Whether the session may carry an activity agenda. */
     private Boolean         allowActivities;
     /** Whether the session may overlap others in its lane. */

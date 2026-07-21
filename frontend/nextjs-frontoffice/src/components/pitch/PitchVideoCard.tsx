@@ -22,7 +22,9 @@ const fmtDur = (s?: number | null) => {
 export function PitchVideoCard({ sub, index }: { sub: PitchSubmission; index?: number }) {
   const analysis = useMemo(() => parseAnalysis(sub), [sub])
   const isFinal = sub.kind === 'FINAL'
-  const score = sub.aiScore ?? null
+  const outOfContext = !!analysis && (analysis.outOfContext === true || analysis.pitchFormat === 'NOT_A_PITCH')
+  // An out-of-context clip has a score, but it's meaningless — never surface it.
+  const score = outOfContext ? null : (sub.aiScore ?? null)
   const fillers = analysis?.delivery?.fillerSoundsPerMin
   const weakest = useMemo(() => {
     const dims = analysis?.dimensions ?? []
@@ -38,8 +40,10 @@ export function PitchVideoCard({ sub, index }: { sub: PitchSubmission; index?: n
       className="group block rounded-xl border border-border bg-card p-3 transition-colors hover:border-brand-400 hover:bg-accent/40">
       <div className="flex items-start gap-3">
         {/* Score badge — the thing you scan for */}
-        <div className={`flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-border ${score != null ? 'bg-muted' : 'bg-muted/40'}`}>
-          {score != null ? (
+        <div className={`flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl border ${
+          outOfContext ? 'border-amber-500/40 bg-amber-500/10' : `border-border ${score != null ? 'bg-muted' : 'bg-muted/40'}`}`}>
+          {outOfContext ? <AlertTriangle className="h-5 w-5 text-amber-500" />
+            : score != null ? (
             <>
               <span className={`text-lg font-black leading-none ${scoreTone(score)}`}>{score}</span>
               <span className="text-[9px] text-muted-foreground">/ 10</span>
@@ -74,14 +78,20 @@ export function PitchVideoCard({ sub, index }: { sub: PitchSubmission; index?: n
             </div>
           )}
 
+          {outOfContext && (
+            <p className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-2.5 w-2.5" />Hors contexte — ce n’est pas un pitch
+            </p>
+          )}
+
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-            {fillers != null && (
+            {!outOfContext && fillers != null && (
               <span className={`inline-flex items-center gap-0.5 rounded-full border border-border px-1.5 py-0.5 ${
                 fillers >= 3 ? 'text-red-600 dark:text-red-400' : fillers >= 1 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                 <AudioLines className="h-2.5 w-2.5" />{fillers} tics/min
               </span>
             )}
-            {weakest && (
+            {!outOfContext && weakest && (
               <span className="rounded-full border border-border px-1.5 py-0.5 text-muted-foreground">
                 à travailler : {weakest.name} ({weakest.score}/10)
               </span>

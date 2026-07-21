@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Settings, Save, Loader2, Moon, Sun, Globe2, Shield, Bell } from 'lucide-react'
+import { Settings, Save, Loader2, Moon, Sun, Globe2, Shield, Bell, DatabaseBackup, Download } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import toast from 'react-hot-toast'
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -9,6 +9,7 @@ import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/store/auth.store'
+import { downloadFullBackup } from '@/lib/backup'
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
@@ -47,6 +48,19 @@ export default function SettingsPage() {
 
   const upPlatform = (k: string, v: string) => setPlatformForm((f) => ({ ...f, [k]: v }))
   const upNotif = (k: string, v: string | boolean) => setNotifForm((f) => ({ ...f, [k]: v }))
+
+  const [backing, setBacking] = useState(false)
+  const [backupStep, setBackupStep] = useState('')
+  const handleBackup = async () => {
+    setBacking(true); setBackupStep('')
+    try {
+      const res = await downloadFullBackup((s) => setBackupStep(s))
+      const total = Object.values(res.counts).reduce((a, n) => a + n, 0)
+      toast.success(`Sauvegarde téléchargée — ${total} enregistrement(s)${res.failed.length ? ` · ${res.failed.length} section(s) indisponible(s)` : ''}`)
+    } catch {
+      toast.error('Échec de la sauvegarde')
+    } finally { setBacking(false); setBackupStep('') }
+  }
 
   return (
     <AdminLayout>
@@ -153,6 +167,27 @@ export default function SettingsPage() {
                 {savingNotif ? 'Sauvegarde...' : 'Sauvegarder'}
               </Button>
             </form>
+          </MagicCard>
+
+          {/* Full-data backup */}
+          <MagicCard className="p-5 lg:col-span-2">
+            <h2 className="mb-1 font-semibold flex items-center gap-2">
+              <DatabaseBackup className="h-4 w-4 text-brand-500" />Sauvegarde des données
+            </h2>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Téléchargez un fichier de sauvegarde contenant <b>toutes les données</b> de la plateforme —
+              programmes, sessions, critères, tâches, candidatures, invitations, vidéos &amp; analyses de pitch,
+              utilisateurs, organisations, partenaires et catalogues — dans un seul fichier JSON horodaté à conserver.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="brand" onClick={handleBackup} disabled={backing} className="gap-1.5">
+                {backing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {backing ? 'Préparation…' : 'Télécharger une sauvegarde'}
+              </Button>
+              {backing && backupStep && (
+                <span className="text-xs text-muted-foreground">Collecte : {backupStep}…</span>
+              )}
+            </div>
           </MagicCard>
         </div>
       </div>

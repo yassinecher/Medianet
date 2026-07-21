@@ -19,6 +19,13 @@ export interface PitchSession {
   pitchDeadline?: string
   open?: boolean
   submissions?: PitchSubmission[]
+  /** Server-computed upload gating for the current porteur. */
+  maxTrainingVideos?: number
+  trainingCount?: number
+  finalSubmitted?: boolean
+  trainingClosed?: boolean
+  canUploadTraining?: boolean
+  canUploadFinal?: boolean
 }
 
 /**

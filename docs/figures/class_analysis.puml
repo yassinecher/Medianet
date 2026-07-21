@@ -1,0 +1,116 @@
+@startuml
+' Figure 4.3 — Structure of the AI analysis result
+skinparam classAttributeIconSize 0
+skinparam nodesep 22
+skinparam ranksep 42
+hide circle
+
+class PitchAnalysis {
+  +pitchFormat
+  +formatReason
+  +overallScore
+  +globalCommentary
+}
+
+enum PitchFormat {
+  DEMO_DAY
+  COMPETITION
+  INVESTOR
+  INTERNAL
+  NOT_A_PITCH
+}
+
+class DeliveryMetrics <<measured>> {
+  +wordsPerMinute
+  +integratedLoudnessLufs
+  +loudnessRangeLu
+  +pauseCount
+  +longestPauseSec
+  +speakingRatio
+  --
+  +fillerSoundCount
+  +fillerSoundsPerMin
+  +elongationCount
+  +repetitionCount
+  +hedgeCount
+  +tagQuestionCount
+  +lowConfidenceWordPct
+}
+
+class Dimension {
+  +name
+  +score
+  +comment
+}
+
+class Highlight {
+  +timeSec
+  +topic
+  +severity
+  +observation
+  +advice
+  +scoreImpact
+  +confidence
+}
+
+class Section {
+  +name
+  +startSec
+  +endSec
+  +score
+  +missing
+}
+
+class CriterionMapping {
+  +name
+  +weight
+  +aiScore
+  +evidenceFound
+  +evidenceMissing
+  +recoverablePoints
+}
+
+class CoachingAction {
+  +action
+  +why
+  +criterion
+  +impactPoints
+  +effort
+  +atSec
+  +example
+}
+
+class Confidence {
+  +score
+  +reasons
+  +limits
+}
+
+PitchAnalysis "1" --> "1" PitchFormat
+PitchAnalysis "1" *-- "1" DeliveryMetrics
+PitchAnalysis "1" *-- "many" Dimension
+PitchAnalysis "1" *-- "many" Highlight
+PitchAnalysis "1" *-- "many" Section
+PitchAnalysis "1" *-- "many" CriterionMapping
+PitchAnalysis "1" *-- "many" CoachingAction
+PitchAnalysis "1" *-- "1" Confidence
+
+' force a compact 2-row layout instead of one very wide row
+DeliveryMetrics -[hidden]down- Section
+Dimension -[hidden]down- CriterionMapping
+Highlight -[hidden]down- CoachingAction
+PitchFormat -[hidden]down- Confidence
+
+note right of DeliveryMetrics
+  Measured from the signal
+  (ffmpeg + word-level alignment).
+  Never inferred by the model:
+  the LLM only interprets these.
+end note
+
+note right of Dimension
+  overallScore is derived
+  server-side as the mean
+  of the Dimension scores.
+end note
+@enduml

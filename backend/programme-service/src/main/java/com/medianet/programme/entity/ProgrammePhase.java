@@ -2,8 +2,10 @@ package com.medianet.programme.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,6 +18,7 @@ import java.util.List;
  */
 @Entity
 @Table(name = "programme_phases")
+@SQLRestriction("deleted_at is null")   // soft-deleted (trashed) sessions are hidden from every query
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
 @Builder
@@ -79,6 +82,14 @@ public class ProgrammePhase {
     /** Deadline for porteurs to upload their pitch video (optional). */
     @Column(name = "pitch_deadline")
     private LocalDate pitchDeadline;
+
+    /**
+     * Maximum number of TRAINING (practice) videos a porteur may analyse for this
+     * session. Admin-configurable; null → the service default ({@code 3}). The
+     * FINAL pitch is always a single one and is not counted here.
+     */
+    @Column(name = "max_training_videos")
+    private Integer maxTrainingVideos;
 
     /**
      * Whether this session may contain an activity agenda. Forced to false for
@@ -201,4 +212,8 @@ public class ProgrammePhase {
     @OrderBy("dayOrder ASC")
     @Builder.Default
     private List<SessionDay> days = new ArrayList<>();
+
+    /** Soft-delete timestamp — non-null means the session is in the trash. */
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 }

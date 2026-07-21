@@ -20,8 +20,9 @@ import type { User } from '@/types'
 import {
   Home, FileText, CheckSquare, FolderKanban, LogOut, ChevronLeft, ChevronRight,
   Briefcase, Sparkles, GraduationCap, Menu, X, ChevronDown, Bell, User as UserIcon,
-  Building2, Presentation,
+  Building2, Presentation, Mail, Loader2,
 } from 'lucide-react'
+import { fetchNotifications, relTime, type NotificationItem } from '@/lib/notifications'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { useAuthStore, useUser, useFrontofficeRoles, usePerms, type FrontofficeRole } from '@/store/auth.store'
 import { startAuthEvents } from '@/lib/authEvents'
@@ -46,6 +47,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   // The dashboard is role-dependent: it only exists for front-office roles.
   { label: 'Tableau de bord',  href: '/dashboard',     icon: Home,          roles: ['PORTEUR', 'MENTOR', 'JURY'] },
+  { label: 'Notifications',    href: '/notifications', icon: Bell,          roles: ['PORTEUR', 'MENTOR', 'JURY'] },
   { label: 'Programmes',       href: '/programmes',    icon: FolderKanban,  perm: 'programmes:read' },
   // "Mes candidatures" is the porteur experience — a jury/mentor holding
   // candidatures:read (to consult dossiers) must NOT see it.
@@ -238,18 +240,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 function NotificationsButton() {
   const [open, setOpen] = useState(false)
+  const [items, setItems] = useState<NotificationItem[]>([])
+  const [loading, setLoading] = useState(true)
   const ref = useRef<HTMLDivElement>(null)
 
-  // TODO: wire real notifications from a backend feed. For now we show a small
-  // sample so the UI is testable; the unread count drives the red dot.
-  const notifications: Array<{ id: string; title: string; body: string; ts: string; unread: boolean }> = []
+  const load = () => { setLoading(true); fetchNotifications().then(setItems).finally(() => setLoading(false)) }
 
-  const unread = notifications.filter((n) => n.unread).length
+  // Load once on mount (drives the badge) and refresh each time the panel opens.
+  useEffect(() => { load() }, [])
+  useEffect(() => { if (open) load() }, [open])
 
   useEffect(() => {
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
   }, [])
+
+  const unread = items.filter((n) => n.unread).length
+  const KindIcon = (k: NotificationItem['kind']) => (k === 'task' ? CheckSquare : Mail)
 
   return (
     <div className="relative" ref={ref}>
@@ -257,7 +264,9 @@ function NotificationsButton() {
         className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
         <Bell className="h-4 w-4" />
         {unread > 0 && (
-          <span className="absolute top-1.5 right-1.5 flex h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
+          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white ring-2 ring-background">
+            {unread > 9 ? '9+' : unread}
+          </span>
         )}
       </button>
       {open && (
@@ -266,29 +275,49 @@ function NotificationsButton() {
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Notifications</p>
             {unread > 0 && (
               <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-400">
-                {unread}
+                {unread} à traiter
               </span>
             )}
           </div>
-          {notifications.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /></div>
+          ) : items.length === 0 ? (
             <div className="p-6 text-center">
               <Bell className="mx-auto h-8 w-8 text-muted-foreground opacity-30 mb-2" />
               <p className="text-xs text-muted-foreground">Aucune notification.</p>
             </div>
           ) : (
             <ul className="max-h-80 overflow-y-auto divide-y divide-border">
-              {notifications.map((n) => (
-                <li key={n.id} className={cn('flex gap-3 px-3 py-2 text-sm hover:bg-accent/30', n.unread && 'bg-brand-500/5')}>
-                  <div className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: n.unread ? '#FF6A00' : 'transparent' }} />
-                  <div className="min-w-0">
-                    <p className="font-semibold text-foreground truncate">{n.title}</p>
-                    <p className="text-xs text-muted-foreground line-clamp-2">{n.body}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{n.ts}</p>
+              {items.slice(0, 6).map((n) => {
+                const Icon = KindIcon(n.kind)
+                const inner = (
+                  <div className="flex gap-2.5">
+                    <span className={cn('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+                      n.kind === 'task' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-brand-500/10 text-brand-600 dark:text-brand-400')}>
+                      <Icon className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-foreground">{n.title}</p>
+                      <p className="line-clamp-2 text-xs text-muted-foreground">{n.body}</p>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">{relTime(n.at)}</p>
+                    </div>
+                    {n.unread && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" />}
                   </div>
-                </li>
-              ))}
+                )
+                return (
+                  <li key={n.id} className={cn('px-3 py-2 hover:bg-accent/30', n.unread && 'bg-brand-500/5')}>
+                    {n.href
+                      ? <Link href={n.href} onClick={() => setOpen(false)} className="block">{inner}</Link>
+                      : inner}
+                  </li>
+                )
+              })}
             </ul>
           )}
+          <Link href="/notifications" onClick={() => setOpen(false)}
+            className="block border-t border-border px-3 py-2 text-center text-xs font-semibold text-brand-600 hover:bg-accent dark:text-brand-400">
+            Voir toutes les notifications
+          </Link>
         </div>
       )}
     </div>

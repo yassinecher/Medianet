@@ -23,6 +23,7 @@ public class ProgrammeService {
     private final SessionDayService           sessionDayService;
     private final com.medianet.programme.validation.SessionValidator sessionValidator;
     private final InvitationLookup            invitationLookup;
+    private final ContributorNotifier         contributorNotifier;
 
     // ── Programme CRUD ────────────────────────────────────────────────────────
 
@@ -118,6 +119,9 @@ public class ProgrammeService {
 
     public ProgrammeDto updateProgramme(Long id, UpdateProgrammeRequest req) {
         Programme p = findOrThrow(id);
+        // Snapshot the fields whose change is "critical" for subscribed contributors.
+        ProgrammeStatus oldStatus = p.getStatus();
+        java.time.LocalDate oldStart = p.getStartDate(), oldEnd = p.getEndDate(), oldDeadline = p.getApplicationDeadline();
         if (req.getTitle()               != null) p.setTitle(req.getTitle());
         if (req.getDescription()         != null) p.setDescription(req.getDescription());
         if (req.getType()                != null) p.setType(parseType(req.getType()));
@@ -142,24 +146,61 @@ public class ProgrammeService {
         if (req.getMaxStartups()         != null) p.setMaxStartups(req.getMaxStartups());
         if (req.getObjectives()          != null) p.setObjectives(req.getObjectives());
         if (req.getBenefits()            != null) p.setBenefits(req.getBenefits());
-        return toDto(programmeRepository.save(p));
+        Programme saved = programmeRepository.save(p);
+        notifyContributorsOfCriticalChange(saved, oldStatus, oldStart, oldEnd, oldDeadline);
+        return toDto(saved);
     }
 
     public ProgrammeDto updateStatus(Long id, String status) {
         Programme p = findOrThrow(id);
+        ProgrammeStatus oldStatus = p.getStatus();
         p.setStatus(parseStatus(status));
-        return toDto(programmeRepository.save(p));
+        Programme saved = programmeRepository.save(p);
+        notifyContributorsOfCriticalChange(saved, oldStatus,
+                saved.getStartDate(), saved.getEndDate(), saved.getApplicationDeadline());
+        return toDto(saved);
     }
 
     /**
-     * Permanently delete a programme. Cascades to phases + criteria (orphanRemoval=true
-     * on the @OneToMany) and detaches partners via the join table cleanup.
+     * Notify subscribed contributors when a programme changes in a way that affects
+     * them — status, dates or the application deadline. No-op when nothing critical
+     * moved. Fully best-effort (the notifier never throws).
+     */
+    private void notifyContributorsOfCriticalChange(Programme p, ProgrammeStatus oldStatus,
+            java.time.LocalDate oldStart, java.time.LocalDate oldEnd, java.time.LocalDate oldDeadline) {
+        java.util.List<String> changes = new java.util.ArrayList<>();
+        if (p.getStatus() != oldStatus)
+            changes.add("Statut : " + statusLabel(oldStatus) + " → " + statusLabel(p.getStatus()));
+        if (!java.util.Objects.equals(p.getStartDate(), oldStart) || !java.util.Objects.equals(p.getEndDate(), oldEnd))
+            changes.add("Dates du programme : " + dateStr(oldStart) + " – " + dateStr(oldEnd)
+                    + "  →  " + dateStr(p.getStartDate()) + " – " + dateStr(p.getEndDate()));
+        if (!java.util.Objects.equals(p.getApplicationDeadline(), oldDeadline))
+            changes.add("Clôture des candidatures : " + dateStr(oldDeadline) + "  →  " + dateStr(p.getApplicationDeadline()));
+        if (changes.isEmpty()) return;
+        String summary = "Le programme « " + safeProgrammeTitle(p) + " » a été mis à jour :\n- "
+                + String.join("\n- ", changes);
+        contributorNotifier.notifyCriticalChange(p, "update", summary);
+    }
+
+    private static String statusLabel(ProgrammeStatus s) { return s == null ? "—" : s.name(); }
+    private static String dateStr(java.time.LocalDate d) { return d == null ? "—" : d.toString(); }
+    private static String safeProgrammeTitle(Programme p) {
+        return (p.getTitle() == null || p.getTitle().isBlank()) ? ("Programme #" + p.getId()) : p.getTitle();
+    }
+
+    /**
+     * Soft-delete a programme: it moves to the trash (hidden from every query via
+     * {@code @SQLRestriction}) but nothing is lost — its sessions, criteria, tasks
+     * and pitches stay attached and come back intact on restore. Permanent removal
+     * is a separate, explicit purge from the trash.
      */
     public void deleteProgramme(Long id) {
         Programme p = findOrThrow(id);
-        // Clear ManyToMany partner links explicitly (Hibernate doesn't auto-clean these)
-        if (p.getPartners() != null) p.getPartners().clear();
-        programmeRepository.delete(p);
+        p.setDeletedAt(java.time.LocalDateTime.now());
+        programmeRepository.save(p);
+        contributorNotifier.notifyCriticalChange(p, "archived",
+                "Le programme « " + safeProgrammeTitle(p) + " » a été archivé / retiré. "
+                + "Il n'est plus accessible ; contactez l'organisation pour toute question.");
     }
 
     @Transactional(readOnly = true)
@@ -278,6 +319,10 @@ public class ProgrammeService {
         ProgrammePhase phase = phaseRepository.findById(phaseId)
                 .filter(ph -> ph.getProgramme().getId().equals(programmeId))
                 .orElseThrow(() -> new IllegalArgumentException("Phase not found: " + phaseId));
+        // Remember the range's window before the edit so we can carry its nested
+        // day-sessions along when the range is moved, enlarged or shrunk.
+        java.time.LocalDate rangeOldStart = phase.getStartDate();
+        java.time.LocalDate rangeOldEnd   = phase.getEndDate();
         if (req.getTitle()           != null) phase.setTitle(req.getTitle());
         if (req.getDescription()     != null) phase.setDescription(req.getDescription());
         if (req.getPhaseOrder()      != null) phase.setPhaseOrder(req.getPhaseOrder());
@@ -300,6 +345,9 @@ public class ProgrammeService {
         if (req.getCollectPitchVideos() != null) phase.setCollectPitchVideos(req.getCollectPitchVideos());
         if (req.getPitchDeadline()   != null)
             phase.setPitchDeadline(req.getPitchDeadline().isBefore(java.time.LocalDate.of(1971, 1, 1)) ? null : req.getPitchDeadline());
+        // <=0 clears the override (back to the service default); otherwise cap the training runs.
+        if (req.getMaxTrainingVideos() != null)
+            phase.setMaxTrainingVideos(req.getMaxTrainingVideos() <= 0 ? null : req.getMaxTrainingVideos());
         if (req.getAllowActivities() != null) phase.setAllowActivities(req.getAllowActivities());
         if (req.getAllowOverlap()    != null) phase.setAllowOverlap(req.getAllowOverlap());
         if (req.getLane()            != null) phase.setLane(parseLane(req.getLane()));
@@ -325,11 +373,23 @@ public class ProgrammeService {
         }
         phase = phaseRepository.save(phase);
 
+        // A range that was moved / enlarged / shrunk carries its nested day-sessions
+        // with it, instead of being blocked when a child would fall outside.
+        if ("range".equals(normalizeDuration(phase.getDurationKind())))
+            carryNestedSessions(phase, rangeOldStart, rangeOldEnd);
+
         // Status of a session may imply a programme transition
         Programme p = phase.getProgramme();
+        java.time.LocalDate oldDeadline = p.getApplicationDeadline();
         boolean changed = programmeLifecycle.recompute(p);
-        if (syncApplicationDeadline(p)) changed = true;
+        boolean deadlineMoved = syncApplicationDeadline(p);
+        if (deadlineMoved) changed = true;
         if (changed) programmeRepository.save(p);
+        // Editing the candidature session moved the deadline → tell the contributors.
+        if (deadlineMoved && !java.util.Objects.equals(oldDeadline, p.getApplicationDeadline()))
+            contributorNotifier.notifyCriticalChange(p, "deadline",
+                    "La clôture des candidatures du programme « " + safeProgrammeTitle(p) + " » a changé : "
+                    + dateStr(oldDeadline) + "  →  " + dateStr(p.getApplicationDeadline()) + ".");
         return toPhaseDto(phase);
     }
 
@@ -337,12 +397,16 @@ public class ProgrammeService {
         ProgrammePhase phase = phaseRepository.findById(phaseId)
                 .filter(ph -> ph.getProgramme().getId().equals(programmeId))
                 .orElseThrow(() -> new IllegalArgumentException("Phase not found: " + phaseId));
-        // Cascade: a range session owns its nested day-sessions — remove them too.
+        // Soft-delete → the session moves to the trash, restorable. A range session
+        // owns its nested day-sessions, so trash those with it (they restore together).
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
         List<ProgrammePhase> children = phaseRepository.findByParentSessionId(phaseId);
-        if (!children.isEmpty()) phaseRepository.deleteAll(children);
-        Programme p = phase.getProgramme();
-        phaseRepository.delete(phase);
+        for (ProgrammePhase ch : children) ch.setDeletedAt(now);
+        if (!children.isEmpty()) phaseRepository.saveAll(children);
+        phase.setDeletedAt(now);
+        phaseRepository.save(phase);
         // Removing a session may imply a programme status transition.
+        Programme p = phase.getProgramme();
         if (p != null) {
             p.getPhases().removeIf(ph -> ph.getId().equals(phaseId)
                     || children.stream().anyMatch(c -> c.getId().equals(ph.getId())));
@@ -468,6 +532,7 @@ public class ProgrammeService {
                 .isPublic((ph.getVisibility() == null || ph.getVisibility() == SessionVisibility.VISIBLE))
                 .collectPitchVideos(Boolean.TRUE.equals(ph.getCollectPitchVideos()))
                 .pitchDeadline(ph.getPitchDeadline())
+                .maxTrainingVideos(ph.getMaxTrainingVideos())
                 .allowActivities(ph.getAllowActivities() == null ? Boolean.TRUE : ph.getAllowActivities())
                 .allowOverlap(ph.getAllowOverlap() == null ? Boolean.FALSE : ph.getAllowOverlap())
                 .lane(ph.getLane() != null && !ph.getLane().isBlank() ? ph.getLane() : "Principal")
@@ -692,24 +757,64 @@ public class ProgrammeService {
             }
         }
 
-        // Range with nested journées → the new window must still contain them all.
-        if ("range".equals(kind) && phase.getId() != null) {
-            for (ProgrammePhase ch : phaseRepository.findByParentSessionId(phase.getId())) {
-                java.time.LocalDate cs = ch.getStartDate();
-                java.time.LocalDate ce = ch.getEndDate() != null ? ch.getEndDate() : cs;
-                if (cs != null && (cs.isBefore(start) || cs.isAfter(end)
-                        || (ce != null && ce.isAfter(end)))) {
-                    throw new IllegalArgumentException(
-                            "Impossible de déplacer/réduire la plage : la journée « " + safeTitle(ch) + " » ("
-                            + cs + ") en sortirait. Déplacez-la d'abord ou élargissez la plage.");
-                }
-            }
-        }
+        // A range with nested journées is NOT blocked here: moving/resizing it is
+        // allowed, and its children are carried along afterwards (see carryNestedSessions).
     }
 
     private static String safeTitle(ProgrammePhase p) {
         String t = p.getTitle();
         return (t == null || t.isBlank()) ? "Sans titre" : t;
+    }
+
+    /**
+     * Keep a range session's nested day-sessions consistent when the range itself
+     * is adjusted:
+     * <ul>
+     *   <li><b>Move</b> (same duration, shifted): every child shifts by the same
+     *       number of days, so the whole block moves together.</li>
+     *   <li><b>Enlarge</b>: children already fit — nothing to do.</li>
+     *   <li><b>Shrink</b>: any child that would fall outside the new window is
+     *       clamped back inside it (start pulled to the range start / end pulled to
+     *       the range end), rather than orphaning it.</li>
+     * </ul>
+     * A no-op when the range has no children or its dates didn't move.
+     */
+    private void carryNestedSessions(ProgrammePhase parent, java.time.LocalDate oldStart, java.time.LocalDate oldEnd) {
+        java.time.LocalDate ns = parent.getStartDate(), ne = parent.getEndDate();
+        if (parent.getId() == null || ns == null) return;
+        if (ne == null) ne = ns;
+        List<ProgrammePhase> children = phaseRepository.findByParentSessionId(parent.getId());
+        if (children.isEmpty()) return;
+
+        // Pure move = both edges shifted by the same non-zero delta.
+        Long delta = null;
+        if (oldStart != null && oldEnd != null) {
+            long ds = java.time.temporal.ChronoUnit.DAYS.between(oldStart, ns);
+            long de = java.time.temporal.ChronoUnit.DAYS.between(oldEnd, ne);
+            if (ds == de && ds != 0) delta = ds;
+        }
+
+        boolean anyChanged = false;
+        for (ProgrammePhase ch : children) {
+            java.time.LocalDate cs = ch.getStartDate();
+            if (cs == null) continue;
+            java.time.LocalDate ce = ch.getEndDate() != null ? ch.getEndDate() : cs;
+            java.time.LocalDate newCs = cs, newCe = ce;
+            if (delta != null) {                       // move: shift the whole child
+                newCs = cs.plusDays(delta);
+                newCe = ce.plusDays(delta);
+            }
+            // Clamp into the parent window (covers shrink, and a move that overran).
+            if (newCs.isBefore(ns)) { long shift = java.time.temporal.ChronoUnit.DAYS.between(newCs, ns); newCs = ns; newCe = newCe.plusDays(shift); }
+            if (newCe.isAfter(ne))  { newCe = ne; if (newCs.isAfter(newCe)) newCs = newCe; }
+            if (newCs.isBefore(ns)) newCs = ns;        // final safety after the above
+            if (!newCs.equals(cs) || !newCe.equals(ce)) {
+                ch.setStartDate(newCs);
+                ch.setEndDate("day".equals(normalizeDuration(ch.getDurationKind())) ? newCs : newCe);
+                anyChanged = true;
+            }
+        }
+        if (anyChanged) phaseRepository.saveAll(children);
     }
 
     /**

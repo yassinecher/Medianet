@@ -125,6 +125,14 @@ export const programmesApi = {
   deleteCriterion: (pid: number, cid: number) => api.delete(`/api/programmes/${pid}/criteria/${cid}`),
 }
 
+/** The trash — soft-deleted programmes, sessions, tasks and pitch submissions. */
+export interface TrashItem { type: 'programme' | 'session' | 'task' | 'pitch'; id: number; label: string; deletedAt: string }
+export const trashApi = {
+  list: () => api.get<TrashItem[]>('/api/programmes/trash'),
+  restore: (type: string, id: number) => api.post(`/api/programmes/trash/${type}/${id}/restore`),
+  purge: (type: string, id: number) => api.delete(`/api/programmes/trash/${type}/${id}`),
+}
+
 /** Unified Session model — replaces phases vocabulary on the new UI. */
 export const sessionsApi = {
   list:    (programmeId: number) => api.get(`/api/programmes/${programmeId}/sessions`),
@@ -496,6 +504,8 @@ export const tasksApi = {
   update: (id: number, data: unknown) => api.put(`/api/tasks/${id}`, data),
   /** Self-update of status (porteur) OR convenience for admin/mentor */
   updateStatus: (id: number, data: { status: string }) => api.patch(`/api/tasks/${id}/status`, data),
+  /** ADMIN / MENTOR — review a submitted deliverable: approve → COMPLETED, else → IN_PROGRESS */
+  review: (id: number, data: { approve: boolean; reviewNote?: string }) => api.patch(`/api/tasks/${id}/review`, data),
   /** ADMIN — delete */
   delete: (id: number) => api.delete(`/api/tasks/${id}`),
 }

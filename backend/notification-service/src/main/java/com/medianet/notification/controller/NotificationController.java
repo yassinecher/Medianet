@@ -121,6 +121,18 @@ public class NotificationController {
         return ResponseEntity.ok(notificationService.getInvitedProgrammeIds(email));
     }
 
+    /**
+     * Full invitations addressed to the CURRENT user — feeds the front-office
+     * notifications bell + /notifications page. Any authenticated recipient may
+     * read their own invitations (no admin permission required).
+     */
+    @GetMapping("/invitations/my")
+    public ResponseEntity<List<InvitationDto>> myInvitations(
+            org.springframework.security.core.Authentication authentication) {
+        String email = authentication != null ? authentication.getName() : null;
+        return ResponseEntity.ok(notificationService.getMyInvitations(email));
+    }
+
     @GetMapping("/invitations/phase/{phaseId}")
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('notifications:update') or hasAuthority('notifications:read')")
     public ResponseEntity<List<InvitationDto>> getByPhase(@PathVariable Long phaseId) {

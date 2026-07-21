@@ -3,9 +3,12 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Plus, Search, Eye, Trash2, Edit, PencilLine } from 'lucide-react'
+import { Plus, Search, Eye, Trash2, Edit, PencilLine, FolderKanban } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { programmesApi } from '@/lib/api'
+import { performDelete } from '@/lib/deleteChoice'
+import { PageHeader } from '@/components/ui/page-header'
+import { EmptyState } from '@/components/ui/states'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
@@ -29,12 +32,13 @@ export default function ProgrammesPage() {
   }, [])
 
   const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Supprimer le programme "${name}" ?`)) return
-    try {
-      await programmesApi.delete(id)
-      setProgrammes((prev) => prev.filter((p) => p.id !== id))
-      toast.success('Programme supprimé')
-    } catch { toast.error('Échec de la suppression') }
+    const outcome = await performDelete('programme', id, () => programmesApi.delete(id), {
+      label: `le programme « ${name} »`,
+      detail: 'Ses sessions, critères, tâches et pitchs sont conservés et reviennent avec lui si vous le restaurez.',
+    })
+    if (!outcome) return
+    setProgrammes((prev) => prev.filter((p) => p.id !== id))
+    toast.success(outcome === 'purge' ? 'Programme supprimé définitivement' : 'Programme mis à la corbeille')
   }
 
 
@@ -43,16 +47,17 @@ export default function ProgrammesPage() {
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Programmes</h1>
-            <p className="text-muted-foreground">{filtered.length} programme(s)</p>
-          </div>
-          {can('programmes:create') && (
-            <Button variant="brand" onClick={() => router.push('/programmes/new')}>
-              <Plus className="h-4 w-4" />Nouveau programme
-            </Button>
-          )}
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+          <PageHeader
+            icon={FolderKanban}
+            title="Programmes"
+            description={`${filtered.length} programme(s)`}
+            actions={can('programmes:create') && (
+              <Button variant="brand" onClick={() => router.push('/programmes/new')}>
+                <Plus className="h-4 w-4" />Nouveau programme
+              </Button>
+            )}
+          />
         </motion.div>
 
         <div className="relative">
@@ -62,6 +67,17 @@ export default function ProgrammesPage() {
 
         {loading ? (
           <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}</div>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={FolderKanban}
+            title={search ? 'Aucun programme ne correspond' : 'Aucun programme pour l’instant'}
+            description={search ? 'Essayez un autre terme de recherche.' : 'Créez votre premier programme d’incubation pour commencer.'}
+            action={!search && can('programmes:create') && (
+              <Button variant="brand" size="sm" onClick={() => router.push('/programmes/new')}>
+                <Plus className="h-4 w-4" />Nouveau programme
+              </Button>
+            )}
+          />
         ) : (
           <div className="space-y-3">
             {filtered.map((p, i) => (

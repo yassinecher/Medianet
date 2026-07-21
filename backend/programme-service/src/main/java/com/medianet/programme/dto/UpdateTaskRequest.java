@@ -8,6 +8,8 @@ import java.time.LocalDate;
 public class UpdateTaskRequest {
     private String title;
     private String description;
+    private String expectedDeliverable;
+    private String reviewNote;
     private LocalDate dueDate;
     private String priority;
     private String status;

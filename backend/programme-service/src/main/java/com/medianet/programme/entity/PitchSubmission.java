@@ -2,6 +2,7 @@ package com.medianet.programme.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
@@ -12,6 +13,7 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "pitch_submissions")
+@SQLRestriction("deleted_at is null")   // soft-deleted (trashed) submissions are hidden from every query
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
 @Builder
@@ -95,6 +97,19 @@ public class PitchSubmission {
 
     @Builder.Default
     private Boolean aiEnhanced = false;
+
+    /**
+     * Archived submissions are kept and fully viewable but moved out of the active
+     * session view into the porteur's / admin's archive. Distinct from the trash
+     * ({@link #deletedAt}): archive = intentional keep-aside, trash = deleted.
+     */
+    @Column(name = "archived", columnDefinition = "boolean not null default false")
+    @Builder.Default
+    private Boolean archived = false;
+
+    /** Soft-delete timestamp — non-null means the row is in the trash. */
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     private LocalDateTime analyzedAt;
     private LocalDateTime createdAt;

@@ -1,0 +1,191 @@
+@startuml
+' Figure 4.1 — Core domain model (programmes, journey, applications, evaluation)
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 30
+skinparam ranksep 45
+skinparam packageStyle rectangle
+hide circle
+
+package "Accounts and Organizations" {
+  class User {
+    +id
+    +email
+    +firstName
+    +lastName
+    +active
+  }
+
+  enum Role {
+    ADMIN
+    PROGRAM_MANAGER
+    PORTEUR
+    JURY
+    MENTOR
+    MEMBER
+  }
+
+  class Organization {
+    +id
+    +name
+    +type
+    +sector
+    +description
+  }
+
+  class OrganizationMember {
+    +email
+    +name
+    +role
+  }
+}
+
+package "Programme and Journey" {
+  class Programme {
+    +id
+    +title
+    +status
+    +startDate
+    +endDate
+    +applicationDeadline
+    +sectors
+  }
+
+  enum ProgrammeStatus {
+    DRAFT
+    OPEN
+    IN_PROGRESS
+    EVALUATION
+    CLOSED
+    CANCELLED
+    ARCHIVED
+  }
+
+  class ProgrammeCriteria {
+    +id
+    +name
+    +weight
+    +maxScore
+    +active
+  }
+
+  class ProgrammePhase <<Session>> {
+    +id
+    +title
+    +sessionType
+    +visibility
+    +durationKind
+    +startDate
+    +endDate
+    +status
+    +lane
+    +allowActivities
+    +allowOverlap
+  }
+
+  enum SessionType {
+    CANDIDATURE_SUBMISSION
+    PRESELECTION
+    PITCH_DAY
+    ONBOARDING
+    INCUBATION
+    DEMO_DAY
+    TRAINING_DAY
+  }
+
+  enum SessionVisibility {
+    VISIBLE
+    HIDDEN
+    PRIVATE
+  }
+
+  class SessionDay {
+    +id
+    +dayOrder
+    +date
+  }
+
+  class SessionActivity {
+    +id
+    +title
+    +type
+    +startTime
+    +endTime
+  }
+
+  class Task {
+    +id
+    +title
+    +status
+    +priority
+  }
+}
+
+package "Applications and Evaluation" {
+  class Candidature {
+    +id
+    +carrierEmail
+    +status
+    +totalScore
+    +customAnswers
+  }
+
+  enum CandidatureStatus {
+    PENDING
+    UNDER_EVALUATION
+    UNDER_REVIEW
+    ACCEPTED
+    REJECTED
+  }
+
+  class Evaluation {
+    +id
+    +juryId
+    +weightedScore
+    +comment
+  }
+
+  class JuryAssignment {
+    +juryEmail
+    +token
+  }
+}
+
+class Invitation {
+  +id
+  +type
+  +status
+  +recipientEmail
+  +subject
+  +token
+  +sentAt
+}
+
+' ── typing (enums) ────────────────────────────────────────────
+User "1" o-- "many" Role
+Programme "1" --> "1" ProgrammeStatus
+ProgrammePhase "1" --> "1" SessionType
+ProgrammePhase "1" --> "1" SessionVisibility
+Candidature "1" --> "1" CandidatureStatus
+
+' ── composition / association ─────────────────────────────────
+Organization "1" *-- "many" OrganizationMember
+Programme "1" *-- "many" ProgrammeCriteria
+Programme "1" *-- "many" ProgrammePhase
+ProgrammePhase "1" *-- "many" SessionDay
+SessionDay "1" *-- "many" SessionActivity
+ProgrammePhase "0..1" o-- "many" ProgrammePhase : nesting
+Candidature "many" --> "1" Programme
+Candidature "many" --> "0..1" Organization
+Candidature "1" *-- "many" Evaluation
+Candidature "1" *-- "many" JuryAssignment
+Evaluation "many" --> "1" ProgrammePhase
+Task "many" --> "1" Programme
+Invitation "many" --> "1" Programme
+Invitation "many" --> "0..1" ProgrammePhase
+
+note bottom of ProgrammePhase
+  A session is typed and access-controlled.
+  Day-sessions nest inside range-sessions.
+end note
+@enduml

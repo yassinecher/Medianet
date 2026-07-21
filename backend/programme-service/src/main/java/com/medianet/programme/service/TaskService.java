@@ -39,6 +39,7 @@ public class TaskService {
                 .assignedByName(assignedByName)
                 .title(req.getTitle())
                 .description(req.getDescription())
+                .expectedDeliverable(req.getExpectedDeliverable())
                 .dueDate(req.getDueDate())
                 .priority(parsePriority(req.getPriority()))
                 .status(TaskStatus.PENDING)
@@ -126,13 +127,16 @@ public class TaskService {
     public void deleteTaskById(Long taskId) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
-        taskRepository.delete(task);
+        task.setDeletedAt(LocalDateTime.now());   // soft-delete → moves to trash, restorable
+        taskRepository.save(task);
     }
 
     public TaskDto updateTask(Long programmeId, Long taskId, UpdateTaskRequest req) {
         Task task = findTask(programmeId, taskId);
         if (req.getTitle()           != null) task.setTitle(req.getTitle());
         if (req.getDescription()     != null) task.setDescription(req.getDescription());
+        if (req.getExpectedDeliverable() != null) task.setExpectedDeliverable(req.getExpectedDeliverable());
+        if (req.getReviewNote()      != null) task.setReviewNote(req.getReviewNote());
         if (req.getDueDate()         != null) task.setDueDate(req.getDueDate());
         if (req.getPriority()        != null) task.setPriority(parsePriority(req.getPriority()));
         if (req.getPhaseId()         != null) task.setPhaseId(req.getPhaseId());
@@ -165,11 +169,44 @@ public class TaskService {
         return toDto(taskRepository.save(task));
     }
 
+    // ── Deliverable workflow: assignee submits → admin reviews ─────────────────
+
+    /** The assignee submits their deliverable (rendu). Task → SUBMITTED. */
+    public TaskDto submitTask(Long taskId, Long requestingUserId, SubmitTaskRequest req) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        if (task.getAssignedToUserId() != null && !task.getAssignedToUserId().equals(requestingUserId)) {
+            throw new IllegalArgumentException("You can only submit your own tasks");
+        }
+        task.setSubmissionText(req.getSubmissionText());
+        task.setSubmissionUrl(req.getSubmissionUrl());
+        task.setSubmittedAt(LocalDateTime.now());
+        task.setReviewNote(null);              // clear any previous "changes requested" note
+        task.setStatus(TaskStatus.SUBMITTED);
+        return toDto(taskRepository.save(task));
+    }
+
+    /** Admin/mentor reviews a submission: approve → COMPLETED, else back to IN_PROGRESS. */
+    public TaskDto reviewTask(Long taskId, ReviewTaskRequest req) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        if (req.isApprove()) {
+            task.setStatus(TaskStatus.COMPLETED);
+            if (task.getCompletedAt() == null) task.setCompletedAt(LocalDateTime.now());
+            task.setReviewNote(req.getReviewNote());
+        } else {
+            task.setStatus(TaskStatus.IN_PROGRESS);   // sent back for revision
+            task.setReviewNote(req.getReviewNote());
+        }
+        return toDto(taskRepository.save(task));
+    }
+
     // ── Delete ────────────────────────────────────────────────────────────────
 
     public void deleteTask(Long programmeId, Long taskId) {
         Task task = findTask(programmeId, taskId);
-        taskRepository.delete(task);
+        task.setDeletedAt(LocalDateTime.now());   // soft-delete → moves to trash, restorable
+        taskRepository.save(task);
     }
 
     // ── Stats ─────────────────────────────────────────────────────────────────
@@ -179,10 +216,12 @@ public class TaskService {
         return Map.of(
                 "total",      taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.PENDING)
                             + taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.IN_PROGRESS)
+                            + taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.SUBMITTED)
                             + taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.COMPLETED)
                             + taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.CANCELLED),
                 "pending",    taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.PENDING),
                 "inProgress", taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.IN_PROGRESS),
+                "submitted",  taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.SUBMITTED),
                 "completed",  taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.COMPLETED),
                 "cancelled",  taskRepository.countByProgrammeIdAndStatus(programmeId, TaskStatus.CANCELLED)
         );
@@ -193,6 +232,7 @@ public class TaskService {
         return Map.of(
                 "pending",    taskRepository.countByAssignedToUserIdAndStatus(userId, TaskStatus.PENDING),
                 "inProgress", taskRepository.countByAssignedToUserIdAndStatus(userId, TaskStatus.IN_PROGRESS),
+                "submitted",  taskRepository.countByAssignedToUserIdAndStatus(userId, TaskStatus.SUBMITTED),
                 "completed",  taskRepository.countByAssignedToUserIdAndStatus(userId, TaskStatus.COMPLETED),
                 "cancelled",  taskRepository.countByAssignedToUserIdAndStatus(userId, TaskStatus.CANCELLED)
         );
@@ -221,9 +261,14 @@ public class TaskService {
                 .assignedByName(t.getAssignedByName())
                 .title(t.getTitle())
                 .description(t.getDescription())
+                .expectedDeliverable(t.getExpectedDeliverable())
                 .dueDate(t.getDueDate())
                 .priority(t.getPriority().name())
                 .status(t.getStatus().name())
+                .submissionText(t.getSubmissionText())
+                .submissionUrl(t.getSubmissionUrl())
+                .submittedAt(t.getSubmittedAt())
+                .reviewNote(t.getReviewNote())
                 .completedAt(t.getCompletedAt())
                 .createdAt(t.getCreatedAt())
                 .updatedAt(t.getUpdatedAt())

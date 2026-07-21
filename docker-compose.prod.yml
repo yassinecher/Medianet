@@ -1,263 +1,430 @@
-# Production override — use with:
-# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCTION compose — pulls the images you pushed to Docker Hub and runs them.
+# Self-contained: copy THIS file + a `.env` to your server, then:
 #
-# In CI/CD this file is used standalone (all images pulled from Docker Hub):
-# docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Image names must match what you build/push locally (see docker-compose.yml):
+#   ${DOCKER_USERNAME}/medianet-<service>:${TAG}
+#
+# NOTE (frontends): NEXT_PUBLIC_API_URL is baked at BUILD time, not runtime.
+# Build the frontend images with the PUBLIC api URL before pushing — see README.
+# ─────────────────────────────────────────────────────────────────────────────
 
-version: '3.8'
-
-x-pull-policy: &pull-always
+x-pull: &pull
   pull_policy: always
+  restart: unless-stopped
 
 services:
-  # ── Nginx reverse proxy ───────────────────────────────────────────────────
+  # ── Reverse proxy (the only service bound to the host) ─────────────────────
   nginx:
-    image: ${DOCKER_USERNAME}/medianet-nginx:${TAG:-latest}
-    <<: *pull-always
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-nginx:${TAG:-latest}
+    <<: *pull
     container_name: nginx
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - /etc/letsencrypt/live/medianet.dz/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      - /etc/letsencrypt/live/medianet.dz/privkey.pem:/etc/nginx/certs/privkey.pem:ro
+      # TLS certs from the host (Let's Encrypt). Adjust the domain if needed.
+      - ${TLS_FULLCHAIN:-/etc/letsencrypt/live/medianet.dz/fullchain.pem}:/etc/nginx/certs/fullchain.pem:ro
+      - ${TLS_PRIVKEY:-/etc/letsencrypt/live/medianet.dz/privkey.pem}:/etc/nginx/certs/privkey.pem:ro
       - nginx_logs:/var/log/nginx
     depends_on:
       - nextjs-frontoffice
       - nextjs-backoffice
       - api-gateway
-    networks:
-      - medianet-network
-    restart: unless-stopped
+    networks: [medianet-network]
 
-  # ── Frontoffice ───────────────────────────────────────────────────────────
+  # ── Frontends ──────────────────────────────────────────────────────────────
   nextjs-frontoffice:
-    image: ${DOCKER_USERNAME}/medianet-frontoffice:${TAG:-latest}
-    <<: *pull-always
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-frontoffice:${TAG:-latest}
+    <<: *pull
     container_name: nextjs-frontoffice
-    expose:
-      - "3000"
+    expose: ["3000"]
     environment:
-      NEXT_PUBLIC_API_URL: https://app.medianet.dz
+      NEXT_PUBLIC_API_URL: ${FRONTOFFICE_API_URL:-https://app.medianet.dz}
       NODE_ENV: production
-    depends_on:
-      api-gateway:
-        condition: service_started
-    networks:
-      - medianet-network
-    restart: unless-stopped
+    depends_on: [api-gateway]
+    networks: [medianet-network]
 
-  # ── Backoffice ────────────────────────────────────────────────────────────
   nextjs-backoffice:
-    image: ${DOCKER_USERNAME}/medianet-backoffice:${TAG:-latest}
-    <<: *pull-always
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-backoffice:${TAG:-latest}
+    <<: *pull
     container_name: nextjs-backoffice
-    expose:
-      - "3000"
+    expose: ["3000"]
     environment:
-      NEXT_PUBLIC_API_URL: https://admin.medianet.dz
+      NEXT_PUBLIC_API_URL: ${BACKOFFICE_API_URL:-https://admin.medianet.dz}
       NODE_ENV: production
-    depends_on:
-      api-gateway:
-        condition: service_started
-    networks:
-      - medianet-network
-    restart: unless-stopped
+    depends_on: [api-gateway]
+    networks: [medianet-network]
 
-  # ── API Gateway ───────────────────────────────────────────────────────────
+  # ── API gateway + service discovery ────────────────────────────────────────
   api-gateway:
-    image: ${DOCKER_USERNAME}/medianet-api-gateway:${TAG:-latest}
-    <<: *pull-always
-    expose:
-      - "8080"
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-api-gateway:${TAG:-latest}
+    <<: *pull
+    container_name: api-gateway
+    expose: ["8080"]
     environment:
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JWT_SECRET: ${JWT_SECRET}
-    networks:
-      - medianet-network
-    restart: unless-stopped
+      EUREKA_URI: http://eureka-server:8761/eureka
+      AI_MATCHING_SERVICE_URL: http://ai-matching-service:8085
+      AI_SCORING_SERVICE_URL: http://ai-scoring-service:8084
+    depends_on: [eureka-server]
+    networks: [medianet-network]
 
-  # ── Eureka ────────────────────────────────────────────────────────────────
   eureka-server:
-    image: ${DOCKER_USERNAME}/medianet-eureka-server:${TAG:-latest}
-    <<: *pull-always
-    expose:
-      - "8761"
-    networks:
-      - medianet-network
-    restart: unless-stopped
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-eureka-server:${TAG:-latest}
+    <<: *pull
+    container_name: eureka-server
+    expose: ["8761"]
+    networks: [medianet-network]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8761/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
 
-  # ── Auth Service ──────────────────────────────────────────────────────────
+  # ── Business microservices ─────────────────────────────────────────────────
   auth-service:
-    image: ${DOCKER_USERNAME}/medianet-auth-service:${TAG:-latest}
-    <<: *pull-always
-    expose:
-      - "8081"
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-auth-service:${TAG:-latest}
+    <<: *pull
+    container_name: auth-service
+    expose: ["8081"]
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-auth:5432/${POSTGRES_AUTH_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_AUTH_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-auth:5432/${POSTGRES_AUTH_DB:-auth_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-medianet}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
       JWT_SECRET: ${JWT_SECRET}
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    networks:
-      - medianet-network
-    restart: unless-stopped
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-medianet}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-medianet2024}
+      EUREKA_URI: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-auth: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+    networks: [medianet-network]
 
-  # ── Session Service ───────────────────────────────────────────────────────
-  session-service:
-    image: ${DOCKER_USERNAME}/medianet-session-service:${TAG:-latest}
-    <<: *pull-always
-    expose:
-      - "8082"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-session:5432/${POSTGRES_SESSION_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_SESSION_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_SESSION_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    networks:
-      - medianet-network
-    restart: unless-stopped
-
-  # ── Candidature Service ───────────────────────────────────────────────────
   candidature-service:
-    image: ${DOCKER_USERNAME}/medianet-candidature-service:${TAG:-latest}
-    <<: *pull-always
-    expose:
-      - "8083"
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-candidature-service:${TAG:-latest}
+    <<: *pull
+    container_name: candidature-service
+    expose: ["8083"]
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-candidature:5432/${POSTGRES_CANDIDATURE_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_CANDIDATURE_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_CANDIDATURE_PASSWORD}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-candidature:5432/${POSTGRES_CANDIDATURE_DB:-candidature_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-medianet}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
       JWT_SECRET: ${JWT_SECRET}
       SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    networks:
-      - medianet-network
-    restart: unless-stopped
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-medianet}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-medianet2024}
+      AUTH_SERVICE_URL: http://auth-service:8081
+      PROGRAMME_SERVICE_URL: http://programme-service:8086
+      EUREKA_URI: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-candidature: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+    networks: [medianet-network]
 
-  # ── Notification Service ──────────────────────────────────────────────────
   notification-service:
-    image: ${DOCKER_USERNAME}/medianet-notification-service:${TAG:-latest}
-    <<: *pull-always
-    expose:
-      - "8084"
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-notification-service:${TAG:-latest}
+    <<: *pull
+    container_name: notification-service
+    expose: ["8087"]
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-notification:5432/${POSTGRES_NOTIFICATION_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_NOTIFICATION_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_NOTIFICATION_PASSWORD}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-notification:5432/${POSTGRES_NOTIFICATION_DB:-notification_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-medianet}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
       JWT_SECRET: ${JWT_SECRET}
-      SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
-      SPRING_MAIL_HOST: ${MAIL_HOST}
-      SPRING_MAIL_PORT: ${MAIL_PORT}
-      SPRING_MAIL_USERNAME: ${MAIL_USERNAME}
-      SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD}
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    networks:
-      - medianet-network
-    restart: unless-stopped
+      MAIL_HOST: ${MAIL_HOST:-smtp-relay.brevo.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Medianet Incubateur}
+      FRONTEND_URL: ${FRONTEND_URL:-https://app.medianet.dz}
+      EUREKA_URI: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-notification: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+    networks: [medianet-network]
 
-  # ── Programme Service ─────────────────────────────────────────────────────
   programme-service:
-    image: ${DOCKER_USERNAME}/medianet-programme-service:${TAG:-latest}
-    <<: *pull-always
-    expose:
-      - "8085"
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-programme-service:${TAG:-latest}
+    <<: *pull
+    container_name: programme-service
+    expose: ["8086"]
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-programme:5432/${POSTGRES_PROGRAMME_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_PROGRAMME_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PROGRAMME_PASSWORD}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-programme:5432/${POSTGRES_PROGRAMME_DB:-programme_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-medianet}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
       JWT_SECRET: ${JWT_SECRET}
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    networks:
-      - medianet-network
-    restart: unless-stopped
+      EUREKA_URI: http://eureka-server:8761/eureka
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-https://app.medianet.dz}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-medianet}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-medianet2024}
+      MINIO_BUCKET: ${MINIO_BUCKET:-medianet}
+      SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 2GB
+      SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 2GB
+      SERVER_TOMCAT_MAX_SWALLOW_SIZE: "-1"
+    depends_on:
+      postgres-programme: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+    networks: [medianet-network]
 
-  # ── AI Scoring Service ────────────────────────────────────────────────────
   ai-scoring-service:
-    image: ${DOCKER_USERNAME}/medianet-ai-scoring-service:${TAG:-latest}
-    <<: *pull-always
-    expose:
-      - "8086"
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-ai-scoring-service:${TAG:-latest}
+    <<: *pull
+    container_name: ai-scoring-service
+    expose: ["8084"]
     environment:
       JWT_SECRET: ${JWT_SECRET}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    networks:
-      - medianet-network
-    restart: unless-stopped
+      CANDIDATURE_SERVICE_URL: http://candidature-service:8083
+      PROGRAMME_SERVICE_URL: http://programme-service:8086
+      EUREKA_URI: http://eureka-server:8761/eureka
+    depends_on:
+      eureka-server: { condition: service_healthy }
+    networks: [medianet-network]
 
-  # ── AI Matching Service ───────────────────────────────────────────────────
   ai-matching-service:
-    image: ${DOCKER_USERNAME}/medianet-ai-matching-service:${TAG:-latest}
-    <<: *pull-always
-    expose:
-      - "8087"
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-ai-matching-service:${TAG:-latest}
+    <<: *pull
+    container_name: ai-matching-service
+    expose: ["8085"]
     environment:
       JWT_SECRET: ${JWT_SECRET}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    networks:
-      - medianet-network
-    restart: unless-stopped
+      CANDIDATURE_SERVICE_URL: http://candidature-service:8083
+      AUTH_SERVICE_URL: http://auth-service:8081
+      EUREKA_URI: http://eureka-server:8761/eureka
+    depends_on:
+      eureka-server: { condition: service_healthy }
+    networks: [medianet-network]
 
-  # ── Infrastructure (unchanged from dev) ───────────────────────────────────
+  admin-ai-service:
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-admin-ai-service:${TAG:-latest}
+    <<: *pull
+    container_name: admin-ai-service
+    expose: ["8088"]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-admin-ai:5432/${POSTGRES_ADMIN_AI_DB:-admin_ai_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-medianet}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
+      JWT_SECRET: ${JWT_SECRET}
+      EUREKA_URI: http://eureka-server:8761/eureka
+      HF_TOKEN: ${HF_TOKEN:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_APP_NAME: "Medianet Incubateur"
+      PROGRAMME_SERVICE_URL: http://programme-service:8086
+      AUTH_SERVICE_URL: http://auth-service:8081
+      CANDIDATURE_SERVICE_URL: http://candidature-service:8083
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
+      PITCH_MEDIA_SERVICE_URL: http://pitch-media-service:8087
+    depends_on:
+      postgres-admin-ai: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+    networks: [medianet-network]
+
+  pitch-media-service:
+    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-pitch-media-service:${TAG:-latest}
+    <<: *pull
+    container_name: pitch-media-service
+    expose: ["8087"]
+    environment:
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-https://app.medianet.dz}
+      MINIO_INTERNAL_URL: http://minio:9000
+      OLLAMA_URL: http://ollama:11434
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      WHISPER_DEVICE: cpu
+      WHISPER_COMPUTE: int8
+      VISION_MODEL: ${PITCH_VISION_MODEL:-moondream}
+      FRAME_COUNT: "3"
+      WHISPER_BEAM: "1"
+    volumes:
+      - whisper_models:/models
+    networks: [medianet-network]
+
+  # ── Infrastructure ─────────────────────────────────────────────────────────
   postgres-auth:
+    image: postgres:15
+    container_name: postgres-auth
     environment:
-      POSTGRES_DB: ${POSTGRES_AUTH_DB}
-      POSTGRES_USER: ${POSTGRES_AUTH_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_AUTH_DB:-auth_db}
+      POSTGRES_USER: ${POSTGRES_USER:-medianet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
+    volumes: [postgres_auth_data:/var/lib/postgresql/data]
+    networks: [medianet-network]
     restart: unless-stopped
-
-  postgres-session:
-    environment:
-      POSTGRES_DB: ${POSTGRES_SESSION_DB}
-      POSTGRES_USER: ${POSTGRES_SESSION_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_SESSION_PASSWORD}
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_AUTH_DB:-auth_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres-candidature:
+    image: postgres:15
+    container_name: postgres-candidature
     environment:
-      POSTGRES_DB: ${POSTGRES_CANDIDATURE_DB}
-      POSTGRES_USER: ${POSTGRES_CANDIDATURE_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_CANDIDATURE_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_CANDIDATURE_DB:-candidature_db}
+      POSTGRES_USER: ${POSTGRES_USER:-medianet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
+    volumes: [postgres_candidature_data:/var/lib/postgresql/data]
+    networks: [medianet-network]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_CANDIDATURE_DB:-candidature_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres-notification:
+    image: postgres:15
+    container_name: postgres-notification
     environment:
-      POSTGRES_DB: ${POSTGRES_NOTIFICATION_DB}
-      POSTGRES_USER: ${POSTGRES_NOTIFICATION_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_NOTIFICATION_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_NOTIFICATION_DB:-notification_db}
+      POSTGRES_USER: ${POSTGRES_USER:-medianet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
+    volumes: [postgres_notification_data:/var/lib/postgresql/data]
+    networks: [medianet-network]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_NOTIFICATION_DB:-notification_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres-programme:
+    image: postgres:15
+    container_name: postgres-programme
     environment:
-      POSTGRES_DB: ${POSTGRES_PROGRAMME_DB}
-      POSTGRES_USER: ${POSTGRES_PROGRAMME_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PROGRAMME_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_PROGRAMME_DB:-programme_db}
+      POSTGRES_USER: ${POSTGRES_USER:-medianet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
+    volumes: [postgres_programme_data:/var/lib/postgresql/data]
+    networks: [medianet-network]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_PROGRAMME_DB:-programme_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-admin-ai:
+    image: postgres:15
+    container_name: postgres-admin-ai
+    environment:
+      POSTGRES_DB: ${POSTGRES_ADMIN_AI_DB:-admin_ai_db}
+      POSTGRES_USER: ${POSTGRES_USER:-medianet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
+    volumes: [postgres_admin_ai_data:/var/lib/postgresql/data]
+    networks: [medianet-network]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_ADMIN_AI_DB:-admin_ai_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: medianet-minio
+    expose: ["9000", "9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-medianet}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-medianet2024}
+    volumes: [minio_data:/data]
+    command: server /data --console-address ":9001"
+    networks: [medianet-network]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  minio-setup:
+    image: minio/mc:latest
+    container_name: medianet-minio-setup
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      /bin/sh -c "
+        until (mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-medianet} ${MINIO_ROOT_PASSWORD:-medianet2024}) do echo 'waiting for minio…'; sleep 2; done;
+        mc mb -p local/${MINIO_BUCKET:-medianet} || true;
+        mc anonymous set download local/${MINIO_BUCKET:-medianet} || true;
+        echo '✓ MinIO bucket ready (public read)';
+        exit 0;
+      "
+    networks: [medianet-network]
+    restart: "no"
 
   rabbitmq:
+    image: rabbitmq:3-management
+    container_name: medianet-rabbitmq
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-medianet}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-medianet2024}
+    expose: ["5672", "15672"]
+    networks: [medianet-network]
     restart: unless-stopped
-
-  redis:
-    restart: unless-stopped
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   ollama:
+    image: ollama/ollama
+    container_name: ollama
+    expose: ["11434"]
+    volumes: [ollama_data:/root/.ollama]
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    networks: [medianet-network]
     restart: unless-stopped
-
-volumes:
-  nginx_logs:
+    # GPU passthrough — requires the NVIDIA Container Toolkit on the host.
+    # Remove this deploy block on a CPU-only server.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint: >
+      /bin/sh -c "
+        ollama serve &
+        OLLAMA_PID=$$!;
+        until ollama list > /dev/null 2>&1; do sleep 2; done;
+        ollama pull ${OLLAMA_MODEL:-llama3.2};
+        wait $$OLLAMA_PID
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q ${OLLAMA_MODEL:-llama3.2}"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
 
 networks:
   medianet-network:
     driver: bridge
+
+volumes:
+  postgres_auth_data:
+  postgres_candidature_data:
+  postgres_notification_data:
+  postgres_programme_data:
+  postgres_admin_ai_data:
+  ollama_data:
+  minio_data:
+  whisper_models:
+  nginx_logs:
