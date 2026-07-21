@@ -276,7 +276,7 @@ services:
     networks: [medianet-network]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_AUTH_DB:-auth_db}"]
+      test: ["CMD-SHELL", "pg_isready -U \"${POSTGRES_USER:-medianet}\" -d ${POSTGRES_AUTH_DB:-auth_db}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -293,7 +293,7 @@ services:
     networks: [medianet-network]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_CANDIDATURE_DB:-candidature_db}"]
+      test: ["CMD-SHELL", "pg_isready -U \"${POSTGRES_USER:-medianet}\" -d ${POSTGRES_CANDIDATURE_DB:-candidature_db}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -310,7 +310,7 @@ services:
     networks: [medianet-network]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_NOTIFICATION_DB:-notification_db}"]
+      test: ["CMD-SHELL", "pg_isready -U \"${POSTGRES_USER:-medianet}\" -d ${POSTGRES_NOTIFICATION_DB:-notification_db}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -327,7 +327,7 @@ services:
     networks: [medianet-network]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_PROGRAMME_DB:-programme_db}"]
+      test: ["CMD-SHELL", "pg_isready -U \"${POSTGRES_USER:-medianet}\" -d ${POSTGRES_PROGRAMME_DB:-programme_db}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -344,7 +344,7 @@ services:
     networks: [medianet-network]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medianet} -d ${POSTGRES_ADMIN_AI_DB:-admin_ai_db}"]
+      test: ["CMD-SHELL", "pg_isready -U \"${POSTGRES_USER:-medianet}\" -d ${POSTGRES_ADMIN_AI_DB:-admin_ai_db}"]
       interval: 10s
       timeout: 5s
       retries: 10
