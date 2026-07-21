@@ -25,6 +25,7 @@ import {
 import toast from 'react-hot-toast'
 import { sessionsApi, sessionPresetsApi, notificationsApi, contactsApi, contactGroupsApi, programmesApi, parcoursTemplatesApi } from '@/lib/api'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { CandidaturePhasePanel, PreselectionPhasePanel } from './PhasePanels'
 import { SessionNotifyButton } from '@/app/programmes/[id]/SessionNotify'
@@ -232,7 +233,7 @@ function ColorPicker({ value, onChange, label = 'Couleur', compact = false }: {
   const cur = (value || '').toLowerCase()
   return (
     <div>
-      <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
+      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
         <Palette className="h-3 w-3" />{label}
       </label>
       <div className="mt-0.5 flex items-center gap-1 flex-wrap">
@@ -969,16 +970,17 @@ function TimelineBoard({ programmeId, programme }: {
       ) : (
       <>
 
-      {/* LIBRARY STRIP */}
-      <div className="px-4 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center gap-1.5 shrink-0">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-1">
-          Bibliothèque
+      {/* LIBRARY STRIP — one tidy scroll-row of calm, uniform pills (colour = dot
+          only, not the whole pill), so adding a session reads at a glance. */}
+      <div className="flex items-center gap-2 overflow-x-auto border-b border-border bg-muted/20 px-4 py-2.5 shrink-0">
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          Ajouter
         </span>
         {presets.map(p => {
           const c = p.color || DEFAULT_COLOR
           const kind = kindOf(p)
           return (
-            <span key={p.id} className="group relative inline-flex items-center">
+            <span key={p.id} className="group relative inline-flex shrink-0 items-center">
               <button type="button" draggable
                 onDragStart={(e) => {
                   e.dataTransfer.setData('application/timeline-preset', String(p.id))
@@ -989,14 +991,12 @@ function TimelineBoard({ programmeId, programme }: {
                 }}
                 onClick={() => addFromPreset(p)}
                 title="Clic = ajouter · Glisser = déposer sur un jour précis (sur une plage = imbriquée)"
-                className="inline-flex items-center gap-1.5 rounded-full border pl-3 pr-2 py-1 text-xs font-bold transition-all hover:scale-105 active:scale-95 cursor-grab active:cursor-grabbing shadow-sm"
-                style={{ borderColor: c, color: c, background: c + '0D' }}>
-                <span className="h-2 w-2 rounded-full" style={{ background: c }} />
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm transition-colors hover:bg-accent cursor-grab active:cursor-grabbing">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c }} />
                 {p.title}
-                <span className="text-[9px] opacity-70 inline-flex items-center gap-0.5">
-                  {kind === 'day' ? <CalendarDays className="h-2.5 w-2.5" /> : <CalendarRange className="h-2.5 w-2.5" />}
-                </span>
-                <Plus className="h-3 w-3 opacity-60" />
+                {kind === 'day'
+                  ? <CalendarDays className="h-3 w-3 text-muted-foreground" />
+                  : <CalendarRange className="h-3 w-3 text-muted-foreground" />}
               </button>
               <button type="button" title="Modifier ce préset"
                 onClick={() => setPresetModal({ mode: 'edit', preset: p })}
@@ -1007,8 +1007,8 @@ function TimelineBoard({ programmeId, programme }: {
           )
         })}
         <button type="button" onClick={() => setPresetModal({ mode: 'create' })}
-          className="inline-flex items-center gap-1 rounded-full border border-dashed border-brand-500/50 bg-brand-500/5 hover:bg-brand-500/15 text-brand-700 dark:text-brand-300 px-2.5 py-1 text-[11px] font-semibold transition-all">
-          <Plus className="h-3 w-3" />Préset
+          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-dashed border-brand-500/50 bg-brand-500/5 px-3 py-1.5 text-xs font-semibold text-brand-700 dark:text-brand-300 transition-colors hover:bg-brand-500/15">
+          <Plus className="h-3 w-3" />Nouveau préset
         </button>
       </div>
 
@@ -1026,14 +1026,14 @@ function TimelineBoard({ programmeId, programme }: {
               const showNum = pxPerDay >= 14 || isMonthStart || isToday || (pxPerDay >= 5 && d.getDay() === 1)
               return (
                 <div key={i}
-                  className={`relative flex-1 flex flex-col items-center justify-center text-[10px] overflow-hidden ${isWeekend ? 'bg-muted/30' : ''} ${isMonthStart ? 'border-l-2 border-foreground/30' : pxPerDay >= 7 ? 'border-l border-border/20' : ''} ${isToday && dayMode ? 'bg-rose-500/10' : ''}`}>
+                  className={`relative flex-1 flex flex-col items-center justify-center text-[11px] overflow-hidden ${isWeekend ? 'bg-muted/30' : ''} ${isMonthStart ? 'border-l-2 border-foreground/30' : pxPerDay >= 7 ? 'border-l border-border/20' : ''} ${isToday && dayMode ? 'bg-rose-500/10' : ''}`}>
                   {dayMode && (
                     <span className={`text-[8px] uppercase ${isToday ? 'text-rose-500 font-bold' : 'text-muted-foreground'}`}>
                       {d.toLocaleDateString('fr-FR', { weekday: 'short' })}
                     </span>
                   )}
                   {showNum && (
-                    <span className={`font-semibold ${isToday ? 'text-rose-600' : 'text-foreground/70'}`}>{d.getDate()}</span>
+                    <span className={`font-semibold ${isToday ? 'text-rose-600' : 'text-foreground'}`}>{d.getDate()}</span>
                   )}
                   {isMonthStart && (
                     <span className="text-[8px] font-bold uppercase text-muted-foreground tracking-wider -mt-0.5 whitespace-nowrap">
@@ -2189,7 +2189,7 @@ function SessionOverlay({
           <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground shrink-0">
             {kind === 'day' ? <><CalendarDays className="h-3 w-3" />Journée</> : <><CalendarRange className="h-3 w-3" />Plage</>}
           </span>
-          <span className="text-sm font-bold text-foreground truncate">{session.title || 'Sans titre'}</span>
+          <span className="text-base font-bold text-foreground truncate">{session.title || 'Sans titre'}</span>
           {visibilityOf(session) !== 'VISIBLE' && (
             <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-bold shrink-0 ${VISIBILITY_META[visibilityOf(session)].cls}`}
               title={visibilityOf(session) === 'HIDDEN' ? 'Session interne — masquée du parcours public' : 'Session privée — invités uniquement'}>
@@ -2207,22 +2207,7 @@ function SessionOverlay({
               <Info className="h-3 w-3" />{warnings.length}
             </span>
           )}
-          {/* Fonction — the three session types, one click each:
-              Standard · Candidature (accepter) · Évaluation (jury). */}
-          <div className="ml-auto inline-flex rounded-lg border border-border bg-muted/40 p-0.5 shrink-0">
-            {(['STANDARD', 'CANDIDATURE_SUBMISSION', 'PRESELECTION'] as const).map(f => {
-              const Icon = f === 'CANDIDATURE_SUBMISSION' ? Mail : f === 'PRESELECTION' ? ClipboardList : Calendar
-              const active = fonction === f
-              return (
-                <button key={f} type="button" title={FONCTION_META[f].hint}
-                  onClick={() => onUpdatePreviewed({ sessionType: f === 'STANDARD' ? 'INCUBATION' : f })}
-                  className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${
-                    active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
-                  <Icon className="h-3 w-3" />{FONCTION_META[f].label}
-                </button>
-              )
-            })}
-          </div>
+          <div className="ml-auto" />
           {session.id && kind === 'day' && (
             <SessionNotifyButton
               programmeId={programmeId} programmeName={programmeName ?? 'Programme'} session={session as any} compact
@@ -2258,12 +2243,8 @@ function SessionOverlay({
           {tab === 'details' && (
             <div className="h-full overflow-y-auto">
               <div className="mx-auto max-w-2xl">
-                <SessionInfoSummary session={session} />
-                <div className="border-t border-border">
-                  <div className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Modifier</div>
-                  <EditorPanel session={session} allLanes={allLanes} parents={parents}
-                    onUpdate={onUpdatePreviewed} onSaveAsPreset={onSaveAsPreset} criteria={criteria} />
-                </div>
+                <EditorPanel session={session} allLanes={allLanes} parents={parents}
+                  onUpdate={onUpdatePreviewed} onSaveAsPreset={onSaveAsPreset} criteria={criteria} />
               </div>
             </div>
           )}
@@ -2315,7 +2296,7 @@ function SessionInfoSummary({ session }: { session: Session }) {
     <div className="flex items-start gap-2">
       <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <div className="min-w-0">
-        <p className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">{label}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
         <p className="text-sm text-foreground break-words">{value}</p>
       </div>
     </div>
@@ -2357,7 +2338,7 @@ function SessionInfoSummary({ session }: { session: Session }) {
       {/* Description */}
       {session.description ? (
         <div>
-          <p className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground mb-1">Description</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Description</p>
           <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{session.description}</p>
         </div>
       ) : (
@@ -2405,7 +2386,7 @@ function SessionCriteriaPicker({ session, criteria, onUpdate }: {
 
   return (
     <div>
-      <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
+      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
         <ClipboardList className="h-3 w-3" />Critères de cette session
       </label>
       {criteria.length === 0 ? (
@@ -2414,7 +2395,7 @@ function SessionCriteriaPicker({ session, criteria, onUpdate }: {
         </p>
       ) : (
         <>
-          <p className="mt-0.5 mb-1 text-[9px] text-muted-foreground">Rien de coché = tous les critères s’appliquent.</p>
+          <p className="mt-0.5 mb-1 text-[11px] text-muted-foreground">Rien de coché = tous les critères s’appliquent.</p>
           <div className="space-y-1">
             {criteria.map(c => {
               const sel = isSelected(c.id)
@@ -2476,21 +2457,21 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
   })
 
   return (
-    <div className="bg-muted/10 p-3 space-y-3 shrink-0">
+    <div className="p-5 space-y-4">
       <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Titre *</label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Titre *</label>
         <Input value={title} onChange={(e) => setTitle(e.target.value)}
           onBlur={() => { if (title !== session.title) onUpdate({ title }) }}
-          placeholder="Titre de la session" className="h-8 text-sm font-bold mt-0.5" />
+          placeholder="Titre de la session" className="h-10 text-sm font-semibold mt-1" />
       </div>
 
       {/* Color + Status */}
       <div className="grid grid-cols-2 gap-2 items-start">
         <ColorPicker value={colorOf(session)} onChange={(hex) => onUpdate({ color: hex })} />
         <div>
-          <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Statut</label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Statut</label>
           <select value={session.status ?? 'UPCOMING'} onChange={(e) => onUpdate({ status: e.target.value as any })}
-            className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2">
+            className="mt-1 w-full h-9 text-sm rounded-lg border border-input bg-background px-2.5">
             <option value="UPCOMING">À venir</option>
             <option value="ACTIVE">En cours</option>
             <option value="COMPLETED">Terminée</option>
@@ -2500,8 +2481,8 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
 
       {/* Kind toggle */}
       <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Type de durée</label>
-        <div className="flex gap-1 mt-0.5">
+        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Type de durée</label>
+        <div className="flex gap-2 mt-1">
           {([['day', 'Journée', CalendarDays], ['range', 'Plage', CalendarRange]] as const).map(([k, lbl, Icon]) => (
             <button key={k} type="button"
               onClick={() => {
@@ -2512,10 +2493,10 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
                 }
                 onUpdate(patch)
               }}
-              className={`flex-1 inline-flex items-center justify-center gap-1 rounded-md border px-1.5 py-1.5 text-[11px] font-semibold transition-colors ${
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-sm font-semibold transition-colors ${
                 kind === k ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
                            : 'border-border text-muted-foreground hover:border-emerald-400'}`}>
-              <Icon className="h-3.5 w-3.5" />{lbl}
+              <Icon className="h-4 w-4" />{lbl}
             </button>
           ))}
         </div>
@@ -2524,7 +2505,7 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
       {/* Dates */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Début</label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Début</label>
           <Input type="date" value={session.startDate ?? ''}
             onChange={(e) => {
               const sd = e.target.value
@@ -2532,43 +2513,43 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
               if (kind === 'day') patch.endDate = sd
               onUpdate(patch)
             }}
-            className="h-7 text-[11px] mt-0.5" />
+            className="h-9 text-sm mt-1" />
         </div>
         <div>
-          <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Fin {kind === 'day' && '(= Début)'}
           </label>
           <Input type="date" value={session.endDate ?? ''} disabled={kind === 'day'}
             onChange={(e) => onUpdate({ endDate: e.target.value })}
-            className={`h-7 text-[11px] mt-0.5 ${kind === 'day' ? 'opacity-60 cursor-not-allowed' : ''}`} />
+            className={`h-9 text-sm mt-1 ${kind === 'day' ? 'opacity-60 cursor-not-allowed' : ''}`} />
         </div>
       </div>
 
       <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />Lieu</label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />Lieu</label>
         <Input value={location} placeholder='"Salle A" ou "Online"' onChange={(e) => setLocation(e.target.value)}
-          onBlur={() => { if (location !== (session.location ?? '')) onUpdate({ location }) }} className="h-7 text-[11px] mt-0.5" />
+          onBlur={() => { if (location !== (session.location ?? '')) onUpdate({ location }) }} className="h-9 text-sm mt-1" />
       </div>
 
       {/* Visibility — who can see this session */}
       <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
+        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
           {visibilityOf(session) === 'VISIBLE' ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}Visibilité
         </label>
-        <div className="flex gap-1 mt-0.5">
+        <div className="flex gap-2 mt-1">
           {(['VISIBLE', 'HIDDEN', 'PRIVATE'] as const).map((v) => {
             const m = VISIBILITY_META[v]
             const active = visibilityOf(session) === v
             return (
               <button key={v} type="button" onClick={() => onUpdate({ visibility: v })}
-                className={`flex-1 rounded-md border px-1.5 py-1 text-[10px] font-semibold transition-colors ${
+                className={`flex-1 rounded-lg border px-2 py-2 text-xs font-semibold transition-colors ${
                   active ? m.cls : 'border-border text-muted-foreground hover:border-emerald-400'}`}>
                 {m.label}
               </button>
             )
           })}
         </div>
-        <p className="mt-1 text-[9px] text-muted-foreground leading-tight">
+        <p className="mt-1 text-[11px] text-muted-foreground leading-tight">
           {visibilityOf(session) === 'VISIBLE' ? 'Affichée dans le parcours public aux invités.'
             : visibilityOf(session) === 'HIDDEN' ? 'Interne — visible des admins uniquement, masquée du parcours public.'
             : 'Privée — accessible aux seuls utilisateurs explicitement invités.'}
@@ -2577,15 +2558,15 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
 
       {/* Capability flags */}
       <div className="grid grid-cols-1 gap-1.5">
-        <label className={`flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-[11px] ${session.sessionType === 'CANDIDATURE_SUBMISSION' ? 'opacity-50' : 'cursor-pointer hover:bg-accent/40'}`}>
-          <input type="checkbox" className="h-3.5 w-3.5 accent-emerald-500"
+        <label className={`flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm ${session.sessionType === 'CANDIDATURE_SUBMISSION' ? 'opacity-50' : 'cursor-pointer hover:bg-accent/40'}`}>
+          <input type="checkbox" className="h-4 w-4 accent-emerald-500"
             checked={session.allowActivities !== false}
             disabled={session.sessionType === 'CANDIDATURE_SUBMISSION'}
             onChange={(e) => onUpdate({ allowActivities: e.target.checked })} />
           <span className="flex-1 text-foreground">Autoriser les activités (agenda)</span>
         </label>
-        <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-2 py-1.5 text-[11px] hover:bg-accent/40">
-          <input type="checkbox" className="h-3.5 w-3.5 accent-emerald-500"
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm hover:bg-accent/40">
+          <input type="checkbox" className="h-4 w-4 accent-emerald-500"
             checked={!!session.allowOverlap}
             onChange={(e) => onUpdate({ allowOverlap: e.target.checked })} />
           <span className="flex-1 text-foreground">Autoriser le chevauchement (sessions parallèles)</span>
@@ -2593,22 +2574,22 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
       </div>
 
       <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1"><FileText className="h-3 w-3" />Description</label>
-        <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
+        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"><FileText className="h-3 w-3" />Description</label>
+        <Textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)}
           onBlur={() => { if (description !== (session.description ?? '')) onUpdate({ description }) }}
-          className="mt-0.5 w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] resize-y focus:outline-none focus:ring-2 focus:ring-ring" />
+          placeholder="Objectifs, déroulé, informations utiles…" className="mt-1" />
       </div>
 
       {/* Type de session — drives behaviour (Candidature / Présélection) AND the
           badge shown to participants in the front-office. */}
       <div>
-        <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
+        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
           <Sparkles className="h-3 w-3" />Type de session
         </label>
         <select
           value={session.sessionType || 'INCUBATION'}
           onChange={(e) => onUpdate({ sessionType: e.target.value })}
-          className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2">
+          className="mt-1 w-full h-9 text-sm rounded-lg border border-input bg-background px-2.5">
           <option value="CANDIDATURE_SUBMISSION">Candidature — accepter les candidatures</option>
           <option value="PRESELECTION">Présélection — jury</option>
           <option value="PITCH_DAY">Pitch Day</option>
@@ -2617,7 +2598,7 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
           <option value="TRAINING_DAY">Formation</option>
           <option value="DEMO_DAY">Demo Day</option>
         </select>
-        <p className="mt-1 text-[9px] text-muted-foreground">
+        <p className="mt-1 text-[11px] text-muted-foreground">
           {fonctionOf(session) === 'STANDARD'
             ? 'Type affiché aux participants dans le parcours public.'
             : FONCTION_META[fonctionOf(session)].hint}
@@ -2640,14 +2621,14 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
             {/* Parent picker — nest inside a range whose dates contain this session */}
             {(eligibleParents.length > 0 || session.parentSessionId != null) && (
               <div>
-                <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1"><Layers className="h-3 w-3" />Imbriquée dans</label>
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Layers className="h-3 w-3" />Imbriquée dans</label>
                 <select value={session.parentSessionId ?? ''} onChange={(e) => onUpdate({ parentSessionId: e.target.value ? Number(e.target.value) : -1 as any })}
-                  className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2">
+                  className="mt-1 w-full h-9 text-sm rounded-lg border border-input bg-background px-2.5">
                   <option value="">— Aucune (autonome) —</option>
                   {eligibleParents.map(p => <option key={p.id} value={p.id}>{p.title} ({p.startDate} → {p.endDate})</option>)}
                 </select>
                 {session.parentSessionId != null && (
-                  <p className="mt-1 text-[9px] text-muted-foreground">Doit rester dans la plage parente (selon les dates).</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Doit rester dans la plage parente (selon les dates).</p>
                 )}
               </div>
             )}
@@ -2655,11 +2636,11 @@ function EditorPanel({ session, allLanes, parents, onUpdate, onSaveAsPreset, cri
             {/* Lane — hidden for children (they inherit the parent's lane) */}
             {!isChild && (
               <div>
-                <label className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1"><Layers className="h-3 w-3" />Voie</label>
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Layers className="h-3 w-3" />Voie</label>
                 <input list="lane-list" value={lane} onChange={(e) => setLane(e.target.value)}
                   onBlur={() => { if (lane.trim() && lane !== session.lane) onUpdate({ lane: lane.trim() }) }}
                   placeholder="Principal, Cohorte A…"
-                  className="mt-0.5 w-full h-8 text-xs rounded-md border border-input bg-background px-2 focus:outline-none focus:ring-2 focus:ring-ring" />
+                  className="mt-1 w-full h-9 text-sm rounded-lg border border-input bg-background px-2.5 focus:outline-none focus:ring-2 focus:ring-ring" />
                 <datalist id="lane-list">{allLanes.map(l => <option key={l} value={l} />)}</datalist>
               </div>
             )}
@@ -3045,7 +3026,7 @@ function DayColumn({ day, sessionColor, selectedActivityId, onSelectActivity, on
       {/* Day header */}
       <div className="sticky top-0 z-20 bg-card border-b-2 border-border h-9 flex items-center gap-1.5 px-3 shadow-sm">
         <span className="text-[11px] font-bold text-foreground capitalize truncate flex-1">{dateLabel}</span>
-        <span className="text-[9px] text-muted-foreground tabular-nums">{acts.length} act.</span>
+        <span className="text-[11px] text-muted-foreground tabular-nums">{acts.length} act.</span>
         <button onClick={() => onAddActivity()} title="Ajouter une activité"
           className="inline-flex items-center gap-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold">
           <Plus className="h-3 w-3" />Activité
@@ -3286,7 +3267,7 @@ function ActivityParticipants({ ctx }: { ctx: InviteCtx }) {
               className="w-full flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-accent text-left disabled:opacity-50">
               <span className="h-2 w-2 rounded-full shrink-0" style={{ background: g.color || DEFAULT_COLOR }} />
               <span className="truncate flex-1">{g.name}</span>
-              <span className="text-[9px] text-muted-foreground">{(g.contactIds ?? []).length}</span>
+              <span className="text-[11px] text-muted-foreground">{(g.contactIds ?? []).length}</span>
             </button>
           ))}
           {contacts.length > 0 && <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground pt-1">Contacts</p>}
@@ -3296,7 +3277,7 @@ function ActivityParticipants({ ctx }: { ctx: InviteCtx }) {
               <button key={c.id} disabled={busy || done} onClick={() => sendInvites([{ email: c.email, name: c.name }])}
                 className="w-full flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-accent text-left disabled:opacity-50">
                 <span className="truncate">{c.name}</span>
-                <span className="text-[9px] text-muted-foreground truncate">{c.email}</span>
+                <span className="text-[11px] text-muted-foreground truncate">{c.email}</span>
                 {done && <span className="ml-auto text-[9px] text-emerald-600">✓</span>}
               </button>
             )

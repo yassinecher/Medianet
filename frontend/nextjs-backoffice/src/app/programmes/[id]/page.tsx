@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Wand2, ChevronRight, Calendar, Tag,
+import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Wand2, Calendar, Tag,
   LayoutDashboard, Info, CalendarClock, Users, Mail, Presentation, ClipboardList, Inbox } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { programmesApi, partnersApi, sessionsApi, CATALOG_CATEGORIES } from '@/lib/api'
@@ -12,6 +12,7 @@ import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate, statusColor } from '@/lib/utils'
 import type { Programme, Partner } from '@/types'
@@ -20,7 +21,7 @@ import { ImageUpload } from '@/components/upload/ImageUpload'
 import { useCan } from '@/hooks/useCan'
 import { ProgrammeReports } from '@/components/ProgrammeReports'
 import { ProgrammePresentations } from './ProgrammePresentations'
-import { TimelineTab } from '../builder/TimelineTab'
+import { SessionsCalendar } from './SessionsCalendar'
 import { InvitationsPanel } from './InvitationsPanel'
 import { TasksPanel } from './TasksPanel'
 import { performDelete } from '@/lib/deleteChoice'
@@ -581,11 +582,10 @@ export default function ProgrammeDetailPage() {
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs font-medium text-muted-foreground">Type</label>
-                            <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-                              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <Select className="h-10" value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
                               <option value="PUBLIC">Public</option>
                               <option value="PRIVATE">Privé</option>
-                            </select>
+                            </Select>
                           </div>
                           <div className="space-y-1 sm:col-span-2">
                             <label className="text-xs font-medium text-muted-foreground">Description</label>
@@ -824,19 +824,12 @@ export default function ProgrammeDetailPage() {
               </motion.div>
             )}
 
-            {/* SESSIONS TAB — the unified Parcours editor (same as /timeline) */}
+            {/* SESSIONS TAB — legible calendar agenda (the visual editor lives in
+                the /timeline "Vue visuelle" and the "Mode visuel" builder). */}
             {activeTab === 'phases' && programme && (
-              <div className="space-y-2">
-                <div className="flex justify-end">
-                  <Link href={`/programmes/${programme.id}/timeline`}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground">
-                    <ChevronRight className="h-3.5 w-3.5" />Plein écran
-                  </Link>
-                </div>
-                <div className="h-[calc(100vh-17rem)] min-h-[520px] rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
-                  <TimelineTab programmeId={programme.id} programme={programme as any} />
-                </div>
-              </div>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <SessionsCalendar programmeId={programme.id} sessions={phases as any} onChanged={reloadPhases} />
+              </motion.div>
             )}
 
             {/* CRITERIA TAB */}

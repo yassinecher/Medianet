@@ -14,6 +14,7 @@ import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AiField } from '@/components/ai/AiField'
 import { ImageUpload } from '@/components/upload/ImageUpload'
@@ -445,10 +446,9 @@ function NewProgrammeWizard() {
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Type</label>
-                  <select value={form.type} onChange={(e) => set('type', e.target.value)}
-                    className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm">
+                  <Select value={form.type} onChange={(e) => set('type', e.target.value)}>
                     {Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Date de début <span className="text-red-500">*</span></label>
@@ -709,10 +709,9 @@ function NewProgrammeWizard() {
               <div className="flex flex-wrap items-end gap-2">
                 <div className="w-40 space-y-1">
                   <label className="text-[11px] text-muted-foreground">Rôle</label>
-                  <select value={inviteType} onChange={(e) => setInviteType(e.target.value)}
-                    className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm">
+                  <Select value={inviteType} onChange={(e) => setInviteType(e.target.value)}>
                     {INVITE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div className="min-w-[150px] flex-1 space-y-1">
                   <label className="text-[11px] text-muted-foreground">E-mail</label>

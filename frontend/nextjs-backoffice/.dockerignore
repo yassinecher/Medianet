@@ -1,0 +1,18 @@
+# Never copy host build artifacts into the image — the container installs its own
+# Linux node_modules via `npm ci`. Copying the host's (Windows/macOS) node_modules
+# clobbers platform-specific binaries (e.g. @next/swc-*) and breaks `next build`.
+node_modules
+.next
+out
+
+# VCS / local env / logs — irrelevant to the build and may leak local secrets.
+.git
+.gitignore
+.env*.local
+npm-debug.log*
+yarn-error.log*
+
+# Docker meta
+Dockerfile
+.dockerignore
+README.md
