@@ -76,5 +76,6 @@ jobs:
           ssh $SSHOPTS "$USER@$HOST" "mkdir -p $DEST"
           scp -i "$HOME/.ssh/id_deploy" -P "$PORT" -o StrictHostKeyChecking=accept-new \
             docker-compose.prod.yml "$USER@$HOST:$DEST/docker-compose.prod.yml"
-          ssh $SSHOPTS "$USER@$HOST" \
-            "cd $DEST && docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d --remove-orphans && docker image prune -f"
+          # Pull ONE image at a time (keeps the disk peak low on small servers),
+          # then start the stack. $DEST expands here; \$svc runs on the server.
+          ssh $SSHOPTS "$USER@$HOST" "cd $DEST && for svc in \$(docker compose -f docker-compose.prod.yml config --services); do echo \"==> pulling \$svc\"; docker compose -f docker-compose.prod.yml pull \$svc; done && docker compose -f docker-compose.prod.yml up -d --remove-orphans && docker image prune -f"

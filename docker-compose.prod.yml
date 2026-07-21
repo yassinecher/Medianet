@@ -181,10 +181,12 @@ services:
       eureka-server: { condition: service_healthy }
     networks: [medianet-network]
 
+  # Ollama-backed scoring — optional (needs the local LLM). Enable with --profile ai-local.
   ai-scoring-service:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-ai-scoring-service:${TAG:-latest}
     <<: *pull
     container_name: ai-scoring-service
+    profiles: ["ai-local"]
     expose: ["8084"]
     environment:
       JWT_SECRET: ${JWT_SECRET}
@@ -197,10 +199,12 @@ services:
       eureka-server: { condition: service_healthy }
     networks: [medianet-network]
 
+  # Ollama-backed matching — optional (needs the local LLM). Enable with --profile ai-local.
   ai-matching-service:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-ai-matching-service:${TAG:-latest}
     <<: *pull
     container_name: ai-matching-service
+    profiles: ["ai-local"]
     expose: ["8085"]
     environment:
       JWT_SECRET: ${JWT_SECRET}
@@ -238,10 +242,13 @@ services:
       eureka-server: { condition: service_healthy }
     networks: [medianet-network]
 
+  # Video transcription (Python/ffmpeg/whisper) — OPTIONAL & heavy (~1.5 GB).
+  # Off by default to fit small disks. Enable with --profile media once you have room.
   pitch-media-service:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-pitch-media-service:${TAG:-latest}
     <<: *pull
     container_name: pitch-media-service
+    profiles: ["media"]
     expose: ["8087"]
     environment:
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-https://app.medianet.dz}
@@ -388,9 +395,14 @@ services:
       timeout: 10s
       retries: 5
 
+  # Local LLM — OPTIONAL and heavy (multi-GB CUDA image + models; needs an NVIDIA
+  # GPU to be usable). Disabled by default. Enable only on a GPU host with:
+  #   docker compose -f docker-compose.prod.yml --profile ai-local up -d
+  # (and remove the deploy.resources GPU block below on a CPU-only host).
   ollama:
     image: ollama/ollama
     container_name: ollama
+    profiles: ["ai-local"]
     expose: ["11434"]
     volumes: [ollama_data:/root/.ollama]
     environment:
