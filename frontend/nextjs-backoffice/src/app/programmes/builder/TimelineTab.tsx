@@ -1891,6 +1891,13 @@ function Band({
         </div>
       )}
 
+      {/* Row guides — zebra + separators so the board reads as a Gantt grid. */}
+      {Array.from({ length: rowCount }).map((_, r) => (
+        <div key={`row-${r}`}
+          className={`pointer-events-none absolute inset-x-0 border-t border-border/30 ${r % 2 === 1 ? 'bg-muted/[0.06]' : ''}`}
+          style={{ top: LABEL_H + r * ROW_H, height: ROW_H }} />
+      ))}
+
       {sessions.map((s) => {
         const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
         if (!sd || !ed) return null
@@ -1902,6 +1909,10 @@ function Band({
         const rightDx  = myDrag?.mode === 'resize-right' ? myDrag.deltaDays * pxPerDay : 0
         const leftDx   = myDrag?.mode === 'resize-left'  ? myDrag.deltaDays * pxPerDay : 0
         const row = rowOf.get(s.id) ?? 0
+        // A bar narrower than ~84px can't show its title inside → label it beside the bar.
+        const barColor = colorOf(s)
+        const barDays = Math.max(1, Math.round((ed.getTime() - sd.getTime()) / DAY_MS) + 1)
+        const showExtLabel = barDays * pxPerDay < 84 && !!s.title
         // Live feedback while dragging: the dates the bar will get on release.
         const dragDates = (() => {
           if (!myDrag || myDrag.deltaDays === 0) return null
@@ -1934,6 +1945,12 @@ function Band({
               <div className="absolute z-40 rounded-md bg-foreground text-background px-1.5 py-0.5 text-[10px] font-bold pointer-events-none whitespace-nowrap shadow-lg"
                 style={{ left: `calc(${left}% + ${offsetPx + leftDx}px)`, top: LABEL_H + row * ROW_H - 16 }}>
                 {dragDates}
+              </div>
+            )}
+            {showExtLabel && (
+              <div className="pointer-events-none absolute z-30 whitespace-nowrap rounded border border-border/50 px-1.5 py-0.5 text-[11px] font-semibold shadow-sm"
+                style={{ left: `calc(${left + width}% + ${offsetPx + rightDx}px + 5px)`, top: LABEL_H + row * ROW_H + 14, color: barColor, background: 'hsl(var(--card))' }}>
+                {s.title}
               </div>
             )}
           </div>
