@@ -14,6 +14,7 @@
  *   · BOTTOM DRAWER (EditorPanel | kind-aware right pane), height-capped, no overlap.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -950,7 +951,7 @@ function TimelineBoard({ programmeId, programme }: {
         )}
         {/* Édition ⇄ Aperçu toggle */}
         <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5 text-[11px] font-semibold shrink-0">
-          {([['edit', 'Édition', Pencil], ['preview', 'Aperçu', Eye]] as const).map(([k, lbl, Icon]) => (
+          {([['edit', 'Édition', Pencil], ['preview', 'Gantt', Calendar]] as const).map(([k, lbl, Icon]) => (
             <button key={k} type="button" onClick={() => setView(k)}
               className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors ${
                 view === k ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
@@ -966,7 +967,7 @@ function TimelineBoard({ programmeId, programme }: {
       </div>
 
       {view === 'preview' ? (
-        <TimelinePreview sessions={sessions} topLevel={topLevel} childrenOf={childrenOf} />
+        <TimelinePreview programmeId={programmeId} topLevel={topLevel} childrenOf={childrenOf} />
       ) : (
       <>
 
@@ -1197,17 +1198,11 @@ function totalActivities(s: Session, childrenOf: (id: number) => Session[]): num
     : activitiesOf(s).length + childrenOf(s.id).reduce((n, k) => n + activitiesOf(k).length, 0)
 }
 
-function TimelinePreview({ sessions, topLevel, childrenOf }: {
-  sessions: Session[]
+function TimelinePreview({ programmeId, topLevel, childrenOf }: {
+  programmeId: number
   topLevel: Session[]
   childrenOf: (id: number) => Session[]
 }) {
-  const [openId, setOpenId] = useState<number | null>(null)
-  const [openDayId, setOpenDayId] = useState<number | null>(null)
-
-  const open    = openId    != null ? sessions.find(s => s.id === openId)    ?? null : null
-  const openDay = openDayId != null ? sessions.find(s => s.id === openDayId) ?? null : null
-
   if (topLevel.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-center p-8">
@@ -1225,58 +1220,97 @@ function TimelinePreview({ sessions, topLevel, childrenOf }: {
     )
   }
 
+  return <GanttChart programmeId={programmeId} topLevel={topLevel} childrenOf={childrenOf} />
+}
+
+// ── Gantt view — names column (left) aligned with timeline bars (right) ───────
+//  Each row is ONE flex row [name | lane], so the name and its bar always line
+//  up. The names column is sticky-left (stays on horizontal scroll); sub-sessions
+//  are indented under their parent. Rows link to the per-session page.
+function GanttChart({ programmeId, topLevel, childrenOf }: {
+  programmeId: number
+  topLevel: Session[]
+  childrenOf: (id: number) => Session[]
+}) {
   const byDate = (a: Session, b: Session) =>
     (parseDate(a.startDate)?.getTime() ?? 0) - (parseDate(b.startDate)?.getTime() ?? 0)
-  const ordered = [...topLevel].sort(byDate)
-  const toggle = (id: number) => { setOpenId(p => (p === id ? null : id)); setOpenDayId(null) }
-  const openKids = open ? childrenOf(open.id) : []
+  const rows: { s: Session; depth: number }[] = []
+  for (const s of [...topLevel].sort(byDate)) {
+    rows.push({ s, depth: 0 })
+    for (const c of childrenOf(s.id).slice().sort(byDate)) rows.push({ s: c, depth: 1 })
+  }
+
+  const dates = rows.flatMap(({ s }) => [parseDate(s.startDate), parseDate(s.endDate ?? s.startDate)])
+    .filter(Boolean) as Date[]
+  if (dates.length === 0) {
+    return <div className="flex-1 flex items-center justify-center p-8 text-sm text-muted-foreground">Ajoutez des dates aux sessions pour les voir sur le Gantt.</div>
+  }
+  const minT = Math.min(...dates.map(d => d.getTime()))
+  const maxT = Math.max(...dates.map(d => d.getTime()))
+  const winStart = minT - 3 * DAY_MS
+  const span = Math.max((maxT + 4 * DAY_MS) - winStart, DAY_MS)
+  const pct = (t: number) => ((t - winStart) / span) * 100
+
+  const months: { label: string; left: number }[] = []
+  const cur = new Date(new Date(winStart).getFullYear(), new Date(winStart).getMonth(), 1)
+  while (cur.getTime() <= winStart + span) {
+    if (cur.getTime() >= winStart) months.push({ label: cur.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), left: pct(cur.getTime()) })
+    cur.setMonth(cur.getMonth() + 1)
+  }
+  const now = Date.now()
+  const todayPct = now >= winStart && now <= winStart + span ? pct(now) : null
 
   return (
-    <div className="flex-1 overflow-y-auto p-5 space-y-6">
-      <SnakeRoadmap sessions={ordered} childrenOf={childrenOf} openId={openId} onToggle={toggle} />
+    <div className="flex-1 overflow-auto">
+      <div className="min-w-[720px]">
+        {/* Header: corner + month axis */}
+        <div className="sticky top-0 z-20 flex border-b-2 border-border bg-card">
+          <div className="sticky left-0 z-10 flex h-10 w-[150px] shrink-0 items-center gap-2 border-r border-border bg-card px-3 text-xs font-bold text-muted-foreground sm:w-[240px]">
+            <Calendar className="h-3.5 w-3.5" />Sessions
+          </div>
+          <div className="relative h-10 flex-1">
+            {months.map((m, i) => (
+              <div key={i} className="absolute bottom-1 top-0 border-l border-border/60 pl-1.5 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground"
+                style={{ left: `${m.left}%` }}>{m.label}</div>
+            ))}
+          </div>
+        </div>
 
-      {/* Expanded detail of the selected station */}
-      <AnimatePresence initial={false} mode="wait">
-        {open && (
-          <motion.div key={open.id}
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
-            transition={{ duration: 0.2 }}>
-            <div className="rounded-2xl border-2 bg-card/60 p-4" style={{ borderColor: colorOf(open) + '55' }}>
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <span className="h-3 w-3 rounded-full shrink-0" style={{ background: colorOf(open) }} />
-                <h3 className="text-sm font-bold text-foreground truncate">{open.title || 'Sans titre'}</h3>
-                <span className="text-[11px] text-muted-foreground">{dateText(open)}</span>
-                {open.location && (
-                  <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{open.location}</span>
-                )}
-                <button onClick={() => { setOpenId(null); setOpenDayId(null) }}
-                  className="ml-auto p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground" title="Fermer">
-                  <X className="h-4 w-4" />
-                </button>
+        {/* Rows */}
+        {rows.map(({ s, depth }) => {
+          const c = colorOf(s); const kind = kindOf(s)
+          const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
+          const left = sd ? pct(sd.getTime()) : 0
+          const width = sd && ed ? Math.max(((ed.getTime() - sd.getTime() + DAY_MS) / span) * 100, 0.8) : 1
+          return (
+            <Link key={s.id} href={`/programmes/${programmeId}/sessions/${s.id}`}
+              className="flex border-t border-border/40 transition-colors hover:bg-brand-500/[0.05]">
+              <div className={`sticky left-0 z-10 flex w-[150px] shrink-0 items-center gap-2 border-r border-border bg-card px-3 py-2 sm:w-[240px] ${depth > 0 ? 'pl-5 sm:pl-7' : ''}`}>
+                {depth > 0 && <span className="shrink-0 text-muted-foreground">↳</span>}
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c }} />
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-foreground">{s.title || 'Sans titre'}</p>
+                  <p className="truncate text-[10px] text-muted-foreground">{dateText(s)}</p>
+                </div>
               </div>
-
-              {kindOf(open) === 'day' ? (
-                <AgendaList session={open} />
-              ) : openDay ? (
-                <>
-                  <PreviewBackBar color={colorOf(openDay)} title={openDay.title} subtitle={dateText(openDay)}
-                    onBack={() => setOpenDayId(null)} />
-                  <AgendaList session={openDay} />
-                </>
-              ) : (
-                <>
-                  <RangeSummary session={open} />
-                  {openKids.length > 0 ? (
-                    <DaysRiver days={openKids} onOpen={(id) => setOpenDayId(id)} />
-                  ) : (
-                    <p className="text-xs text-muted-foreground italic">Aucune journée dans cette session.</p>
-                  )}
-                </>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <div className="relative min-h-[46px] flex-1">
+                {todayPct != null && <div className="pointer-events-none absolute inset-y-0 z-0 w-px bg-rose-500/50" style={{ left: `${todayPct}%` }} />}
+                {kind === 'day' ? (
+                  <div className="absolute top-1/2 flex -translate-y-1/2 items-center gap-1.5" style={{ left: `${left}%` }}>
+                    <span className="h-5 w-5 shrink-0 rounded-md shadow-sm" style={{ background: c }} />
+                    <span className="whitespace-nowrap text-[11px] font-semibold" style={{ color: c }}>{s.title || 'Journée'}</span>
+                  </div>
+                ) : (
+                  <div className="absolute top-1/2 flex h-6 -translate-y-1/2 items-center overflow-hidden rounded-md px-2 text-[11px] font-bold text-white shadow-sm"
+                    style={{ left: `${left}%`, width: `${width}%`, background: c }}>
+                    <span className="truncate">{s.title || 'Plage'}</span>
+                  </div>
+                )}
+              </div>
+            </Link>
+          )
+        })}
+      </div>
     </div>
   )
 }
