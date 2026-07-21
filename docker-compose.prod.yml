@@ -17,11 +17,14 @@ x-pull: &pull
   restart: unless-stopped
 
 services:
-  # ── Reverse proxy (the only service bound to the host) ─────────────────────
+  # ── Reverse proxy — OPTIONAL. Only needed once you have a domain + TLS certs.
+  # Enable it with:  docker compose -f docker-compose.prod.yml --profile proxy up -d
+  # Without it, the frontends/gateway are reached directly by IP:port (below).
   nginx:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-nginx:${TAG:-latest}
     <<: *pull
     container_name: nginx
+    profiles: ["proxy"]
     ports:
       - "80:80"
       - "443:443"
@@ -41,7 +44,8 @@ services:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-frontoffice:${TAG:-latest}
     <<: *pull
     container_name: nextjs-frontoffice
-    expose: ["3000"]
+    ports:
+      - "3000:3000"          # front office → http://SERVER_IP:3000
     environment:
       NEXT_PUBLIC_API_URL: ${FRONTOFFICE_API_URL:-https://app.medianet.dz}
       NODE_ENV: production
@@ -52,7 +56,8 @@ services:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-backoffice:${TAG:-latest}
     <<: *pull
     container_name: nextjs-backoffice
-    expose: ["3000"]
+    ports:
+      - "3001:3000"          # back office → http://SERVER_IP:3001
     environment:
       NEXT_PUBLIC_API_URL: ${BACKOFFICE_API_URL:-https://admin.medianet.dz}
       NODE_ENV: production
@@ -64,7 +69,8 @@ services:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-api-gateway:${TAG:-latest}
     <<: *pull
     container_name: api-gateway
-    expose: ["8080"]
+    ports:
+      - "8080:8080"          # API → http://SERVER_IP:8080  (frontends call this)
     environment:
       EUREKA_URI: http://eureka-server:8761/eureka
       AI_MATCHING_SERVICE_URL: http://ai-matching-service:8085
@@ -335,7 +341,9 @@ services:
   minio:
     image: minio/minio:latest
     container_name: medianet-minio
-    expose: ["9000", "9001"]
+    ports:
+      - "9000:9000"          # S3 API — uploaded images load from http://SERVER_IP:9000
+      - "9001:9001"          # MinIO web console
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-medianet}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-medianet2024}
