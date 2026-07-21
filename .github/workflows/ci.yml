@@ -28,7 +28,6 @@ jobs:
           - notification-service
           - programme-service
           - ai-scoring-service
-          - ai-matching-service
           - admin-ai-service
           - api-gateway
           - eureka-server
