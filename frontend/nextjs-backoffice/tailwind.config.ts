@@ -21,6 +21,7 @@ const config: Config = {
         muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
         accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
         card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
+        popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
         brand: {
           50: '#f0f4ff', 100: '#e0eaff', 200: '#c7d7fe', 300: '#a5bcfd',
           400: '#8098fa', 500: '#6272f6', 600: '#4a52eb', 700: '#3d3fd0',

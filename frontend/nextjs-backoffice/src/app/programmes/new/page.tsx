@@ -395,32 +395,41 @@ function NewProgrammeWizard() {
           )}
         </motion.div>
 
-        {/* Stepper — click any reached/adjacent step to jump back */}
-        <ol className="flex items-center gap-1.5">
-          {STEPS.map((s, i) => {
-            const done = i < step, active = i === step
-            const Icon = s.icon
-            return (
-              <li key={s.key} className="flex flex-1 items-center gap-1.5">
-                <button type="button" disabled={i > step}
-                  onClick={() => i <= step && setStep(i)}
-                  className={`flex min-w-0 flex-1 items-center gap-2 rounded-xl border px-3 py-2 text-left transition-colors ${
-                    active ? 'border-brand-500 bg-brand-500/10'
-                    : done ? 'border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10'
-                    : 'border-border opacity-60'}`}>
-                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                    active ? 'bg-brand-500 text-white' : done ? 'bg-emerald-500 text-white' : 'bg-muted text-muted-foreground'}`}>
-                    {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
-                  </span>
-                  <span className="min-w-0">
-                    <span className={`block truncate text-xs font-semibold ${active ? 'text-brand-700 dark:text-brand-300' : 'text-foreground'}`}>{s.title}</span>
-                    <span className="hidden truncate text-[10px] text-muted-foreground sm:block">{s.blurb}</span>
-                  </span>
-                </button>
-              </li>
-            )
-          })}
-        </ol>
+        {/* Stepper — progress bar + fixed-size numbered dots. Labels only show on
+            wide screens (md+) under each dot; on small screens the current step's
+            title lives in the header line, so nothing ever overflows. */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="font-semibold text-foreground">
+              Étape {step + 1} / {STEPS.length} · {STEPS[step].title}
+            </span>
+            <span className="hidden text-muted-foreground sm:block">{STEPS[step].blurb}</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-brand-500 transition-all duration-300"
+              style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+          </div>
+          <ol className="flex items-start gap-1">
+            {STEPS.map((s, i) => {
+              const done = i < step, active = i === step
+              return (
+                <li key={s.key} className="flex flex-1 flex-col items-center gap-1">
+                  <button type="button" disabled={i > step} title={s.title}
+                    onClick={() => i <= step && setStep(i)}
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors ${
+                      active ? 'border-brand-500 bg-brand-500 text-white'
+                      : done ? 'border-emerald-500 bg-emerald-500 text-white'
+                      : 'border-border bg-muted text-muted-foreground'} ${
+                      i <= step ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed opacity-50'}`}>
+                    {done ? <Check className="h-4 w-4" /> : i + 1}
+                  </button>
+                  <span className={`hidden text-center text-[10px] font-medium leading-tight md:block ${
+                    active ? 'text-brand-600 dark:text-brand-300' : 'text-muted-foreground'}`}>{s.title}</span>
+                </li>
+              )
+            })}
+          </ol>
+        </div>
 
         <MagicCard className="p-6">
           <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">

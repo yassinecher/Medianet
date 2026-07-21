@@ -66,6 +66,38 @@ interface Criterion {
   maxScore?: number
 }
 
+type Tab =
+  | 'dashboard' | 'info' | 'phases' | 'criteria' | 'candidatures' | 'evaluations'
+  | 'participants' | 'partners' | 'invitations' | 'presentations' | 'tasks' | 'reports'
+
+/** Leaf-tab label + icon (a leaf is the actual panel rendered below the nav). */
+const TAB_META: Record<Tab, { label: string; Icon: typeof BarChart3 }> = {
+  dashboard:     { label: 'Tableau de bord', Icon: LayoutDashboard },
+  info:          { label: 'Informations',    Icon: Info },
+  candidatures:  { label: 'Candidatures',     Icon: Inbox },
+  criteria:      { label: 'Critères',         Icon: Target },
+  evaluations:   { label: 'Évaluations',      Icon: Star },
+  phases:        { label: 'Sessions',         Icon: CalendarClock },
+  tasks:         { label: 'Tâches',           Icon: ClipboardList },
+  presentations: { label: 'Présentations',    Icon: Presentation },
+  participants:  { label: 'Participants',     Icon: Users },
+  invitations:   { label: 'Invitations',      Icon: Mail },
+  partners:      { label: 'Partenaires',      Icon: Building2 },
+  reports:       { label: 'Rapports',         Icon: BarChart3 },
+}
+
+/** The 12 panels grouped into 5 primary sections so the nav stays scannable.
+ *  Primary chips never overflow (5 items, they wrap); the active section reveals
+ *  its 2-3 sub-tabs underneath. */
+const TAB_GROUPS: { key: string; label: string; Icon: typeof BarChart3; tabs: Tab[]; perm?: string }[] = [
+  { key: 'overview',     label: 'Vue d’ensemble', Icon: LayoutDashboard, tabs: ['dashboard', 'info'] },
+  { key: 'applications', label: 'Candidatures',   Icon: Inbox,           tabs: ['candidatures', 'criteria', 'evaluations'] },
+  { key: 'journey',      label: 'Parcours',       Icon: CalendarClock,   tabs: ['phases', 'tasks', 'presentations'] },
+  { key: 'people',       label: 'Personnes',      Icon: Users,           tabs: ['participants', 'invitations', 'partners'] },
+  { key: 'reports',      label: 'Rapports',       Icon: BarChart3,       tabs: ['reports'], perm: 'reports:read' },
+]
+const ALL_TABS: Tab[] = TAB_GROUPS.flatMap((g) => g.tabs)
+
 export default function ProgrammeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -73,16 +105,14 @@ export default function ProgrammeDetailPage() {
   const [programme, setProgramme] = useState<Programme | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'info' | 'phases' | 'criteria' | 'candidatures' | 'evaluations' | 'participants' | 'partners' | 'invitations' | 'presentations' | 'tasks' | 'reports'>('dashboard')
-  type Tab = typeof activeTab
-  const TABS: Tab[] = ['dashboard', 'info', 'phases', 'criteria', 'evaluations', 'participants', 'partners', 'invitations', 'presentations', 'tasks', 'reports']
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard')
 
   // Reflect the active tab in the URL (?tab=) so the browser Back button moves
   // between tabs and only leaves the programme once you're back on the first one.
   useEffect(() => {
     const readTab = () => {
       const t = new URLSearchParams(window.location.search).get('tab') as Tab | null
-      setActiveTab(t && TABS.includes(t) ? t : 'dashboard')
+      setActiveTab(t && ALL_TABS.includes(t) ? t : 'dashboard')
     }
     readTab()
     window.addEventListener('popstate', readTab)
@@ -345,6 +375,12 @@ export default function ProgrammeDetailPage() {
     } catch { toast.error('Erreur') }
   }
 
+  // Nav: which primary section holds the active leaf, and the per-leaf counts.
+  const activeGroup = TAB_GROUPS.find((g) => g.tabs.includes(activeTab)) ?? TAB_GROUPS[0]
+  const tabCounts: Partial<Record<Tab, number>> = {
+    phases: phases.length, criteria: criteria.length, partners: programmePartners.length,
+  }
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -401,43 +437,49 @@ export default function ProgrammeDetailPage() {
           )}
         </motion.div>
 
-        {/* Tabs — icon + label so the bar is scannable; "Rapports" needs reports:read */}
-        <div className="flex gap-0.5 border-b border-border overflow-x-auto pb-px">
-          {([
-            { key: 'dashboard',     label: 'Tableau de bord', Icon: LayoutDashboard },
-            { key: 'info',          label: 'Informations',    Icon: Info },
-            { key: 'phases',        label: 'Sessions',        Icon: CalendarClock, count: phases.length },
-            { key: 'criteria',      label: 'Critères',        Icon: Target,        count: criteria.length },
-            { key: 'candidatures',  label: 'Candidatures',    Icon: Inbox },
-            { key: 'evaluations',   label: 'Évaluations',     Icon: Star },
-            { key: 'participants',  label: 'Participants',    Icon: Users },
-            { key: 'partners',      label: 'Partenaires',     Icon: Building2,     count: programmePartners.length },
-            { key: 'invitations',   label: 'Invitations',     Icon: Mail },
-            { key: 'presentations', label: 'Présentations',   Icon: Presentation },
-            { key: 'tasks',         label: 'Tâches',          Icon: ClipboardList },
-            { key: 'reports',       label: 'Rapports',        Icon: BarChart3 },
-          ] as { key: Tab; label: string; Icon: typeof BarChart3; count?: number }[])
-            .filter((t) => t.key !== 'reports' || can('reports:read'))
-            .map(({ key, label, Icon, count }) => {
-              const active = activeTab === key
+        {/* Two-level nav: 5 primary sections → contextual sub-tabs. Keeps the 12
+            panels scannable instead of one long horizontally-scrolling bar. */}
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {TAB_GROUPS.filter((g) => !g.perm || can(g.perm)).map((g) => {
+              const active = activeGroup.key === g.key
+              const Icon = g.Icon
               return (
-                <button key={key} onClick={() => selectTab(key)}
-                  title={key === 'reports' ? 'Accès : permission reports:read' : label}
-                  className={`group -mb-px flex items-center gap-1.5 whitespace-nowrap rounded-t-lg border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                <button key={g.key} onClick={() => selectTab(g.tabs[0])}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
                     active
-                      ? 'border-brand-500 bg-brand-500/5 text-brand-600 dark:text-brand-400'
-                      : 'border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground'}`}>
-                  <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-brand-500' : 'text-muted-foreground group-hover:text-foreground'}`} />
-                  {label}
-                  {count != null && (
-                    <span className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                      active ? 'bg-brand-500/15 text-brand-600 dark:text-brand-300' : 'bg-muted text-muted-foreground'}`}>
-                      {count}
-                    </span>
-                  )}
+                      ? 'bg-brand-500 text-white shadow-sm'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
+                  <Icon className="h-4 w-4 shrink-0" />{g.label}
                 </button>
               )
             })}
+          </div>
+
+          {activeGroup.tabs.length > 1 && (
+            <div className="flex gap-0.5 overflow-x-auto border-b border-border pb-px">
+              {activeGroup.tabs.map((t) => {
+                const meta = TAB_META[t]; const Icon = meta.Icon
+                const active = activeTab === t; const count = tabCounts[t]
+                return (
+                  <button key={t} onClick={() => selectTab(t)}
+                    className={`group -mb-px flex items-center gap-1.5 whitespace-nowrap rounded-t-lg border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                      active
+                        ? 'border-brand-500 bg-brand-500/5 text-brand-600 dark:text-brand-400'
+                        : 'border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground'}`}>
+                    <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-brand-500' : 'text-muted-foreground group-hover:text-foreground'}`} />
+                    {meta.label}
+                    {count != null && (
+                      <span className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                        active ? 'bg-brand-500/15 text-brand-600 dark:text-brand-300' : 'bg-muted text-muted-foreground'}`}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {loading ? (
