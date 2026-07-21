@@ -52,38 +52,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare SSH
+      - name: Prepare SSH key
         env:
-          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          HOST: ${{ secrets.SERVER_HOST }}
-          PORT: ${{ vars.SERVER_SSH_PORT || '22' }}
+          # Store the BASE64 of the OpenSSH private key (copy-paste-proof).
+          SSH_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if ! ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null 2>&1; then
+            echo "::error::SSH_PRIVATE_KEY must be the BASE64 of an OpenSSH private key — see DEPLOY.md."
+            exit 1
+          fi
 
-      - name: Upload compose file
+      - name: Deploy on the server
         env:
           HOST: ${{ secrets.SERVER_HOST }}
           USER: ${{ secrets.SERVER_USER }}
           PORT: ${{ vars.SERVER_SSH_PORT || '22' }}
           DEST: ${{ vars.SERVER_PATH || '~/medianet' }}
         run: |
-          ssh -i ~/.ssh/id_deploy -p "$PORT" "$USER@$HOST" "mkdir -p $DEST"
-          scp -i ~/.ssh/id_deploy -P "$PORT" docker-compose.prod.yml "$USER@$HOST:$DEST/docker-compose.prod.yml"
-
-      - name: Pull & restart on the server
-        env:
-          HOST: ${{ secrets.SERVER_HOST }}
-          USER: ${{ secrets.SERVER_USER }}
-          PORT: ${{ vars.SERVER_SSH_PORT || '22' }}
-          DEST: ${{ vars.SERVER_PATH || '~/medianet' }}
-        run: |
-          ssh -i ~/.ssh/id_deploy -p "$PORT" "$USER@$HOST" bash -s <<'EOF'
-          set -e
-          cd ${{ vars.SERVER_PATH || '~/medianet' }}
-          docker compose -f docker-compose.prod.yml pull
-          docker compose -f docker-compose.prod.yml up -d --remove-orphans
-          docker image prune -f
-          EOF
+          SSHOPTS="-i $HOME/.ssh/id_deploy -p $PORT -o StrictHostKeyChecking=accept-new"
+          ssh $SSHOPTS "$USER@$HOST" "mkdir -p $DEST"
+          scp -i "$HOME/.ssh/id_deploy" -P "$PORT" -o StrictHostKeyChecking=accept-new \
+            docker-compose.prod.yml "$USER@$HOST:$DEST/docker-compose.prod.yml"
+          ssh $SSHOPTS "$USER@$HOST" \
+            "cd $DEST && docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d --remove-orphans && docker image prune -f"
