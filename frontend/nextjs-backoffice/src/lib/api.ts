@@ -246,9 +246,14 @@ export const CATALOG_CATEGORIES = {
   SESSION_TYPE: 'session_type',
 } as const
 
+export interface PartnerUpsert {
+  name?: string; logoUrl?: string; description?: string; website?: string
+  contactEmail?: string; contactPhone?: string; publicVisible?: boolean
+}
 export const partnersApi = {
   list: () => api.get('/api/partners'),
-  create: (data: { name: string; logoUrl?: string }) => api.post('/api/partners', data),
+  create: (data: PartnerUpsert & { name: string }) => api.post('/api/partners', data),
+  update: (id: number, data: PartnerUpsert) => api.put(`/api/partners/${id}`, data),
   delete: (id: number) => api.delete(`/api/partners/${id}`),
   addToProgramme: (programmeId: number, partnerId: number) =>
     api.post(`/api/programmes/${programmeId}/partners/${partnerId}`),
@@ -592,4 +597,16 @@ export const usersApi = {
   updateMentorProfile:  (id: number, data: unknown) => api.put(`/api/auth/users/${id}/profile/mentor`, data),
   updatePorteurProfile: (id: number, data: unknown) => api.put(`/api/auth/users/${id}/profile/porteur`, data),
   updateJuryProfile:    (id: number, data: unknown) => api.put(`/api/auth/users/${id}/profile/jury`, data),
+}
+
+/** Sociétés incubées — admin-managed alumni catalogue (public FO page). */
+export interface IncubatedUpsert {
+  name?: string; logoUrl?: string; description?: string; website?: string
+  sector?: string; cohortYear?: string; publicVisible?: boolean; sortOrder?: number
+}
+export const incubatedAdminApi = {
+  list: () => api.get('/api/incubated-companies'),
+  create: (data: IncubatedUpsert & { name: string }) => api.post('/api/incubated-companies', data),
+  update: (id: number, data: IncubatedUpsert) => api.put(`/api/incubated-companies/${id}`, data),
+  delete: (id: number) => api.delete(`/api/incubated-companies/${id}`),
 }

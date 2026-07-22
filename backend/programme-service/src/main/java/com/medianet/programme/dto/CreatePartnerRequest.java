@@ -8,4 +8,9 @@ public class CreatePartnerRequest {
     @NotBlank(message = "Partner name is required")
     private String name;
     private String logoUrl;
+    private String description;
+    private String website;
+    private String contactEmail;
+    private String contactPhone;
+    private Boolean publicVisible;
 }

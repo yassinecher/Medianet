@@ -31,6 +31,10 @@ spring:
           uri: lb://programme-service
           predicates:
             - Path=/api/partners/**
+        - id: programme-service-incubated
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/incubated-companies/**
         - id: programme-service-tasks
           uri: lb://programme-service
           predicates:

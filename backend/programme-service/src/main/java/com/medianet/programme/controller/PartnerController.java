@@ -29,6 +29,25 @@ public class PartnerController {
         return ResponseEntity.status(201).body(programmeService.createPartner(req));
     }
 
+    /** Update a partner's profile + public visibility (partial: null = keep). */
+    @PutMapping("/api/partners/{id}")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
+    public ResponseEntity<PartnerDto> updatePartner(@PathVariable Long id, @RequestBody CreatePartnerRequest req) {
+        return ResponseEntity.ok(programmeService.updatePartner(id, req));
+    }
+
+    // ── PUBLIC site (no auth — only partners the admin made visible) ─────────
+
+    @GetMapping("/api/partners/public")
+    public ResponseEntity<List<PartnerDto>> getPublicPartners() {
+        return ResponseEntity.ok(programmeService.getPublicPartners());
+    }
+
+    @GetMapping("/api/partners/public/{id}")
+    public ResponseEntity<PartnerDto> getPublicPartner(@PathVariable Long id) {
+        return ResponseEntity.ok(programmeService.getPublicPartner(id));
+    }
+
     @DeleteMapping("/api/partners/{id}")
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
     public ResponseEntity<Void> deletePartner(@PathVariable Long id) {

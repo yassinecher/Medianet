@@ -4,43 +4,58 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    /* ── Medianet brand — MEDIA blue (#00A3E0) scale, drives every `brand-*` ── */
+    --brand-50:  240 249 255;
+    --brand-100: 224 242 254;
+    --brand-200: 186 230 253;
+    --brand-300: 125 211 252;
+    --brand-400: 56 189 248;
+    --brand-500: 0 163 224;
+    --brand-600: 0 132 199;
+    --brand-700: 3 105 161;
+    --brand-800: 7 89 133;
+    --brand-900: 12 74 110;
+    --brand-950: 8 47 73;
+
+    /* Light: page a hair off-white so white cards lift; focus ring = brand blue. */
+    --background: 204 26% 98%;
+    --foreground: 210 15% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
+    --card-foreground: 210 15% 10%;
+    --primary: 199 100% 44%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 20% 95%;
+    --secondary-foreground: 210 15% 12%;
+    --muted: 210 20% 95%;
+    --muted-foreground: 210 10% 44%;
+    --accent: 204 45% 94%;
+    --accent-foreground: 210 15% 12%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --border: 210 16% 89%;
+    --input: 210 16% 89%;
+    --ring: 199 100% 44%;
     --radius: 0.75rem;
   }
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
+    /* Dark: card clearly LIGHTER than the page (elevation) + brand-blue ring. */
+    --background: 210 45% 5%;
+    --foreground: 210 25% 92%;
+    --card: 209 38% 9%;
+    --card-foreground: 210 25% 92%;
+    --primary: 199 100% 48%;
+    --primary-foreground: 210 45% 5%;
+    --secondary: 209 30% 13%;
+    --secondary-foreground: 210 25% 92%;
+    --muted: 209 30% 13%;
+    --muted-foreground: 210 16% 65%;
+    --accent: 208 34% 16%;
+    --accent-foreground: 210 25% 92%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    --border: 209 28% 15%;
+    --input: 209 28% 15%;
+    --ring: 199 100% 48%;
   }
 }
 
@@ -54,15 +69,30 @@
 
 .mesh-gradient {
   background-image:
-    radial-gradient(at 40% 20%, hsla(228,100%,74%,0.12) 0px,transparent 50%),
-    radial-gradient(at 80% 0%, hsla(248,100%,69%,0.08) 0px,transparent 50%),
-    radial-gradient(at 0% 50%, hsla(210,100%,70%,0.08) 0px,transparent 50%);
+    radial-gradient(at 40% 20%, hsla(199,100%,60%,0.12) 0px,transparent 50%),
+    radial-gradient(at 80% 0%, hsla(190,95%,55%,0.08) 0px,transparent 50%),
+    radial-gradient(at 0% 50%, hsla(210,100%,65%,0.08) 0px,transparent 50%);
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { @apply bg-muted; }
-::-webkit-scrollbar-thumb { @apply bg-muted-foreground/30 rounded-full; }
-::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/50; }
+/* Medianet signature stripe — the multicolor bar from the logo. */
+.brand-stripe {
+  background: linear-gradient(90deg,
+    #ED1C24 0 16.6%, #F58220 16.6% 33.3%, #FFCB05 33.3% 50%,
+    #8DC63F 50% 66.6%, #00AEEF 66.6% 83.3%, #EC008C 83.3% 100%);
+}
+
+/* Glassmorphism surface for hero/brand panels. */
+.glass {
+  background: rgb(255 255 255 / 0.09);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgb(255 255 255 / 0.16);
+}
+
+::-webkit-scrollbar { width: 10px; height: 12px; }
+::-webkit-scrollbar-track { @apply bg-muted/60; }
+::-webkit-scrollbar-thumb { @apply bg-muted-foreground/40 rounded-full border-2 border-transparent bg-clip-padding; }
+::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/60; }
 
 /* ── Animated theme transition (View Transitions API) ────────────────── */
 /* The new theme expands as a circle from the toggle button position.     */

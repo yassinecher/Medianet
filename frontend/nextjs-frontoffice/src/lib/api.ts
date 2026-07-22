@@ -340,3 +340,14 @@ export const notificationsApi = {
   rsvpAccept: (token: string) => axios.post(`${API_URL}/api/notifications/invitations/rsvp/${token}/accept`),
   rsvpDecline: (token: string) => axios.post(`${API_URL}/api/notifications/invitations/rsvp/${token}/decline`),
 }
+
+/** Public Medianet partners (only those the admin made visible). */
+export const publicPartnersApi = {
+  list: () => api.get('/api/partners/public'),
+  get: (id: number) => api.get(`/api/partners/public/${id}`),
+}
+
+/** Public catalogue of already-incubated companies. */
+export const incubatedApi = {
+  list: () => api.get('/api/incubated-companies/public'),
+}

@@ -26,6 +26,17 @@ public class Partner {
     @Column(columnDefinition = "TEXT")
     private String logoUrl;
 
+    // ── Public profile (frontoffice /partenaires pages) ──────────────────────
+    /** Organisation description shown on the public profile page. */
+    @Column(columnDefinition = "TEXT")
+    private String description;
+    private String website;
+    private String contactEmail;
+    private String contactPhone;
+    /** Nullable on purpose (migration-safe with ddl-auto update); null = hidden.
+     *  Only partners explicitly made visible appear on the public site. */
+    private Boolean publicVisible;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

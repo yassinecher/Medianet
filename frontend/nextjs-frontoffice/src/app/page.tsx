@@ -16,6 +16,7 @@ import { NumberTicker } from '@/components/magicui/number-ticker'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { ProgrammeCard } from '@/components/programmes/ProgrammeCard'
 import { Navbar } from '@/components/layout/Navbar'
+import { SiteFooter } from '@/components/layout/SiteFooter'
 import { programmesApi, landingPageApi } from '@/lib/api'
 import type { Programme } from '@/types'
 
@@ -289,9 +290,7 @@ export default function LandingPage() {
 
       {order.map((id) => wrapEditable(id, sections[id]))}
 
-      <footer className="border-t border-border py-8 text-center text-sm text-muted-foreground">
-        <p>{page.footerText ?? '© 2026 Medianet Incubateur. Tous droits réservés.'}</p>
-      </footer>
+      <SiteFooter footerText={page.footerText} />
     </div>
   )
 }

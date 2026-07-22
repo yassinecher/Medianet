@@ -10,6 +10,11 @@ import { cn, getInitials } from '@/lib/utils'
 
 const navLinks = [
   { label: 'Programmes', href: '/programmes' }, // public — always visible
+  // Discovery pages — navbar shows them to VISITORS (logged-in users keep a
+  // compact workspace nav; these stay one click away in the footer).
+  { label: 'Partenaires', href: '/partenaires', publicOnly: true },
+  { label: 'Sociétés incubées', href: '/societes-incubees', publicOnly: true },
+  { label: 'À propos', href: '/a-propos', publicOnly: true },
   { label: 'Tableau de bord', href: '/dashboard', auth: true },
   { label: 'Mes candidatures', href: '/candidatures', auth: true, perm: 'candidatures:read' },
   { label: 'Mes organisations', href: '/organizations', auth: true, perm: 'organizations:read' },
@@ -48,6 +53,7 @@ export function Navbar() {
   // Filter nav links by auth + the union of the user's roles and permissions.
   const visibleLinks = navLinks.filter((l: any) => {
     if (l.auth && !user) return false
+    if (l.publicOnly && user) return false
     if (!l.roles && !l.perm) return true
     if (l.roles?.some((r: FrontofficeRole) => roles.includes(r))) return true
     if (l.perm && perms.includes(l.perm)) return true

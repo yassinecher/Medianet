@@ -17,9 +17,9 @@ import { useEffect, useRef } from 'react'
 export function BorderBeam({
   className,
   size = 200,
-  duration = 8,
-  colorFrom = '#6272f6',
-  colorTo = '#a78bfa',
+  duration = 10,
+  colorFrom = '#00A3E0',
+  colorTo = '#7dd3fc',
   delay = 0,
   borderWidth = 1.5,
 }: {
@@ -46,8 +46,9 @@ export function BorderBeam({
       if (!startTs) startTs = ts - delayMs
       const elapsed = (ts - startTs) % totalMs
       const deg = (elapsed / totalMs) * 360
-      // Just the conic gradient — no white interior overlay
-      el.style.background = `conic-gradient(from ${deg}deg, transparent 0deg, ${colorFrom} 60deg, ${colorTo} 120deg, transparent 180deg)`
+      // Long, feathered head/tail so the sweep reads as a soft travelling glow
+      // (hard 60°/180° stops looked rigid/mechanical on rectangular cards).
+      el.style.background = `conic-gradient(from ${deg}deg, transparent 0deg, ${colorFrom}22 30deg, ${colorFrom} 110deg, ${colorTo} 170deg, ${colorTo}22 250deg, transparent 300deg)`
       raf = requestAnimationFrame(tick)
     }
 

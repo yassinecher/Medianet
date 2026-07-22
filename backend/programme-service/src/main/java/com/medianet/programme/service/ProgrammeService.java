@@ -561,8 +561,43 @@ public class ProgrammeService {
         Partner partner = Partner.builder()
                 .name(req.getName())
                 .logoUrl(req.getLogoUrl())
+                .description(req.getDescription())
+                .website(req.getWebsite())
+                .contactEmail(req.getContactEmail())
+                .contactPhone(req.getContactPhone())
+                .publicVisible(req.getPublicVisible())
                 .build();
         return toPartnerDto(partnerRepository.save(partner));
+    }
+
+    /** Update a partner's profile / public visibility (null fields = keep). */
+    public PartnerDto updatePartner(Long partnerId, CreatePartnerRequest req) {
+        Partner p = partnerRepository.findById(partnerId)
+                .orElseThrow(() -> new IllegalArgumentException("Partner not found: " + partnerId));
+        if (req.getName() != null && !req.getName().isBlank()) p.setName(req.getName());
+        if (req.getLogoUrl() != null)       p.setLogoUrl(req.getLogoUrl());
+        if (req.getDescription() != null)   p.setDescription(req.getDescription());
+        if (req.getWebsite() != null)       p.setWebsite(req.getWebsite());
+        if (req.getContactEmail() != null)  p.setContactEmail(req.getContactEmail());
+        if (req.getContactPhone() != null)  p.setContactPhone(req.getContactPhone());
+        if (req.getPublicVisible() != null) p.setPublicVisible(req.getPublicVisible());
+        return toPartnerDto(partnerRepository.save(p));
+    }
+
+    /** Public site: only the partners the admin explicitly made visible. */
+    @Transactional(readOnly = true)
+    public List<PartnerDto> getPublicPartners() {
+        return partnerRepository.findAll().stream()
+                .filter(pt -> Boolean.TRUE.equals(pt.getPublicVisible()))
+                .map(this::toPartnerDto).collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public PartnerDto getPublicPartner(Long id) {
+        Partner pt = partnerRepository.findById(id)
+                .filter(x -> Boolean.TRUE.equals(x.getPublicVisible()))
+                .orElseThrow(() -> new IllegalArgumentException("Partner not found: " + id));
+        return toPartnerDto(pt);
     }
 
     public void deletePartner(Long partnerId) {
@@ -595,6 +630,11 @@ public class ProgrammeService {
                 .id(pt.getId())
                 .name(pt.getName())
                 .logoUrl(pt.getLogoUrl())
+                .description(pt.getDescription())
+                .website(pt.getWebsite())
+                .contactEmail(pt.getContactEmail())
+                .contactPhone(pt.getContactPhone())
+                .publicVisible(Boolean.TRUE.equals(pt.getPublicVisible()))
                 .createdAt(pt.getCreatedAt())
                 .build();
     }
