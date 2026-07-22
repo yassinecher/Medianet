@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -292,8 +293,9 @@ function TimelineBoard({ programmeId, programme }: {
   const [loading,  setLoading]  = useState(true)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [presetModal, setPresetModal] = useState<{ mode: 'create' | 'edit'; preset?: Preset } | null>(null)
-  /** Édition (editable board) vs Aperçu (read-only preview). */
-  const [view, setView] = useState<'edit' | 'preview'>('edit')
+  /** The Gantt IS the timeline now — the legacy band board ('edit') is retired
+   *  (its code stays but is never rendered). */
+  const [view] = useState<'edit' | 'preview'>('preview')
 
   const reload = useCallback(async () => {
     try {
@@ -907,7 +909,7 @@ function TimelineBoard({ programmeId, programme }: {
           </button>
         )}
         {/* Parcours templates: save / apply the whole structure */}
-        {view === 'edit' && (
+        {(
           <div className="relative shrink-0">
             <button type="button" onClick={() => setTplMenuOpen(v => !v)}
               title="Modèles de parcours : enregistrer ou appliquer une structure complète"
@@ -949,16 +951,6 @@ function TimelineBoard({ programmeId, programme }: {
             )}
           </div>
         )}
-        {/* Édition ⇄ Aperçu toggle */}
-        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5 text-[11px] font-semibold shrink-0">
-          {([['edit', 'Édition', Pencil], ['preview', 'Gantt', Calendar]] as const).map(([k, lbl, Icon]) => (
-            <button key={k} type="button" onClick={() => setView(k)}
-              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors ${
-                view === k ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
-              <Icon className="h-3 w-3" />{lbl}
-            </button>
-          ))}
-        </div>
         <a href={`/programmes/${programmeId}/builder`}
           title="Ouvrir le constructeur visuel (canvas)"
           className="text-[11px] text-muted-foreground hover:text-brand-500 inline-flex items-center gap-1 shrink-0">
@@ -966,13 +958,8 @@ function TimelineBoard({ programmeId, programme }: {
         </a>
       </div>
 
-      {view === 'preview' ? (
-        <TimelinePreview programmeId={programmeId} topLevel={topLevel} childrenOf={childrenOf} />
-      ) : (
-      <>
-
-      {/* LIBRARY STRIP — one tidy scroll-row of calm, uniform pills (colour = dot
-          only, not the whole pill), so adding a session reads at a glance. */}
+      {/* LIBRARY STRIP — always visible: tap a pill to add it · drag it onto the
+          Gantt to drop it on a precise date (onto a plage = nested inside). */}
       <div className="flex items-center gap-2 overflow-x-auto border-b border-border bg-muted/20 px-4 py-2.5 shrink-0">
         <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Ajouter
@@ -1013,7 +1000,13 @@ function TimelineBoard({ programmeId, programme }: {
         </button>
       </div>
 
-      {/* TIMELINE BOARD — opens fitted (begin → end visible); zoom = h-scroll */}
+      {view === 'preview' ? (
+        <TimelinePreview programmeId={programmeId} topLevel={topLevel} childrenOf={childrenOf}
+          onUpdate={update} onDropPreset={handleDropPreset} />
+      ) : (
+      <>
+
+      {/* TIMELINE BOARD — legacy band board, retired (never rendered). */}
       <div ref={boardRef} className="flex-1 overflow-auto p-3"
         onClick={() => setSelectedId(null)}>
         <div ref={trackRef} className="relative" style={{ width: trackW }}>
@@ -1155,6 +1148,9 @@ function TimelineBoard({ programmeId, programme }: {
         />
       )}
 
+      </>
+      )}
+
       {/* PRESET EDITOR MODAL */}
       <AnimatePresence>
         {presetModal && (
@@ -1167,8 +1163,6 @@ function TimelineBoard({ programmeId, programme }: {
           />
         )}
       </AnimatePresence>
-      </>
-      )}
     </div>
   )
 }
@@ -1198,10 +1192,12 @@ function totalActivities(s: Session, childrenOf: (id: number) => Session[]): num
     : activitiesOf(s).length + childrenOf(s.id).reduce((n, k) => n + activitiesOf(k).length, 0)
 }
 
-function TimelinePreview({ programmeId, topLevel, childrenOf }: {
+function TimelinePreview({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset }: {
   programmeId: number
   topLevel: Session[]
   childrenOf: (id: number) => Session[]
+  onUpdate: (id: number, patch: Partial<Session>) => void
+  onDropPreset: (presetId: number, atDate: Date, parent?: Session) => void
 }) {
   if (topLevel.length === 0) {
     return (
@@ -1212,26 +1208,38 @@ function TimelinePreview({ programmeId, topLevel, childrenOf }: {
           </div>
           <p className="text-sm font-bold text-foreground">Aperçu du parcours</p>
           <p className="text-xs text-muted-foreground">
-            Aucune session pour l&apos;instant. Passez en « Édition » pour construire le parcours,
-            puis revenez ici pour le visualiser.
+            Aucune session pour l&apos;instant. Cliquez une pastille de la barre
+            «&nbsp;Ajouter&nbsp;» ci-dessus pour créer la première session du parcours.
           </p>
         </div>
       </div>
     )
   }
 
-  return <GanttChart programmeId={programmeId} topLevel={topLevel} childrenOf={childrenOf} />
+  return <GanttChart programmeId={programmeId} topLevel={topLevel} childrenOf={childrenOf}
+    onUpdate={onUpdate} onDropPreset={onDropPreset} />
 }
 
-// ── Gantt view — names column (left) aligned with timeline bars (right) ───────
-//  Each row is ONE flex row [name | lane], so the name and its bar always line
-//  up. The names column is sticky-left (stays on horizontal scroll); sub-sessions
-//  are indented under their parent. Rows link to the per-session page.
-function GanttChart({ programmeId, topLevel, childrenOf }: {
+// ── Gantt — THE timeline: names column (left) aligned with bars (right) ──────
+//  Each row is ONE flex row [name | lane] so the name & bar always line up; the
+//  names column is sticky-left; sub-sessions are indented under their parent.
+//  EDITING: drag a bar to move it · drag its edges to resize · drop a preset
+//  from « Ajouter » on a date (on a plage = nested) · click opens the session page.
+type GanttDrag = { id: number; mode: 'move' | 'l' | 'r'; startX: number; deltaDays: number; moved: boolean }
+
+function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset }: {
   programmeId: number
   topLevel: Session[]
   childrenOf: (id: number) => Session[]
+  onUpdate: (id: number, patch: Partial<Session>) => void
+  onDropPreset: (presetId: number, atDate: Date, parent?: Session) => void
 }) {
+  const router = useRouter()
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const laneRef = useRef<HTMLDivElement>(null)   // first lane — all lanes share the same width
+  const [drag, setDrag] = useState<GanttDrag | null>(null)
+  const [dropHint, setDropHint] = useState<{ rowId: number | 'zone'; pctX: number; date: Date } | null>(null)
+
   const byDate = (a: Session, b: Session) =>
     (parseDate(a.startDate)?.getTime() ?? 0) - (parseDate(b.startDate)?.getTime() ?? 0)
   const rows: { s: Session; depth: number }[] = []
@@ -1249,7 +1257,10 @@ function GanttChart({ programmeId, topLevel, childrenOf }: {
   const maxT = Math.max(...dates.map(d => d.getTime()))
   const winStart = minT - 3 * DAY_MS
   const span = Math.max((maxT + 4 * DAY_MS) - winStart, DAY_MS)
+  const spanDays = span / DAY_MS
   const pct = (t: number) => ((t - winStart) / span) * 100
+  // Generous px-per-day so the timeline is readable — and clearly scrollable.
+  const trackMin = Math.max(680, Math.round(spanDays * 22))
 
   const months: { label: string; left: number }[] = []
   const cur = new Date(new Date(winStart).getFullYear(), new Date(winStart).getMonth(), 1)
@@ -1260,10 +1271,76 @@ function GanttChart({ programmeId, topLevel, childrenOf }: {
   const now = Date.now()
   const todayPct = now >= winStart && now <= winStart + span ? pct(now) : null
 
+  // ── drag: px ↔ days via the measured lane width ────────────────────────────
+  const daysFromPx = (px: number) => {
+    const w = laneRef.current?.getBoundingClientRect().width ?? 0
+    return w > 0 ? Math.round(px / (w / spanDays)) : 0
+  }
+  const dateAtX = (clientX: number): Date | null => {
+    const rect = laneRef.current?.getBoundingClientRect()
+    if (!rect || rect.width === 0) return null
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    return new Date(winStart + frac * span)
+  }
+  const startDrag = (e: React.PointerEvent, id: number, mode: GanttDrag['mode']) => {
+    e.stopPropagation(); e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+    setDrag({ id, mode, startX: e.clientX, deltaDays: 0, moved: false })
+  }
+  const onMovePointer = (e: React.PointerEvent) => {
+    if (!drag) return
+    const deltaDays = daysFromPx(e.clientX - drag.startX)
+    const moved = drag.moved || Math.abs(e.clientX - drag.startX) > 4
+    if (deltaDays !== drag.deltaDays || moved !== drag.moved) setDrag({ ...drag, deltaDays, moved })
+  }
+  const endDrag = () => {
+    if (!drag) return
+    const d = drag
+    setDrag(null)
+    const s = rows.map(r => r.s).find(x => x.id === d.id)
+    if (!s) return
+    if (!d.moved) { router.push(`/programmes/${programmeId}/sessions/${s.id}`); return }
+    if (d.deltaDays === 0) return
+    const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
+    if (!sd || !ed) return
+    if (d.mode === 'move') {
+      onUpdate(s.id, { startDate: fmtISO(addDays(sd, d.deltaDays)), endDate: fmtISO(addDays(ed, d.deltaDays)) })
+    } else if (d.mode === 'l') {
+      const ns = addDays(sd, d.deltaDays)
+      if (ns.getTime() <= ed.getTime()) onUpdate(s.id, { startDate: fmtISO(ns) })
+    } else {
+      const ne = addDays(ed, d.deltaDays)
+      if (ne.getTime() >= sd.getTime()) onUpdate(s.id, { endDate: fmtISO(ne) })
+    }
+  }
+
+  // ── preset drop (from the « Ajouter » strip) ───────────────────────────────
+  const laneDragOver = (e: React.DragEvent, host?: Session) => {
+    if (!e.dataTransfer.types.includes('application/timeline-preset')) return
+    e.preventDefault(); e.dataTransfer.dropEffect = 'copy'
+    const d = dateAtX(e.clientX)
+    if (d) setDropHint({ rowId: host?.id ?? 'zone', pctX: pct(d.getTime()), date: d })
+  }
+  const laneDrop = (e: React.DragEvent, host?: Session) => {
+    e.preventDefault(); setDropHint(null)
+    const presetId = Number(e.dataTransfer.getData('application/timeline-preset'))
+    const d = dateAtX(e.clientX)
+    if (!presetId || !d) return
+    let parent: Session | undefined
+    if (host && kindOf(host) === 'range') {
+      const ps = parseDate(host.startDate); const pe = parseDate(host.endDate ?? host.startDate)
+      if (ps && pe && d.getTime() >= ps.getTime() && d.getTime() <= pe.getTime()) parent = host
+    }
+    onDropPreset(presetId, d, parent)
+  }
+
+  const dragPct = drag ? (drag.deltaDays / spanDays) * 100 : 0
+
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="min-w-[720px]">
-        {/* Header: corner + month axis */}
+    <div ref={scrollRef} className="flex-1 overflow-auto"
+      onPointerMove={onMovePointer} onPointerUp={endDrag} onPointerCancel={() => setDrag(null)}>
+      <div style={{ minWidth: 240 + trackMin }}>
+        {/* Header: corner + month axis + scroll buttons */}
         <div className="sticky top-0 z-20 flex border-b-2 border-border bg-card">
           <div className="sticky left-0 z-10 flex h-10 w-[150px] shrink-0 items-center gap-2 border-r border-border bg-card px-3 text-xs font-bold text-muted-foreground sm:w-[240px]">
             <Calendar className="h-3.5 w-3.5" />Sessions
@@ -1274,42 +1351,97 @@ function GanttChart({ programmeId, topLevel, childrenOf }: {
                 style={{ left: `${m.left}%` }}>{m.label}</div>
             ))}
           </div>
+          <div className="sticky right-0 z-10 flex h-10 shrink-0 items-center gap-0.5 border-l border-border bg-card px-1">
+            <button type="button" title="Défiler vers la gauche"
+              onClick={() => scrollRef.current?.scrollBy({ left: -420, behavior: 'smooth' })}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <ChevronRight className="h-4 w-4 rotate-180" />
+            </button>
+            <button type="button" title="Défiler vers la droite"
+              onClick={() => scrollRef.current?.scrollBy({ left: 420, behavior: 'smooth' })}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Rows */}
-        {rows.map(({ s, depth }) => {
+        {rows.map(({ s, depth }, i) => {
           const c = colorOf(s); const kind = kindOf(s)
           const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
           const left = sd ? pct(sd.getTime()) : 0
           const width = sd && ed ? Math.max(((ed.getTime() - sd.getTime() + DAY_MS) / span) * 100, 0.8) : 1
+          const isDragged = drag?.id === s.id
+          const leftAdj = left + (isDragged && drag!.mode !== 'r' ? dragPct : 0)
+          const widthAdj = Math.max(width + (isDragged ? (drag!.mode === 'l' ? -dragPct : drag!.mode === 'r' ? dragPct : 0) : 0), 0.8)
+          const dragLabel = isDragged && drag!.moved && sd && ed ? (() => {
+            const ns = drag!.mode === 'r' ? sd : addDays(sd, drag!.deltaDays)
+            const ne = drag!.mode === 'l' ? ed : addDays(ed, drag!.deltaDays)
+            return kind === 'day' ? fmtShort(ns) : `${fmtShort(ns)} → ${fmtShort(ne)}`
+          })() : null
           return (
-            <Link key={s.id} href={`/programmes/${programmeId}/sessions/${s.id}`}
-              className="flex border-t border-border/40 transition-colors hover:bg-brand-500/[0.05]">
-              <div className={`sticky left-0 z-10 flex w-[150px] shrink-0 items-center gap-2 border-r border-border bg-card px-3 py-2 sm:w-[240px] ${depth > 0 ? 'pl-5 sm:pl-7' : ''}`}>
+            <div key={s.id} className="flex border-t border-border/40 transition-colors hover:bg-brand-500/[0.05]">
+              <Link href={`/programmes/${programmeId}/sessions/${s.id}`} title="Ouvrir la session"
+                className={`sticky left-0 z-10 flex w-[150px] shrink-0 items-center gap-2 border-r border-border bg-card px-3 py-2 sm:w-[240px] ${depth > 0 ? 'pl-5 sm:pl-7' : ''}`}>
                 {depth > 0 && <span className="shrink-0 text-muted-foreground">↳</span>}
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c }} />
                 <div className="min-w-0">
                   <p className="truncate text-xs font-semibold text-foreground">{s.title || 'Sans titre'}</p>
                   <p className="truncate text-[10px] text-muted-foreground">{dateText(s)}</p>
                 </div>
-              </div>
-              <div className="relative min-h-[46px] flex-1">
+              </Link>
+              <div ref={i === 0 ? laneRef : undefined} className="relative min-h-[46px] flex-1"
+                onDragOver={(e) => laneDragOver(e, s)} onDrop={(e) => laneDrop(e, s)}>
                 {todayPct != null && <div className="pointer-events-none absolute inset-y-0 z-0 w-px bg-rose-500/50" style={{ left: `${todayPct}%` }} />}
+                {dropHint?.rowId === s.id && (
+                  <div className="pointer-events-none absolute inset-y-0 z-20 w-0.5 rounded bg-emerald-500" style={{ left: `${dropHint.pctX}%` }}>
+                    <span className="absolute left-1 top-0.5 whitespace-nowrap rounded bg-emerald-500 px-1 py-0.5 text-[9px] font-bold text-white">{fmtShort(dropHint.date)}</span>
+                  </div>
+                )}
+                {dragLabel && (
+                  <div className="pointer-events-none absolute top-0 z-30 whitespace-nowrap rounded-md bg-foreground px-1.5 py-0.5 text-[10px] font-bold text-background shadow"
+                    style={{ left: `${leftAdj}%` }}>{dragLabel}</div>
+                )}
                 {kind === 'day' ? (
-                  <div className="absolute top-1/2 flex -translate-y-1/2 items-center gap-1.5" style={{ left: `${left}%` }}>
+                  <div onPointerDown={(e) => startDrag(e, s.id, 'move')} title="Glisser pour déplacer · cliquer pour ouvrir"
+                    className="absolute top-1/2 flex -translate-y-1/2 cursor-grab touch-none select-none items-center gap-1.5 active:cursor-grabbing"
+                    style={{ left: `${leftAdj}%` }}>
                     <span className="h-5 w-5 shrink-0 rounded-md shadow-sm" style={{ background: c }} />
                     <span className="whitespace-nowrap text-[11px] font-semibold" style={{ color: c }}>{s.title || 'Journée'}</span>
                   </div>
                 ) : (
-                  <div className="absolute top-1/2 flex h-6 -translate-y-1/2 items-center overflow-hidden rounded-md px-2 text-[11px] font-bold text-white shadow-sm"
-                    style={{ left: `${left}%`, width: `${width}%`, background: c }}>
+                  <div onPointerDown={(e) => startDrag(e, s.id, 'move')} title="Glisser pour déplacer · bords pour redimensionner · cliquer pour ouvrir"
+                    className="absolute top-1/2 flex h-6 -translate-y-1/2 cursor-grab touch-none select-none items-center overflow-hidden rounded-md px-2 text-[11px] font-bold text-white shadow-sm active:cursor-grabbing"
+                    style={{ left: `${leftAdj}%`, width: `${widthAdj}%`, background: c }}>
                     <span className="truncate">{s.title || 'Plage'}</span>
+                    <span onPointerDown={(e) => startDrag(e, s.id, 'l')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize hover:bg-white/30" />
+                    <span onPointerDown={(e) => startDrag(e, s.id, 'r')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize hover:bg-white/30" />
                   </div>
                 )}
               </div>
-            </Link>
+            </div>
           )
         })}
+
+        {/* Drop zone / add row */}
+        <div className="flex border-t border-border/40">
+          <div className="sticky left-0 z-10 flex w-[150px] shrink-0 items-center border-r border-border bg-card px-3 py-2 sm:w-[240px]">
+            <Link href={`/programmes/${programmeId}/sessions/new`}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:underline dark:text-brand-400">
+              <Plus className="h-3.5 w-3.5" />Nouvelle session
+            </Link>
+          </div>
+          <div className="relative min-h-[52px] flex-1" onDragOver={(e) => laneDragOver(e)} onDrop={(e) => laneDrop(e)}>
+            <div className="pointer-events-none absolute inset-1 flex items-center justify-center rounded-lg border border-dashed border-border/60 text-[11px] text-muted-foreground">
+              Glissez un préset ici pour l&apos;ajouter à cette date
+            </div>
+            {dropHint?.rowId === 'zone' && (
+              <div className="pointer-events-none absolute inset-y-0 z-20 w-0.5 rounded bg-emerald-500" style={{ left: `${dropHint.pctX}%` }}>
+                <span className="absolute left-1 top-0.5 whitespace-nowrap rounded bg-emerald-500 px-1 py-0.5 text-[9px] font-bold text-white">{fmtShort(dropHint.date)}</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -64,7 +64,9 @@
   background-size: 40px 40px;
 }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { @apply bg-muted; }
-::-webkit-scrollbar-thumb { @apply bg-muted-foreground/25 rounded-full; }
-::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/40; }
+/* Scrollbars: thick enough to SEE and grab — the 5px ones were nearly invisible,
+   which made horizontal timelines feel unscrollable. */
+::-webkit-scrollbar { width: 10px; height: 12px; }
+::-webkit-scrollbar-track { @apply bg-muted/60; }
+::-webkit-scrollbar-thumb { @apply bg-muted-foreground/40 rounded-full border-2 border-transparent bg-clip-padding; }
+::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/60; }

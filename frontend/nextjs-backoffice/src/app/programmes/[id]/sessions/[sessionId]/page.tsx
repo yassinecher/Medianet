@@ -86,6 +86,24 @@ export default function SessionPage() {
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }))
   const isDay = f.durationKind === 'day'
 
+  // Step-by-step CREATION (editing shows the full form directly).
+  const CREATE_STEPS = [
+    { title: 'L’essentiel', blurb: 'Nom et type de session' },
+    { title: 'Calendrier', blurb: 'Durée et dates' },
+    { title: 'Détails', blurb: 'Lieu, couleur, visibilité…' },
+  ]
+  const [step, setStep] = useState(0)
+  const stepError = (n: number): string | null => {
+    if (n === 0 && !f.title.trim()) return 'Donnez un titre à la session.'
+    if (n === 1 && !f.startDate) return 'Choisissez une date de début.'
+    return null
+  }
+  const nextStep = () => {
+    const e = stepError(step)
+    if (e) { toast.error(e); return }
+    setStep((s) => Math.min(CREATE_STEPS.length - 1, s + 1))
+  }
+
   const load = useCallback(async () => {
     const all: Session[] = await sessionsApi.list(programmeId).then((r) => r.data ?? []).catch(() => [])
     const sid = Number(sessionId)
@@ -187,9 +205,37 @@ export default function SessionPage() {
           )}
         </motion.div>
 
-        {/* Editor */}
+        {/* Editor — step-by-step when creating, full form when editing */}
         <MagicCard className="p-5 sm:p-6">
+          {isNew && (
+            <div className="mb-6 space-y-2.5">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-foreground">Étape {step + 1} / {CREATE_STEPS.length} · {CREATE_STEPS[step].title}</span>
+                <span className="hidden text-muted-foreground sm:block">{CREATE_STEPS[step].blurb}</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-brand-500 transition-all duration-300"
+                  style={{ width: `${((step + 1) / CREATE_STEPS.length) * 100}%` }} />
+              </div>
+              <ol className="flex items-start gap-1">
+                {CREATE_STEPS.map((st, i) => (
+                  <li key={st.title} className="flex flex-1 flex-col items-center gap-1">
+                    <button type="button" disabled={i > step} onClick={() => i <= step && setStep(i)}
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors ${
+                        i === step ? 'border-brand-500 bg-brand-500 text-white'
+                        : i < step ? 'border-emerald-500 bg-emerald-500 text-white'
+                        : 'border-border bg-muted text-muted-foreground'} ${i <= step ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed opacity-50'}`}>
+                      {i < step ? <Check className="h-4 w-4" /> : i + 1}
+                    </button>
+                    <span className={`text-center text-[10px] font-medium leading-tight ${i === step ? 'text-brand-600 dark:text-brand-300' : 'text-muted-foreground'}`}>{st.title}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
           <div className="space-y-5">
+            {(!isNew || step === 0) && (<>
             <Field label="Titre" required>
               <Input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="Ex. Atelier Business Model" className="h-11 text-base font-semibold" autoFocus />
             </Field>
@@ -199,8 +245,9 @@ export default function SessionPage() {
                 {TYPE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </Select>
             </Field>
+            </>)}
 
-            {/* Calendrier */}
+            {(!isNew || step === 1) && (
             <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Calendrier</p>
               <div className="grid grid-cols-2 gap-2">
@@ -225,7 +272,9 @@ export default function SessionPage() {
                 </div>
               </div>
             </div>
+            )}
 
+            {(!isNew || step === 2) && (<>
             <Field label="Lieu">
               <Input value={f.location} placeholder='Ex. "Salle A · Medianet HQ" ou "En ligne"' onChange={(e) => set('location', e.target.value)} />
             </Field>
@@ -265,13 +314,33 @@ export default function SessionPage() {
             <Field label="Description">
               <Textarea rows={4} value={f.description} onChange={(e) => set('description', e.target.value)} placeholder="Objectifs, déroulé, informations utiles…" />
             </Field>
+            </>)}
 
+            {/* Footer — wizard nav when creating, save when editing */}
             <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
-              <Link href={backHref} className="sm:order-1"><Button variant="ghost" className="w-full sm:w-auto">Annuler</Button></Link>
-              <Button variant="brand" onClick={save} disabled={saving} className="w-full gap-1.5 sm:order-2 sm:w-auto">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                {isNew ? 'Créer la session' : 'Enregistrer'}
-              </Button>
+              {isNew ? (<>
+                {step > 0 ? (
+                  <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} className="w-full sm:w-auto">Précédent</Button>
+                ) : (
+                  <Link href={backHref}><Button variant="ghost" className="w-full sm:w-auto">Annuler</Button></Link>
+                )}
+                {step < CREATE_STEPS.length - 1 ? (
+                  <Button variant="brand" onClick={nextStep} className="w-full gap-1.5 sm:w-auto">
+                    Suivant<ChevronRight className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button variant="brand" onClick={save} disabled={saving} className="w-full gap-1.5 sm:w-auto">
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    Créer la session
+                  </Button>
+                )}
+              </>) : (<>
+                <Link href={backHref} className="sm:order-1"><Button variant="ghost" className="w-full sm:w-auto">Annuler</Button></Link>
+                <Button variant="brand" onClick={save} disabled={saving} className="w-full gap-1.5 sm:order-2 sm:w-auto">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  Enregistrer
+                </Button>
+              </>)}
             </div>
           </div>
         </MagicCard>
