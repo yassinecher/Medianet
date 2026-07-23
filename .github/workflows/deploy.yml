@@ -42,8 +42,8 @@ jobs:
           DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           TAG: latest
           PLATFORMS: linux/arm64
-          FRONTOFFICE_API_URL: ${{ vars.FRONTOFFICE_API_URL || 'https://app.medianet.dz' }}
-          BACKOFFICE_API_URL: ${{ vars.BACKOFFICE_API_URL || 'https://admin.medianet.dz' }}
+          FRONTOFFICE_API_URL: ${{ vars.FRONTOFFICE_API_URL || 'https://medianetincubator.duckdns.org' }}
+          BACKOFFICE_API_URL: ${{ vars.BACKOFFICE_API_URL || 'https://medianetincubatorbackend.duckdns.org' }}
         run: docker buildx bake -f docker-bake.hcl --push
 
   deploy:

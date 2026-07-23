@@ -17,8 +17,10 @@ variable "TAG"                 { default = "latest" }
 # Comma-separated target platforms. Default = both (runs on amd64 + arm64).
 variable "PLATFORMS"           { default = "linux/amd64,linux/arm64" }
 # Baked into the Next.js bundles at build time (cannot change at runtime).
-variable "FRONTOFFICE_API_URL" { default = "https://app.medianet.dz" }
-variable "BACKOFFICE_API_URL"  { default = "https://admin.medianet.dz" }
+# SAME-ORIGIN by design: nginx proxies /api/ on each domain to the gateway, so
+# the frontends call their own domain — no mixed content, no CORS.
+variable "FRONTOFFICE_API_URL" { default = "https://medianetincubator.duckdns.org" }
+variable "BACKOFFICE_API_URL"  { default = "https://medianetincubatorbackend.duckdns.org" }
 
 function "img" {
   params = [name]
