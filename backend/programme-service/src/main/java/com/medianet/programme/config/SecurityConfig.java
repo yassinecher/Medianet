@@ -46,9 +46,11 @@ public class SecurityConfig {
                     "/api/session-presets",
                     "/api/partners/public",
                     "/api/partners/public/*",
-                    "/api/incubated-companies/public",
                     "/api/landing-page").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/programmes/*").permitAll()
+                // Canva OAuth redirect — the browser arrives without a JWT; the
+                // endpoint only completes a PKCE flow this server initiated.
+                .requestMatchers(HttpMethod.GET, "/api/canva/callback").permitAll()
                 // Everything else (including task endpoints) requires authentication
                 .anyRequest().authenticated()
             )

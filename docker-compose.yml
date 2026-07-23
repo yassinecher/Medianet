@@ -339,6 +339,11 @@ services:
       # Pitch videos can be large — these env vars OVERRIDE application.yml.
       SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 2GB
       SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 2GB
+      # Canva Connect (optional — set in the root .env; empty = feature off)
+      CANVA_CLIENT_ID: ${CANVA_CLIENT_ID:-}
+      CANVA_CLIENT_SECRET: ${CANVA_CLIENT_SECRET:-}
+      # Canva's portal refuses « localhost » in redirect URLs — 127.0.0.1 only.
+      CANVA_REDIRECT_URI: ${CANVA_REDIRECT_URI:-http://127.0.0.1:8080/api/canva/callback}
       # Don't cap the swallowed body when a request is rejected (avoids resets).
       SERVER_TOMCAT_MAX_SWALLOW_SIZE: "-1"
     depends_on:

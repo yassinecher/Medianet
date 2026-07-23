@@ -42,7 +42,10 @@ public class ProgrammeLifecycle {
         if (all == null || all.isEmpty()) return false;
 
         // Top-level, dated sessions ordered chronologically = the parcours pipeline.
+        // Skip soft-deleted (trashed) phases — the in-memory collection may still
+        // hold them right after a deletePhase within the same transaction.
         List<ProgrammePhase> stages = all.stream()
+                .filter(s -> s.getDeletedAt() == null)
                 .filter(s -> s.getParentSessionId() == null)
                 .filter(s -> s.getStartDate() != null)
                 .sorted(Comparator.comparing(ProgrammePhase::getStartDate))

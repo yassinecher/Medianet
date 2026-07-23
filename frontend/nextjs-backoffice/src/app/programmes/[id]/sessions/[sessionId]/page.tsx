@@ -4,11 +4,13 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
-  ArrowLeft, Save, Loader2, Trash2, Plus, CalendarDays, CalendarRange, MapPin,
-  Layers, Clock, ChevronRight, Check, X,
+  ArrowLeft, Loader2, Trash2, Plus, CalendarDays, CalendarRange,
+  Layers, Clock, ChevronRight, Check, X, Target, Link2, History, Globe, UserRound,
+  Image as ImageIcon,
 } from 'lucide-react'
+import { ImageUpload } from '@/components/upload/ImageUpload'
 import toast from 'react-hot-toast'
-import { sessionsApi } from '@/lib/api'
+import { sessionsApi, programmesApi } from '@/lib/api'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
@@ -18,6 +20,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { performDelete } from '@/lib/deleteChoice'
+import { CandidaturePhasePanel, PreselectionPhasePanel } from '@/app/programmes/builder/PhasePanels'
+import { SessionNotifyButton } from '@/app/programmes/[id]/SessionNotify'
+import { UpdateNotifySuggestion, type UpdateSuggest } from '@/app/programmes/[id]/SessionUpdateNotify'
 
 interface Activity { id?: number; title: string; startTime?: string; endTime?: string; location?: string }
 interface SessionDay { id?: number; title?: string; date?: string; activities?: Activity[] }
@@ -27,8 +32,13 @@ interface Session {
   location?: string; color?: string
   sessionType?: string; visibility?: string; status?: string
   parentSessionId?: number | null
+  allowOverlap?: boolean; allowActivities?: boolean
+  focusCriteriaIds?: number[]; criterionWeightsJson?: string
+  evaluationSelectionId?: number | null
   responsibles?: string[]; days?: SessionDay[]
+  galleryUrls?: string[]
 }
+interface Criterion { id: number; name: string; weight?: number; description?: string }
 
 const TYPE_OPTIONS: [string, string][] = [
   ['CANDIDATURE_SUBMISSION', 'Candidature — accepter les candidatures'],
@@ -74,6 +84,12 @@ export default function SessionPage() {
   const [session, setSession] = useState<Session | null>(null)
   const [children, setChildren] = useState<Session[]>([])
   const [parent, setParent] = useState<Session | null>(null)
+  const [allSessions, setAllSessions] = useState<Session[]>([])
+  const [criteria, setCriteria] = useState<Criterion[]>([])
+  const [programmeName, setProgrammeName] = useState('Programme')
+  // Post-critical-update suggestion: « notifier les personnes concernées ? »
+  const [suggest, setSuggest] = useState<UpdateSuggest | null>(null)
+  const [afterSuggest, setAfterSuggest] = useState<string | null>(null)
 
   const [f, setF] = useState({
     title: '',
@@ -82,9 +98,14 @@ export default function SessionPage() {
     startDate: '', endDate: '',
     location: '', color: '#6366F1',
     status: 'UPCOMING', visibility: 'VISIBLE', description: '',
+    // Overlap ON by default: planning two sessions on the same dates is normal
+    // (ateliers parallèles) — no more nagging update prompts.
+    allowOverlap: true, allowActivities: true,
   })
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }))
   const isDay = f.durationKind === 'day'
+  const fonction = session?.sessionType === 'CANDIDATURE_SUBMISSION' || session?.sessionType === 'PRESELECTION'
+    ? session.sessionType : 'STANDARD'
 
   // Step-by-step CREATION (editing shows the full form directly).
   const CREATE_STEPS = [
@@ -106,6 +127,7 @@ export default function SessionPage() {
 
   const load = useCallback(async () => {
     const all: Session[] = await sessionsApi.list(programmeId).then((r) => r.data ?? []).catch(() => [])
+    setAllSessions(all)
     const sid = Number(sessionId)
     const s = all.find((x) => x.id === sid) ?? null
     setSession(s)
@@ -119,9 +141,15 @@ export default function SessionPage() {
         startDate: d10(s.startDate), endDate: d10(s.endDate),
         location: s.location ?? '', color: s.color || '#6366F1',
         status: s.status || 'UPCOMING', visibility: s.visibility || 'VISIBLE', description: s.description ?? '',
+        allowOverlap: !!s.allowOverlap, allowActivities: s.allowActivities !== false,
       })
     }
   }, [programmeId, sessionId])
+
+  useEffect(() => {
+    programmesApi.get(programmeId).then((r) => setProgrammeName(r.data?.title ?? r.data?.name ?? 'Programme')).catch(() => {})
+    programmesApi.criteria(programmeId).then((r) => setCriteria(r.data ?? [])).catch(() => {})
+  }, [programmeId])
 
   useEffect(() => {
     if (isNew) { setLoading(false); return }
@@ -137,6 +165,7 @@ export default function SessionPage() {
       startDate: f.startDate, endDate: isDay ? f.startDate : (f.endDate || f.startDate),
       location: f.location.trim() || undefined, color: f.color,
       status: f.status, visibility: f.visibility, description: f.description.trim() || undefined,
+      allowOverlap: f.allowOverlap, allowActivities: f.allowActivities,
     }
     setSaving(true)
     try {
@@ -148,6 +177,17 @@ export default function SessionPage() {
       } else if (session) {
         await sessionsApi.update(programmeId, session.id, payload)
         toast.success('Session enregistrée')
+        // Critical change (dates / lieu / statut) → suggest notifying everyone
+        // related to this session, with a role-by-role editable mail wizard.
+        const changes: string[] = []
+        if (d10(session.startDate) !== payload.startDate || d10(session.endDate ?? session.startDate) !== payload.endDate)
+          changes.push(`Dates : ${fmtDay(session.startDate)} → ${fmtDay(session.endDate ?? session.startDate)}  ⇒  ${fmtDay(payload.startDate)} → ${fmtDay(payload.endDate)}`)
+        if ((session.location ?? '') !== (payload.location ?? ''))
+          changes.push(`Lieu : ${session.location || '—'}  ⇒  ${payload.location || '—'}`)
+        if ((session.status || 'UPCOMING') !== payload.status)
+          changes.push(`Statut : ${session.status || 'UPCOMING'}  ⇒  ${payload.status}`)
+        if (changes.length > 0)
+          setSuggest({ session: { ...session, ...payload }, changeSummary: changes.join('\n') })
         await load()
       }
     } catch (e: any) {
@@ -162,12 +202,50 @@ export default function SessionPage() {
     })
     if (!outcome) return
     toast.success(outcome === 'purge' ? 'Session supprimée définitivement' : 'Session mise à la corbeille')
-    router.push(parent ? `/programmes/${programmeId}/sessions/${parent.id}` : `/programmes/${programmeId}?tab=phases`)
+    // Before leaving: offer to notify the people related to the cancelled session.
+    setAfterSuggest(parent ? `/programmes/${programmeId}/sessions/${parent.id}` : `/programmes/${programmeId}?tab=phases`)
+    setSuggest({
+      session,
+      changeSummary: outcome === 'purge'
+        ? 'La session a été annulée et supprimée du parcours.'
+        : 'La session a été annulée (déplacée vers la corbeille).',
+    })
+  }
+
+  // ── Parent attach / detach (session imbriquée) ────────────────────────────
+  const eligibleParents = useMemo(() => {
+    if (!session || !f.startDate) return []
+    const sd = new Date(f.startDate + 'T12:00:00').getTime()
+    return allSessions.filter((p) => {
+      if (p.id === session.id) return false
+      const kind = p.durationKind === 'day' ? 'day' : 'range'
+      if (kind !== 'range') return false
+      const ps = p.startDate ? new Date(d10(p.startDate) + 'T12:00:00').getTime() : null
+      const pe = p.endDate ? new Date(d10(p.endDate) + 'T12:00:00').getTime() : ps
+      return ps != null && pe != null && sd >= ps && sd <= pe
+    })
+  }, [allSessions, session, f.startDate])
+
+  const setParentSession = async (value: string) => {
+    if (!session) return
+    setBusy(true)
+    try {
+      await sessionsApi.update(programmeId, session.id, { parentSessionId: value ? Number(value) : -1 })
+      toast.success(value ? 'Session rattachée' : 'Session détachée — elle est maintenant autonome')
+      await load()
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Action impossible') }
+    finally { setBusy(false) }
   }
 
   const backHref = parent
     ? `/programmes/${programmeId}/sessions/${parent.id}`
     : `/programmes/${programmeId}?tab=phases`
+  // Return EXACTLY where the user was (Parcours/Gantt scroll included) when the
+  // page was reached in-app; fall back to the hub for direct visits.
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) router.back()
+    else router.push(backHref)
+  }
 
   if (loading) {
     return <AdminLayout><div className="mx-auto max-w-3xl space-y-4">
@@ -187,17 +265,25 @@ export default function SessionPage() {
       <div className="mx-auto max-w-3xl space-y-5">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3">
-          <Link href={backHref}><Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button></Link>
+          <Button variant="ghost" size="icon" onClick={goBack} title="Retour"><ArrowLeft className="h-4 w-4" /></Button>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: f.color }} />
               <h1 className="truncate text-xl font-bold text-foreground">{isNew ? (parentParam ? 'Nouvelle sous-session' : 'Nouvelle session') : (session?.title || 'Session')}</h1>
               {!isNew && <Badge variant="secondary">{isDay ? 'Journée' : 'Plage'}</Badge>}
+              {!isNew && fonction !== 'STANDARD' && (
+                <Badge variant="default">{fonction === 'CANDIDATURE_SUBMISSION' ? 'Candidature' : 'Présélection'}</Badge>
+              )}
             </div>
             <p className="truncate text-xs text-muted-foreground">
               {parent ? <>Sous-session de <Link href={`/programmes/${programmeId}/sessions/${parent.id}`} className="font-medium text-brand-600 hover:underline">{parent.title}</Link></> : 'Session du parcours'}
             </p>
           </div>
+          {!isNew && session && isDay && (
+            <SessionNotifyButton programmeId={programmeId} programmeName={programmeName} session={session as any}
+              onSessionPatched={() => load()}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-brand-500/10 hover:text-brand-600" />
+          )}
           {!isNew && (
             <Button variant="ghost" size="icon" onClick={del} title="Supprimer" className="text-muted-foreground hover:text-rose-600">
               <Trash2 className="h-4 w-4" />
@@ -271,6 +357,13 @@ export default function SessionPage() {
                   <Input type="date" value={f.endDate} min={f.startDate || undefined} disabled={isDay} onChange={(e) => set('endDate', e.target.value)} className={isDay ? 'opacity-60' : ''} />
                 </div>
               </div>
+              <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5 text-sm hover:bg-accent/40">
+                <input type="checkbox" className="h-4 w-4 accent-emerald-500" checked={f.allowOverlap}
+                  onChange={(e) => set('allowOverlap', e.target.checked)} />
+                <span className="flex-1 text-foreground">Autoriser le chevauchement
+                  <span className="block text-[11px] font-normal text-muted-foreground">Permet de planifier cette session aux mêmes dates qu&apos;une autre (activé par défaut).</span>
+                </span>
+              </label>
             </div>
             )}
 
@@ -314,6 +407,12 @@ export default function SessionPage() {
             <Field label="Description">
               <Textarea rows={4} value={f.description} onChange={(e) => set('description', e.target.value)} placeholder="Objectifs, déroulé, informations utiles…" />
             </Field>
+
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border px-3 py-2.5 text-sm hover:bg-accent/40">
+              <input type="checkbox" className="h-4 w-4 accent-emerald-500" checked={f.allowActivities}
+                onChange={(e) => set('allowActivities', e.target.checked)} />
+              <span className="flex-1 text-foreground">Autoriser les activités (agenda horaire)</span>
+            </label>
             </>)}
 
             {/* Footer — wizard nav when creating, save when editing */}
@@ -335,7 +434,7 @@ export default function SessionPage() {
                   </Button>
                 )}
               </>) : (<>
-                <Link href={backHref} className="sm:order-1"><Button variant="ghost" className="w-full sm:w-auto">Annuler</Button></Link>
+                <Button variant="ghost" onClick={goBack} className="w-full sm:order-1 sm:w-auto">Annuler</Button>
                 <Button variant="brand" onClick={save} disabled={saving} className="w-full gap-1.5 sm:order-2 sm:w-auto">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                   Enregistrer
@@ -345,17 +444,282 @@ export default function SessionPage() {
           </div>
         </MagicCard>
 
-        {/* Sub-sessions (only meaningful for an existing range session) */}
+        {/* ── Feature panels — the session's REAL content, no longer empty ── */}
+
+        {/* Candidature sessions: intake panel */}
+        {!isNew && session && fonction === 'CANDIDATURE_SUBMISSION' && (
+          <MagicCard className="overflow-hidden p-0">
+            <div className="border-b border-border bg-muted/20 px-5 py-3">
+              <h2 className="font-semibold text-foreground">Candidatures de cette session</h2>
+              <p className="text-xs text-muted-foreground">Les dépôts reçus pendant la fenêtre de candidature.</p>
+            </div>
+            <div className="max-h-[560px] overflow-y-auto">
+              <CandidaturePhasePanel programmeId={programmeId} />
+            </div>
+          </MagicCard>
+        )}
+
+        {/* Présélection sessions: jury / evaluation panel */}
+        {!isNew && session && fonction === 'PRESELECTION' && (
+          <MagicCard className="overflow-hidden p-0">
+            <div className="border-b border-border bg-muted/20 px-5 py-3">
+              <h2 className="font-semibold text-foreground">Évaluation par le jury</h2>
+              <p className="text-xs text-muted-foreground">Sélection des candidatures évaluées et suivi du jury.</p>
+            </div>
+            <div className="max-h-[560px] overflow-y-auto">
+              <PreselectionPhasePanel programmeId={programmeId}
+                session={{ id: session.id, title: session.title, focusCriteriaIds: session.focusCriteriaIds,
+                  criterionWeightsJson: session.criterionWeightsJson, evaluationSelectionId: session.evaluationSelectionId }}
+                onUpdateSession={async (patch: any) => { await sessionsApi.update(programmeId, session.id, patch); await load() }} />
+            </div>
+          </MagicCard>
+        )}
+
+        {/* Criteria evaluated in this session */}
+        {!isNew && session && criteria.length > 0 && (
+          <CriteriaCard programmeId={programmeId} session={session} criteria={criteria} onChanged={load} />
+        )}
+
+        {/* Attach / detach from a parent range (day sessions) */}
+        {!isNew && session && isDay && (eligibleParents.length > 0 || parent) && (
+          <MagicCard className="p-5">
+            <h2 className="mb-1 flex items-center gap-2 font-semibold text-foreground">
+              <Link2 className="h-4 w-4 text-brand-500" />Rattachement
+            </h2>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Une journée peut être imbriquée dans une plage (ex. un atelier pendant l&apos;incubation) — ou autonome.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex-1">
+                <Select value={session.parentSessionId ?? ''} disabled={busy}
+                  onChange={(e) => setParentSession(e.target.value)}>
+                  <option value="">— Aucune (session autonome) —</option>
+                  {eligibleParents.map((p) => (
+                    <option key={p.id} value={p.id}>{p.title} ({fmtDay(p.startDate)} → {fmtDay(p.endDate)})</option>
+                  ))}
+                  {/* Keep the current parent selectable even if dates drifted outside it. */}
+                  {parent && !eligibleParents.some((p) => p.id === parent.id) && (
+                    <option value={parent.id}>{parent.title}</option>
+                  )}
+                </Select>
+              </div>
+              {parent && (
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => setParentSession('')} className="gap-1.5">
+                  <X className="h-3.5 w-3.5" />Détacher de « {parent.title} »
+                </Button>
+              )}
+            </div>
+          </MagicCard>
+        )}
+
+        {/* Sub-sessions (range sessions) */}
         {!isNew && session && !isDay && (
           <SubSessions programmeId={programmeId} parentId={session.id} children={children} />
         )}
 
-        {/* Activities agenda (for an existing day session) */}
+        {/* Activities agenda (day sessions) */}
         {!isNew && session && isDay && (
           <Activities programmeId={programmeId} session={session} onChanged={load} busy={busy} setBusy={setBusy} />
         )}
+
+        {/* Session gallery — retour en images, feeds the presentation studio */}
+        {!isNew && session && (
+          <SessionGalleryCard programmeId={programmeId} session={session} onChanged={load} />
+        )}
+
+        {/* Update history — who changed what, from which account + IP */}
+        {!isNew && session && (
+          <SessionHistoryCard programmeId={programmeId} sessionId={session.id} />
+        )}
       </div>
+
+      {/* Post-critical-update suggestion → role-by-role mail wizard */}
+      <UpdateNotifySuggestion programmeId={programmeId} programmeName={programmeName}
+        suggest={suggest}
+        onClose={() => {
+          setSuggest(null)
+          if (afterSuggest) { const t = afterSuggest; setAfterSuggest(null); router.push(t) }
+        }} />
     </AdminLayout>
+  )
+}
+
+// ── Session gallery (retour en images) ───────────────────────────────────────
+function SessionGalleryCard({ programmeId, session, onChanged }: {
+  programmeId: number; session: Session; onChanged: () => Promise<void>
+}) {
+  const urls = session.galleryUrls ?? []
+  const [busy, setBusy] = useState(false)
+  const save = async (next: string[]) => {
+    setBusy(true)
+    try { await sessionsApi.update(programmeId, session.id, { galleryUrls: next }); await onChanged() }
+    catch (e: any) { toast.error(e?.response?.data?.message ?? 'Enregistrement impossible') }
+    finally { setBusy(false) }
+  }
+  return (
+    <MagicCard className="p-5">
+      <h2 className="mb-1 flex items-center gap-2 font-semibold text-foreground">
+        <ImageIcon className="h-4 w-4 text-brand-500" />Retour en images
+      </h2>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Photos de cette session — elles alimentent la galerie du studio de présentation.
+      </p>
+      {urls.length > 0 && (
+        <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {urls.map((u, i) => (
+            <div key={`${u}-${i}`} className="group relative overflow-hidden rounded-xl border border-border">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={u} alt="" className="h-24 w-full object-cover" />
+              <button type="button" title="Retirer" disabled={busy}
+                onClick={() => save(urls.filter((_, j) => j !== i))}
+                className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:flex">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* key = length → the picker resets after each successful add */}
+      <ImageUpload key={urls.length} value="" folder="sessions" compact searchContext="feature"
+        onChange={(u) => { if (u) save([...urls, u]) }} />
+      {busy && <p className="mt-2 text-[11px] text-muted-foreground">Enregistrement…</p>}
+    </MagicCard>
+  )
+}
+
+// ── Update history (audit trail) ─────────────────────────────────────────────
+const AUDIT_ACTION: Record<string, { label: string; cls: string }> = {
+  CREATED:  { label: 'Création',    cls: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
+  UPDATED:  { label: 'Modification', cls: 'bg-sky-500/15 text-sky-700 dark:text-sky-300' },
+  TRASHED:  { label: 'Corbeille',   cls: 'bg-rose-500/15 text-rose-700 dark:text-rose-300' },
+  RESTORED: { label: 'Restauration', cls: 'bg-amber-500/15 text-amber-700 dark:text-amber-300' },
+  PURGED:   { label: 'Suppression définitive', cls: 'bg-rose-500/15 text-rose-700 dark:text-rose-300' },
+}
+
+function SessionHistoryCard({ programmeId, sessionId }: { programmeId: number; sessionId: number }) {
+  const [entries, setEntries] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    sessionsApi.history(programmeId, sessionId)
+      .then((r) => { if (!cancelled) setEntries(r.data ?? []) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [programmeId, sessionId])
+
+  const shown = expanded ? entries : entries.slice(0, 5)
+
+  return (
+    <MagicCard className="p-5">
+      <h2 className="mb-1 flex items-center gap-2 font-semibold text-foreground">
+        <History className="h-4 w-4 text-brand-500" />Historique des modifications
+      </h2>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Chaque changement est journalisé avec le compte et l&apos;adresse IP qui l&apos;ont effectué.
+      </p>
+      {loading ? (
+        <div className="space-y-2">{[0, 1].map((i) => <Skeleton key={i} className="h-12 rounded-xl" />)}</div>
+      ) : entries.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-5 text-center text-xs text-muted-foreground">
+          Aucune modification journalisée pour l&apos;instant.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {shown.map((e) => {
+            const meta = AUDIT_ACTION[e.action] ?? { label: e.action, cls: 'bg-muted text-muted-foreground' }
+            return (
+              <div key={e.id} className="rounded-xl border border-border bg-card p-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.cls}`}>{meta.label}</span>
+                  <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <UserRound className="h-3 w-3" />{e.userEmail || 'Compte inconnu'}
+                  </span>
+                  {e.ipAddress && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                      <Globe className="h-3 w-3" />{e.ipAddress}
+                    </span>
+                  )}
+                  <span className="ml-auto text-[10px] text-muted-foreground">
+                    {e.createdAt ? new Date(e.createdAt).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
+                  </span>
+                </div>
+                {e.details && <p className="mt-1 whitespace-pre-wrap text-[11px] leading-snug text-foreground/80">{e.details}</p>}
+              </div>
+            )
+          })}
+          {entries.length > 5 && (
+            <button onClick={() => setExpanded((v) => !v)}
+              className="w-full rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-accent">
+              {expanded ? 'Réduire' : `Afficher tout (${entries.length})`}
+            </button>
+          )}
+        </div>
+      )}
+    </MagicCard>
+  )
+}
+
+// ── Criteria evaluated in this session ───────────────────────────────────────
+function CriteriaCard({ programmeId, session, criteria, onChanged }: {
+  programmeId: number; session: Session; criteria: Criterion[]; onChanged: () => Promise<void>
+}) {
+  const allIds = criteria.map((c) => c.id)
+  const focus = session.focusCriteriaIds ?? []
+  const isSelected = (cid: number) => focus.length === 0 || focus.includes(cid)
+  let weights: Record<string, number> = {}
+  try { if (session.criterionWeightsJson) weights = JSON.parse(session.criterionWeightsJson) } catch { /* ignore */ }
+
+  const toggle = async (cid: number) => {
+    const setIds = new Set<number>(focus.length ? focus : allIds)
+    if (setIds.has(cid)) setIds.delete(cid); else setIds.add(cid)
+    const next = allIds.filter((x) => setIds.has(x))
+    try {
+      await sessionsApi.update(programmeId, session.id, { focusCriteriaIds: next.length === allIds.length ? [] : next })
+      await onChanged()
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Mise à jour impossible') }
+  }
+  const commitWeight = async (cid: number, val: number) => {
+    try {
+      await sessionsApi.update(programmeId, session.id, { criterionWeightsJson: JSON.stringify({ ...weights, [cid]: val }) })
+      await onChanged()
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Mise à jour impossible') }
+  }
+
+  return (
+    <MagicCard className="p-5">
+      <h2 className="mb-1 flex items-center gap-2 font-semibold text-foreground">
+        <Target className="h-4 w-4 text-brand-500" />Critères de cette session
+      </h2>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Les critères sur lesquels le jury note pendant cette session. Rien de coché = tous les critères du programme s&apos;appliquent.
+      </p>
+      <div className="space-y-1.5">
+        {criteria.map((c) => {
+          const sel = isSelected(c.id)
+          const w = weights[c.id] ?? c.weight ?? 0
+          return (
+            <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2">
+              <input type="checkbox" checked={sel} onChange={() => toggle(c.id)} className="h-4 w-4 shrink-0 accent-brand-500" />
+              <span className={`min-w-0 flex-1 truncate text-sm ${sel ? 'text-foreground' : 'text-muted-foreground line-through'}`} title={c.name}>{c.name}</span>
+              {sel && (
+                <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                  Poids
+                  <input type="number" min={0} max={1} step={0.05} defaultValue={Number(w)} key={`${c.id}-${w}`}
+                    onBlur={(e) => {
+                      const val = Math.max(0, Math.min(1, Number(e.target.value) || 0))
+                      if (val !== Number(w)) commitWeight(c.id, val)
+                    }}
+                    className="h-8 w-16 rounded-md border border-input bg-background px-1.5 text-xs" title="Poids (0–1)" />
+                </label>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </MagicCard>
   )
 }
 
@@ -397,14 +761,14 @@ function SubSessions({ programmeId, parentId, children }: { programmeId: number;
   )
 }
 
-// ── Activities agenda (simple list + add) ────────────────────────────────────
+// ── Activities agenda — 2-step creation (Quoi ? → Quand ?) ───────────────────
 function Activities({ programmeId, session, onChanged, busy, setBusy }: {
   programmeId: number; session: Session; onChanged: () => Promise<void>; busy: boolean; setBusy: (b: boolean) => void
 }) {
   const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState({ title: '', startTime: '', endTime: '' })
+  const [aStep, setAStep] = useState(0)
+  const [draft, setDraft] = useState({ title: '', location: '', startTime: '', endTime: '' })
 
-  // A day session usually carries a single day holding its activities.
   const day = (session.days ?? [])[0]
   const activities = useMemo(
     () => (session.days ?? []).flatMap((d) => (d.activities ?? []).map((a) => ({ ...a, dayId: d.id }))),
@@ -417,16 +781,18 @@ function Activities({ programmeId, session, onChanged, busy, setBusy }: {
     return data?.id ?? null
   }
 
+  const openAdd = () => { setDraft({ title: '', location: '', startTime: '', endTime: '' }); setAStep(0); setAdding(true) }
+
   const add = async () => {
-    if (!draft.title.trim()) { toast.error('Titre de l’activité requis.'); return }
     setBusy(true)
     try {
       const dayId = await ensureDayId()
       if (dayId == null) throw new Error('no day')
       await sessionsApi.addActivity(programmeId, session.id, dayId, {
-        title: draft.title.trim(), startTime: draft.startTime || undefined, endTime: draft.endTime || undefined,
+        title: draft.title.trim(), location: draft.location.trim() || undefined,
+        startTime: draft.startTime || undefined, endTime: draft.endTime || undefined,
       })
-      setDraft({ title: '', startTime: '', endTime: '' }); setAdding(false)
+      setAdding(false)
       toast.success('Activité ajoutée'); await onChanged()
     } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Ajout impossible') }
     finally { setBusy(false) }
@@ -446,22 +812,53 @@ function Activities({ programmeId, session, onChanged, busy, setBusy }: {
           <Clock className="h-4 w-4 text-brand-500" />Agenda de la journée
           {activities.length > 0 && <Badge variant="secondary">{activities.length}</Badge>}
         </h2>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setAdding((v) => !v)}>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={openAdd}>
           <Plus className="h-3.5 w-3.5" />Activité
         </Button>
       </div>
 
       {adding && (
-        <div className="mb-3 space-y-2 rounded-xl border border-border bg-muted/20 p-3">
-          <Input value={draft.title} placeholder="Titre (ex. Pitch training)" onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} />
-          <div className="flex items-center gap-2">
-            <Input type="time" value={draft.startTime} onChange={(e) => setDraft((d) => ({ ...d, startTime: e.target.value }))} className="w-32" />
-            <span className="text-muted-foreground">→</span>
-            <Input type="time" value={draft.endTime} onChange={(e) => setDraft((d) => ({ ...d, endTime: e.target.value }))} className="w-32" />
-            <Button variant="brand" size="sm" className="ml-auto gap-1.5" onClick={add} disabled={busy}>
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}Ajouter
-            </Button>
+        <div className="mb-3 space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+          {/* mini stepper */}
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-foreground">Étape {aStep + 1} / 2 · {aStep === 0 ? 'Quoi ?' : 'Quand ?'}</span>
+            <button onClick={() => setAdding(false)} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
+          <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${((aStep + 1) / 2) * 100}%` }} />
+          </div>
+
+          {aStep === 0 ? (
+            <div className="space-y-2">
+              <Input value={draft.title} placeholder="Titre (ex. Pitch training)" autoFocus
+                onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === 'Enter' && draft.title.trim()) setAStep(1) }} />
+              <Input value={draft.location} placeholder="Lieu (optionnel)"
+                onChange={(e) => setDraft((d) => ({ ...d, location: e.target.value }))} />
+              <div className="flex justify-end">
+                <Button variant="brand" size="sm" className="gap-1.5"
+                  onClick={() => { if (!draft.title.trim()) { toast.error('Titre requis.'); return } setAStep(1) }}>
+                  Suivant<ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Input type="time" value={draft.startTime} onChange={(e) => setDraft((d) => ({ ...d, startTime: e.target.value }))} className="w-32" />
+                <span className="text-muted-foreground">→</span>
+                <Input type="time" value={draft.endTime} onChange={(e) => setDraft((d) => ({ ...d, endTime: e.target.value }))} className="w-32" />
+              </div>
+              <div className="flex justify-between">
+                <Button variant="ghost" size="sm" onClick={() => setAStep(0)}>Précédent</Button>
+                <Button variant="brand" size="sm" className="gap-1.5" onClick={add} disabled={busy}>
+                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Ajouter l&apos;activité
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -477,6 +874,7 @@ function Activities({ programmeId, session, onChanged, busy, setBusy }: {
                 <span className="w-24 shrink-0 text-xs font-medium text-muted-foreground tabular-nums">{a.startTime}{a.endTime ? `–${a.endTime}` : ''}</span>
               )}
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{a.title}</span>
+              {a.location && <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">{a.location}</span>}
               <button onClick={() => remove(a.dayId, a.id)} disabled={busy} className="shrink-0 rounded p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600">
                 <X className="h-3.5 w-3.5" />
               </button>

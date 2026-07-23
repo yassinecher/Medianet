@@ -265,6 +265,7 @@ public class OrganizationService {
                 .employeeCount(o.getEmployeeCount())
                 .logoUrl(o.getLogoUrl())
                 .internal(o.getInternal())
+                .showcased(Boolean.TRUE.equals(o.getShowcased()))
                 .createdByUserId(o.getCreatedByUserId())
                 .linkedCompanyId(o.getLinkedCompanyId())
                 .createdAt(o.getCreatedAt())

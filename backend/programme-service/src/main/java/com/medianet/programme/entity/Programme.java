@@ -134,6 +134,13 @@ public class Programme {
     @Builder.Default
     private List<String> benefits = new ArrayList<>();
 
+    /** « Retour en images » — photo gallery (public page + generated decks). */
+    @ElementCollection
+    @CollectionTable(name = "programme_gallery", joinColumns = @JoinColumn(name = "programme_id"))
+    @Column(name = "image_url", columnDefinition = "TEXT")
+    @Builder.Default
+    private List<String> galleryUrls = new ArrayList<>();
+
     /** Admin who created this programme (denormalized from JWT). */
     private Long   createdByAdminId;
     private String createdByAdminName;

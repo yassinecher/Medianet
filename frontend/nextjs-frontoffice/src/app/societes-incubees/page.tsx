@@ -10,7 +10,7 @@ import { incubatedApi } from '@/lib/api'
 interface Company {
   id: number; name: string; logoUrl?: string
   description?: string; website?: string
-  sector?: string; cohortYear?: string
+  sector?: string; city?: string; foundedYear?: number
 }
 
 export default function SocietesIncubeesPage() {
@@ -65,14 +65,18 @@ export default function SocietesIncubeesPage() {
                         ? <img src={c.logoUrl} alt={c.name} className="h-full w-full object-contain p-1.5" />
                         : <Building2 className="h-6 w-6 text-muted-foreground" />}
                     </div>
-                    {c.cohortYear && (
+                    {c.foundedYear && (
                       <span className="rounded-full bg-brand-500/10 px-2.5 py-1 text-[11px] font-bold text-brand-600 dark:text-brand-400">
-                        Cohorte {c.cohortYear}
+                        Depuis {c.foundedYear}
                       </span>
                     )}
                   </div>
                   <h3 className="font-semibold text-foreground">{c.name}</h3>
-                  {c.sector && <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{c.sector}</p>}
+                  {(c.sector || c.city) && (
+                    <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {[c.sector, c.city].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                   {c.description && <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{c.description}</p>}
                   {c.website && (
                     <a href={c.website.startsWith('http') ? c.website : `https://${c.website}`}

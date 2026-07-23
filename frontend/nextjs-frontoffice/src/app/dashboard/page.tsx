@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { candidaturesApi, tasksApi, programmesApi, juryApi } from '@/lib/api'
-import { useUser, useActiveRole, useIsJury } from '@/store/auth.store'
+import { useUser, useActiveRole, useIsJury, frontofficeRolesOf } from '@/store/auth.store'
 import { formatRelativeDate, statusColor, scoreColor, formatDate } from '@/lib/utils'
 import type { Candidature, Task, Programme } from '@/types'
 
@@ -65,15 +65,19 @@ export default function DashboardPage() {
   const [juryItems, setJuryItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
+  // « Mes candidatures » is a PORTEUR endpoint — never call it for jury/mentor
+  // accounts (the 403 would surface a global "permission requise : PORTEUR" toast).
+  const isPorteur = frontofficeRolesOf(user).includes('PORTEUR')
+
   useEffect(() => {
     Promise.allSettled([
-      candidaturesApi.myList().then((r) => setCandidatures(r.data?.content ?? r.data ?? [])).catch(() => {}),
+      isPorteur ? candidaturesApi.myList().then((r) => setCandidatures(r.data?.content ?? r.data ?? [])).catch(() => {}) : Promise.resolve(),
       tasksApi.myTasks().then((r) => setTasks(r.data?.content ?? r.data ?? [])).catch(() => {}),
       // publicOnly: don't surface draft/archived programmes in recommendations.
       programmesApi.list({ status: 'OPEN', publicOnly: true }).then((r) => setProgrammes(r.data?.content ?? r.data ?? [])).catch(() => {}),
       isJury ? juryApi.myAssignments().then((r) => setJuryItems(r.data ?? [])).catch(() => {}) : Promise.resolve(),
     ]).finally(() => setLoading(false))
-  }, [isJury])
+  }, [isJury, isPorteur])
 
   // "Mes programmes en cours" — the incubation space: programmes the porteur was
   // ACCEPTED into. Fetch each so we can show a rich card.

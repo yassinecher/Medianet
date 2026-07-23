@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { programmesApi, candidaturesApi } from '@/lib/api'
-import { useUser, useAuthStore } from '@/store/auth.store'
+import { useUser, useAuthStore, frontofficeRolesOf } from '@/store/auth.store'
 import { Navbar } from '@/components/layout/Navbar'
 import { AppShell } from '@/components/layout/AppShell'
 import { MagicCard } from '@/components/magicui/magic-card'
@@ -20,6 +20,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate, statusColor } from '@/lib/utils'
 import type { Programme, Phase, Criteria, Partner } from '@/types'
+import { SiteFooter } from '@/components/layout/SiteFooter'
 
 const statusLabel: Record<string, string> = {
   OPEN: 'Ouvert', CLOSED: 'Fermé', DRAFT: 'Brouillon', ARCHIVED: 'Archivé',
@@ -78,7 +79,7 @@ export default function ProgrammeDetailPage() {
   const wrap = (node: React.ReactNode) =>
     hydrated && isAuthenticated
       ? <AppShell>{node}</AppShell>
-      : <div className="min-h-screen bg-background"><Navbar />{node}</div>
+      : <div className="min-h-screen bg-background"><Navbar />{node}<SiteFooter/></div>
   const [programme, setProgramme] = useState<Programme | null>(null)
   const [phases, setPhases] = useState<Phase[]>([])
   const [criteria, setCriteria] = useState<Criteria[]>([])
@@ -105,9 +106,12 @@ export default function ProgrammeDetailPage() {
       .finally(() => setLoading(false))
   }, [id])
 
+  const isPorteur = frontofficeRolesOf(user).includes('PORTEUR')
+
   // Has the logged-in porteur already applied to this programme?
+  // (PORTEUR-only endpoint — jury/mentor must not call it.)
   useEffect(() => {
-    if (!user) { setMyApplication(null); return }
+    if (!user || !isPorteur) { setMyApplication(null); return }
     candidaturesApi.myList()
       .then((r) => {
         const list: any[] = r.data?.content ?? r.data ?? []
@@ -115,10 +119,16 @@ export default function ProgrammeDetailPage() {
         setMyApplication(mine?.status ?? null)
       })
       .catch(() => {})
-  }, [id, user])
+  }, [id, user, isPorteur])
 
   const handleApply = () => {
     if (!user) { router.push('/login'); return }
+    // Only porteurs can join a programme — jury/mentor accounts evaluate, they
+    // don't apply.
+    if (!isPorteur) {
+      toast.error('Seuls les porteurs de projet peuvent candidater à un programme.')
+      return
+    }
     // Only open external URL if it's a real absolute http(s) link.
     // Otherwise fall back to the internal multi-step form.
     const ext = programme?.applicationUrl?.trim()
@@ -198,11 +208,16 @@ export default function ProgrammeDetailPage() {
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
           </div>
         ) : (
-          <div className="relative h-72 sm:h-96 bg-gradient-to-br from-brand-700 via-brand-600 to-purple-700 dark:from-brand-900 dark:via-brand-800 dark:to-purple-900">
-            <div className="absolute inset-0 opacity-20"
+         <div
+  className="relative h-72 sm:h-96 dark:brightness-75"
+  style={{
+    background: 'linear-gradient(90deg, #fbb431 0%, #0a8fb1 35%,  #14c8f3 100%)'
+  }}
+>    <div className="absolute inset-0 opacity-20"
               style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '32px 32px' }} />
           </div>
         )}
+
 
         {/* Hero content overlay */}
         <div className="absolute inset-0 flex flex-col justify-end p-6 sm:p-10">
@@ -430,6 +445,20 @@ export default function ProgrammeDetailPage() {
                       {c.description && <p className="mb-2 text-xs text-muted-foreground">{c.description}</p>}
                       <Progress value={c.weight * 100} className="h-1.5" />
                     </div>
+                  ))}
+                </div>
+              </motion.section>
+            )}
+
+            {/* Galerie — retour en images */}
+            {((programme as any).galleryUrls?.length ?? 0) > 0 && (
+              <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+                <SectionTitle>Retour en images</SectionTitle>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {((programme as any).galleryUrls as string[]).map((u, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={`${u}-${i}`} src={u} alt={`Photo ${i + 1}`}
+                      className="h-40 w-full rounded-xl border border-border object-cover shadow-sm transition-transform hover:scale-[1.02]" />
                   ))}
                 </div>
               </motion.section>

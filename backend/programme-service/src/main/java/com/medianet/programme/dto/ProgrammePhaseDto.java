@@ -23,6 +23,7 @@ public class ProgrammePhaseDto {
     private List<String>    responsibles;
     private List<String>    guests;
     private List<Long>      startupIds;
+    private List<String>    galleryUrls;
     private List<PhaseTask> tasks;
     private String          criterionWeightsJson;
 

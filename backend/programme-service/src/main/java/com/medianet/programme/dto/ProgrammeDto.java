@@ -54,4 +54,5 @@ public class ProgrammeDto {
     // Structured lists
     private List<String> objectives;
     private List<String> benefits;
+    private List<String> galleryUrls;
 }

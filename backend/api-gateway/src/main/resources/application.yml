@@ -31,10 +31,6 @@ spring:
           uri: lb://programme-service
           predicates:
             - Path=/api/partners/**
-        - id: programme-service-incubated
-          uri: lb://programme-service
-          predicates:
-            - Path=/api/incubated-companies/**
         - id: programme-service-tasks
           uri: lb://programme-service
           predicates:
@@ -67,6 +63,10 @@ spring:
           uri: lb://programme-service
           predicates:
             - Path=/api/catalog/**
+        - id: programme-service-canva
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/canva/**
         - id: admin-ai-service
           uri: lb://admin-ai-service
           predicates:

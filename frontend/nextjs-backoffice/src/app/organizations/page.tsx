@@ -13,10 +13,10 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Plus, Trash2, Edit2, Save, Building2, ChevronDown, ChevronRight, Loader2,
-  Users, Globe2, Mail, Phone, MapPin, Search, X, UserPlus, ArrowUpRight,
+  Users, Globe2, Mail, Phone, MapPin, Search, X, UserPlus, ArrowUpRight, Eye, EyeOff,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { organizationsApi, ORGANIZATION_TYPES, MEMBER_TYPES } from '@/lib/api'
+import { organizationsApi, showcaseApi, ORGANIZATION_TYPES, MEMBER_TYPES } from '@/lib/api'
 import type { OrganizationType, MemberType } from '@/lib/api'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
@@ -50,6 +50,8 @@ interface Organization {
   contactPhone?: string
   logoUrl?: string
   internal?: boolean
+  /** Visible on the public « Sociétés incubées » page (admin-set). */
+  showcased?: boolean
   createdByUserId?: number | null
   linkedCompanyId?: number | null
   members?: Member[]
@@ -358,6 +360,20 @@ function OrgCard({
   const [draft, setDraft] = useState<Organization>(org)
   useEffect(() => { if (editing) setDraft(org) }, [editing, org])
 
+  // « Sociétés incubées » — publish/hide this organisation on the public page.
+  const [showcased, setShowcased] = useState(!!org.showcased)
+  useEffect(() => { setShowcased(!!org.showcased) }, [org.showcased])
+  const toggleShowcase = async () => {
+    if (!org.id) return
+    try {
+      await showcaseApi.set(org.id, !showcased)
+      setShowcased(!showcased)
+      toast.success(!showcased
+        ? `« ${org.name} » est visible sur la page publique « Sociétés incubées »`
+        : `« ${org.name} » est retirée de la page publique`)
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Action impossible') }
+  }
+
   return (
     <MagicCard className="p-4">
       {!editing ? (
@@ -380,6 +396,11 @@ function OrgCard({
               {org.internal && (
                 <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-brand-500/15 text-brand-700 dark:text-brand-300 border border-brand-300/40">
                   Interne
+                </span>
+              )}
+              {showcased && (
+                <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                  Société incubée · publique
                 </span>
               )}
               <h3 className="font-semibold text-foreground truncate">{org.name}</h3>
@@ -411,6 +432,10 @@ function OrgCard({
                 <Button variant="outline" size="sm" className="gap-1 text-xs"><ArrowUpRight className="h-3.5 w-3.5" />Ouvrir</Button>
               </Link>
             )}
+            <Button variant="ghost" size="icon" onClick={toggleShowcase}
+              title={showcased ? 'Retirer de la page publique « Sociétés incubées »' : 'Publier sur la page « Sociétés incubées »'}>
+              {showcased ? <Eye className="h-4 w-4 text-emerald-600" /> : <EyeOff className="h-4 w-4" />}
+            </Button>
             <Button variant="ghost" size="icon" onClick={onEdit} title="Modifier"><Edit2 className="h-4 w-4" /></Button>
             <Button variant="ghost" size="icon" onClick={onDelete} title="Supprimer">
               <Trash2 className="h-4 w-4 text-destructive" />

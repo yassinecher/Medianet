@@ -23,6 +23,7 @@ public class TrashService {
     private final TrashRepository            trashRepository;
     private final ProgrammeRepository        programmeRepository;
     private final ProgrammePhaseRepository   phaseRepository;
+    private final SessionAuditTrail          auditTrail;
 
     private static final Set<String> TYPES = Set.of("programme", "session", "task", "pitch");
 
@@ -45,7 +46,12 @@ public class TrashService {
         validate(type);
         switch (type) {
             case "programme" -> trashRepository.restoreProgramme(id);
-            case "session"   -> trashRepository.restoreSession(id);
+            case "session"   -> {
+                trashRepository.restoreSession(id);
+                // Now visible again → look it up for the audit line.
+                phaseRepository.findById(id).ifPresent(ph ->
+                        auditTrail.record(ph, "RESTORED", "Session restaurée depuis la corbeille"));
+            }
             case "task"      -> trashRepository.restoreTask(id);
             case "pitch"     -> trashRepository.restorePitch(id);
         }
@@ -67,7 +73,10 @@ public class TrashService {
         for (ProgrammePhase child : phaseRepository.findByParentSessionIdIncludingTrashed(id)) {
             phaseRepository.delete(child);
         }
-        phaseRepository.findByIdIncludingTrashed(id).ifPresent(phaseRepository::delete);
+        phaseRepository.findByIdIncludingTrashed(id).ifPresent(ph -> {
+            auditTrail.record(ph, "PURGED", "Session supprimée définitivement");
+            phaseRepository.delete(ph);
+        });
     }
 
     private void purgeProgramme(Long id) {

@@ -63,7 +63,11 @@ export function ProgrammeCard({ programme, appliedStatus, invited }: { programme
             </span>
           </div>
         ) : (
-          <div className="relative h-20 bg-gradient-to-br from-brand-600 to-purple-600 dark:from-brand-800 dark:to-purple-900">
+
+            
+          <div   style={{
+    background: 'linear-gradient(90deg, #fbb431 0%, #0a8fb1 35%, #14c8f3 100%)'
+  }} className="relative h-20 dark:brightness-75">
             <div className="absolute inset-0 opacity-10"
               style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
             {programme.logoUrl && (

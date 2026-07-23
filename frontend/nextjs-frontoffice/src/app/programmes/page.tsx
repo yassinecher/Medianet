@@ -10,7 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { programmesApi, candidaturesApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import type { Programme } from '@/types'
-
+import { useUser, useActiveRole, useIsJury, frontofficeRolesOf } from '@/store/auth.store'
+import { SiteFooter } from '@/components/layout/SiteFooter'
 const statusOpts = [
   { label: 'Tous', value: '' },
   { label: 'Ouverts', value: 'OPEN' },
@@ -21,7 +22,7 @@ export default function ProgrammesPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const [hydrated, setHydrated] = useState(false)
   useEffect(() => { setHydrated(true) }, [])
-
+  const user = useUser()
   const [programmes, setProgrammes] = useState<Programme[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -30,7 +31,7 @@ export default function ProgrammesPage() {
   const [appliedMap, setAppliedMap] = useState<Record<number, string>>({})
   /** Ids of PRIVATE programmes the user was invited to — highlighted + sorted first. */
   const [invitedIds, setInvitedIds] = useState<Set<number>>(new Set())
-
+  const isPorteur = frontofficeRolesOf(user).includes('PORTEUR')
   useEffect(() => {
     // publicOnly hides DRAFT / ARCHIVED / CANCELLED (and PRIVATE) programmes from porteurs.
     const publicP = programmesApi.list({ publicOnly: true, ...(status ? { status } : {}) })
@@ -60,6 +61,7 @@ export default function ProgrammesPage() {
   // Which programmes has this porteur already applied to (drives the badges)?
   useEffect(() => {
     if (!isAuthenticated) return
+    if(!isPorteur)return
     candidaturesApi.myList()
       .then((r) => {
         const list: any[] = r.data?.content ?? r.data ?? []
@@ -125,7 +127,7 @@ export default function ProgrammesPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="mx-auto max-w-6xl px-4 py-8">{content}</main>
+      <main className="mx-auto max-w-6xl px-4 py-8">{content}</main><SiteFooter/>
     </div>
   )
 }

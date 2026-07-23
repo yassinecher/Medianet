@@ -36,9 +36,17 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // SSE emitters (/api/auth/events/stream) complete through container
+                // ASYNC re-dispatches that carry no security context — Spring Security 6
+                // re-authorizes every dispatch type by default, which turns each stream
+                // completion into a spurious AccessDeniedException on a committed
+                // response. The INITIAL connect stays fully authenticated below.
+                .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC, jakarta.servlet.DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/register-from-invitation").permitAll()
                 .requestMatchers("/api/auth/validate").permitAll()
                 .requestMatchers("/api/auth/org-invitations/**").permitAll()
+                // Public « Sociétés incubées » showcase (trimmed org profiles).
+                .requestMatchers("/api/organizations/public").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

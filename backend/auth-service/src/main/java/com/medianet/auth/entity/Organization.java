@@ -68,6 +68,10 @@ public class Organization {
     @Builder.Default
     private Boolean internal = false;
 
+    /** « Sociétés incubées » — shown on the PUBLIC frontoffice showcase page.
+     *  Admin-controlled (never self-set by the porteur); null = hidden. */
+    private Boolean showcased;
+
     /** User who registered this organisation (porteur, admin, mentor…). */
     private Long createdByUserId;
 

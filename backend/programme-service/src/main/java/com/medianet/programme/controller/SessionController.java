@@ -25,6 +25,7 @@ public class SessionController {
 
     private final ProgrammeService  programmeService;
     private final SessionDayService sessionDayService;
+    private final com.medianet.programme.repository.SessionAuditLogRepository auditLogRepository;
 
     // ── Sessions (alias for phases) ──────────────────────────────────────────
 
@@ -57,6 +58,15 @@ public class SessionController {
             @PathVariable Long sessionId) {
         programmeService.deletePhase(programmeId, sessionId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Update history of one session: who changed what, from which IP, when. */
+    @GetMapping("/sessions/{sessionId}/history")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:read')")
+    public ResponseEntity<List<com.medianet.programme.entity.SessionAuditLog>> sessionHistory(
+            @PathVariable Long programmeId,
+            @PathVariable Long sessionId) {
+        return ResponseEntity.ok(auditLogRepository.findTop100BySessionIdOrderByCreatedAtDesc(sessionId));
     }
 
     // ── Days ─────────────────────────────────────────────────────────────────

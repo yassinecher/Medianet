@@ -23,6 +23,8 @@ public class OrganizationDto {
     private String        employeeCount;
     private String        logoUrl;
     private Boolean       internal;
+    /** Shown on the public « Sociétés incubées » page (admin-set). */
+    private Boolean       showcased;
     private Long          createdByUserId;
     private Long          linkedCompanyId;
     private LocalDateTime createdAt;

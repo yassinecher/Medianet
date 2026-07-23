@@ -183,6 +183,13 @@ public class ProgrammePhase {
     @Builder.Default
     private List<Long> startupIds = new ArrayList<>();
 
+    /** « Retour en images » of this session — uploaded photo URLs. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "phase_gallery", joinColumns = @JoinColumn(name = "phase_id"))
+    @Column(name = "url", length = 1024)
+    @Builder.Default
+    private List<String> galleryUrls = new ArrayList<>();
+
     /** Checklist of tasks to prepare/run this session. */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "phase_tasks", joinColumns = @JoinColumn(name = "phase_id"))

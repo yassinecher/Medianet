@@ -141,6 +141,7 @@ export default function ProgrammeDetailPage() {
     tagline: '', logoUrl: '', bannerImageUrl: '', location: '', applicationUrl: '',
     expertCount: '', trainingSessionsCount: '', mentoringHoursPerMonth: '', maxStartups: '',
     objectives: [] as string[], benefits: [] as string[],
+    galleryUrls: [] as string[],
   })
   const [newObjective, setNewObjective] = useState('')
   const [newBenefit, setNewBenefit] = useState('')
@@ -195,6 +196,7 @@ export default function ProgrammeDetailPage() {
           maxStartups: (p as any).maxStartups?.toString() ?? '',
           objectives: (p as any).objectives ?? [],
           benefits: (p as any).benefits ?? [],
+          galleryUrls: (p as any).galleryUrls ?? [],
         })
         setPhases(p.phases ?? [])
         setCriteria(p.criteria ?? [])
@@ -244,6 +246,7 @@ export default function ProgrammeDetailPage() {
         maxStartups: form.maxStartups ? Number(form.maxStartups) : undefined,
         objectives: form.objectives,
         benefits: form.benefits,
+        galleryUrls: form.galleryUrls,
       })
       setProgramme(res.data)
       setEditMode(false)
@@ -410,6 +413,12 @@ export default function ProgrammeDetailPage() {
                         <Wand2 className="h-3.5 w-3.5 text-brand-500" />
                         Mode visuel
                         <span className="ml-1 rounded-full bg-brand-500/15 px-1.5 py-0.5 text-[9px] font-bold text-brand-700 dark:text-brand-300">BETA</span>
+                      </Button>
+                    </Link>
+                    <Link href={`/programmes/${programme.id}/presentation`} title="Générer la présentation du programme (diaporama + PDF)">
+                      <Button variant="outline" size="sm" className="gap-1.5 border-sky-500/40 bg-gradient-to-r from-sky-500/5 to-cyan-500/5 hover:from-sky-500/10 hover:to-cyan-500/10">
+                        <Presentation className="h-3.5 w-3.5 text-sky-500" />
+                        Présentation
                       </Button>
                     </Link>
                   </div>
@@ -718,6 +727,34 @@ export default function ProgrammeDetailPage() {
                               onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} />
                           </div>
                         </div>
+                      </section>
+
+                      {/* ── Galerie (retour en images) ── */}
+                      <section className="rounded-xl border border-border bg-muted/10 p-4">
+                        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-1">
+                          <Image className="h-3.5 w-3.5" />Galerie — retour en images
+                        </p>
+                        <p className="mb-3 text-[11px] text-muted-foreground">
+                          Photos du programme (ateliers, demo day…) affichées sur la page publique et dans la présentation générée.
+                        </p>
+                        {form.galleryUrls.length > 0 && (
+                          <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                            {form.galleryUrls.map((u, i) => (
+                              <div key={`${u}-${i}`} className="group relative overflow-hidden rounded-lg border border-border">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={u} alt={`Photo ${i + 1}`} className="h-24 w-full object-cover" />
+                                <button type="button" title="Retirer"
+                                  onClick={() => setForm((f) => ({ ...f, galleryUrls: f.galleryUrls.filter((_, j) => j !== i) }))}
+                                  className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:flex">
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Adder — remounts after each upload so it's ready for the next photo. */}
+                        <ImageUpload key={form.galleryUrls.length} value="" folder="gallery" previewHeight={70} compact
+                          onChange={(url) => { if (url) setForm((f) => ({ ...f, galleryUrls: [...f.galleryUrls, url] })) }} />
                       </section>
 
                       {/* ── Statistiques clés ── */}

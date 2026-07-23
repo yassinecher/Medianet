@@ -47,14 +47,14 @@ export interface Member { email?: string; name?: string }
 export type RType = 'jury' | 'porteur' | 'member' | 'organisateur' | 'invite'
 export interface Recipient { email: string; name?: string; type: RType; startupId?: number; startupName?: string }
 
-const TYPE_META: Record<RType, { label: string; icon: any; tone: string }> = {
+export const TYPE_META: Record<RType, { label: string; icon: any; tone: string }> = {
   jury:         { label: 'Jury', icon: Gavel, tone: 'amber' },
   porteur:      { label: 'Porteur', icon: Rocket, tone: 'sky' },
   member:       { label: 'Membre', icon: Building2, tone: 'emerald' },
   organisateur: { label: 'Organisateur', icon: Users, tone: 'violet' },
   invite:       { label: 'Invité externe', icon: UserPlus, tone: 'rose' },
 }
-const TONE_CLS: Record<string, string> = {
+export const TONE_CLS: Record<string, string> = {
   amber: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
   sky: 'bg-sky-500/10 text-sky-700 dark:text-sky-300',
   emerald: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
@@ -64,7 +64,7 @@ const TONE_CLS: Record<string, string> = {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const isEmail = (s?: string): s is string => !!s && EMAIL_RE.test(s.trim())
-const norm = (s: string) => s.trim().toLowerCase()
+export const norm = (s: string) => s.trim().toLowerCase()
 const startupName = (c: Cand) => c.projectName || c.companyName || `Startup #${c.id}`
 
 /** Resolve every recipient (typed, deduped by email, valid addresses only). */
@@ -109,7 +109,7 @@ export function gcalUrl(programmeName: string, p: SessionLike): string {
   return `https://calendar.google.com/calendar/render?${params.toString()}${dates}`
 }
 
-function whenText(p: SessionLike) {
+export function whenText(p: SessionLike) {
   if (!p.startDate) return 'prochainement'
   return p.endDate && p.endDate !== p.startDate
     ? `du ${formatDate(p.startDate)} au ${formatDate(p.endDate)}`
@@ -127,7 +127,7 @@ function defaultTemplates(programmeName: string, p: SessionLike): Record<RType, 
   }
 }
 
-function emailHtml(programmeName: string, p: SessionLike, intro: string) {
+export function emailHtml(programmeName: string, p: SessionLike, intro: string, heading = '📅 Une session approche') {
   const when = whenText(p)
   const typeLabel = SESSION_TYPE_LABEL[p.sessionType ?? ''] ?? 'Session'
   const rows = ([
@@ -139,7 +139,7 @@ function emailHtml(programmeName: string, p: SessionLike, intro: string) {
   const gcal = gcalUrl(programmeName, p)
   return `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:auto;color:#0f172a">
   <div style="background:linear-gradient(135deg,#1a73e8,#0d47a1);padding:24px 28px;border-radius:14px 14px 0 0">
-    <h2 style="margin:0;color:#fff;font-size:19px">📅 Une session approche</h2>
+    <h2 style="margin:0;color:#fff;font-size:19px">${heading}</h2>
     <p style="margin:6px 0 0;color:rgba(255,255,255,.85);font-size:13px">Medianet Incubateur</p>
   </div>
   <div style="border:1px solid #e8ecef;border-top:none;border-radius:0 0 14px 14px;padding:24px 28px">

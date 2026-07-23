@@ -7,7 +7,7 @@ import {
   LayoutDashboard, FolderKanban, FileText, CheckSquare,
   Bell, Users, Settings, LogOut, Moon, Sun,
   ChevronRight, Menu, X, Shield, Home, Sparkles, Building2, Tags, KeyRound, BarChart3, Trash2,
-  Handshake, Rocket,
+  Handshake,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuthStore, useUser } from '@/store/auth.store'
@@ -27,9 +27,9 @@ const navItems = [
   { label: 'Utilisateurs', href: '/users', icon: Users, module: 'users' },
   { label: 'Rôles & permissions', href: '/roles', icon: KeyRound, module: 'roles' },
   { label: 'Rapports', href: '/reports', icon: BarChart3, module: 'reports' },
+  // « Sociétés incubées » is managed from Organisations (showcase toggle).
   { label: 'Organisations', href: '/organizations', icon: Building2, module: 'organizations' },
   { label: 'Partenaires', href: '/partners', icon: Handshake, module: 'programmes' },
-  { label: 'Sociétés incubées', href: '/incubated', icon: Rocket, module: 'programmes' },
   { label: 'Page d\'accueil', href: '/landing-page', icon: Home, module: 'landing' },
   { label: 'Référentiels', href: '/catalogs', icon: Tags, module: 'settings' },
   { label: 'Corbeille', href: '/trash', icon: Trash2, module: 'programmes' },

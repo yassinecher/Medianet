@@ -141,6 +141,9 @@ export const sessionsApi = {
     api.put(`/api/programmes/${programmeId}/sessions/${sid}`, data),
   delete:  (programmeId: number, sid: number) =>
     api.delete(`/api/programmes/${programmeId}/sessions/${sid}`),
+  /** Update history: who changed what, from which IP, when. */
+  history: (programmeId: number, sid: number) =>
+    api.get(`/api/programmes/${programmeId}/sessions/${sid}/history`),
   // Days
   days:    (programmeId: number, sid: number) =>
     api.get(`/api/programmes/${programmeId}/sessions/${sid}/days`),
@@ -287,6 +290,21 @@ export const filesApi = {
   },
   /** Delete a previously-uploaded file by URL. */
   delete: (url: string) => api.delete(`/api/files?url=${encodeURIComponent(url)}`),
+}
+
+/** Canva Connect (server-side OAuth — the secret never reaches the browser). */
+export const canvaApi = {
+  status: () => api.get<{ configured: boolean; connected: boolean }>('/api/canva/status'),
+  connectUrl: () => api.get<{ url: string }>('/api/canva/connect-url'),
+  disconnect: () => api.delete('/api/canva/connection'),
+  /** Upload a generated .pptx → creates the design in the user's Canva; returns its edit URL. */
+  importDesign: (file: Blob, title: string) => {
+    const form = new FormData()
+    form.append('file', file, 'presentation.pptx')
+    form.append('title', title)
+    return api.post<{ editUrl: string }>('/api/canva/import', form,
+      { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 })
+  },
 }
 
 /** AI Assistant API */
@@ -599,14 +617,9 @@ export const usersApi = {
   updateJuryProfile:    (id: number, data: unknown) => api.put(`/api/auth/users/${id}/profile/jury`, data),
 }
 
-/** Sociétés incubées — admin-managed alumni catalogue (public FO page). */
-export interface IncubatedUpsert {
-  name?: string; logoUrl?: string; description?: string; website?: string
-  sector?: string; cohortYear?: string; publicVisible?: boolean; sortOrder?: number
-}
-export const incubatedAdminApi = {
-  list: () => api.get('/api/incubated-companies'),
-  create: (data: IncubatedUpsert & { name: string }) => api.post('/api/incubated-companies', data),
-  update: (id: number, data: IncubatedUpsert) => api.put(`/api/incubated-companies/${id}`, data),
-  delete: (id: number) => api.delete(`/api/incubated-companies/${id}`),
+/** « Sociétés incubées » = showcased ORGANISATIONS — admin picks which appear
+ *  on the public frontoffice page via this toggle. */
+export const showcaseApi = {
+  set: (organizationId: number, showcased: boolean) =>
+    api.put(`/api/organizations/${organizationId}/showcase`, { showcased }),
 }

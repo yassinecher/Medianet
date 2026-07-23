@@ -34,6 +34,40 @@ import java.util.List;
 public class OrganizationController {
 
     private final OrganizationService service;
+    private final com.medianet.auth.repository.OrganizationRepository organizationRepository;
+
+    // ── PUBLIC « Sociétés incubées » showcase ────────────────────────────────
+    /** Trimmed public profile of the organisations the admin chose to showcase.
+     *  No members / owner data ever leaves this endpoint. */
+    @GetMapping("/public")
+    public ResponseEntity<List<java.util.Map<String, Object>>> publicShowcase() {
+        return ResponseEntity.ok(organizationRepository.findAll().stream()
+                .filter(o -> Boolean.TRUE.equals(o.getShowcased()))
+                .map(o -> {
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("id", o.getId());
+                    m.put("name", o.getName());
+                    m.put("logoUrl", o.getLogoUrl());
+                    m.put("description", o.getDescription());
+                    m.put("sector", o.getSector());
+                    m.put("website", o.getWebsite());
+                    m.put("city", o.getCity());
+                    m.put("foundedYear", o.getFoundedYear());
+                    return m;
+                }).collect(java.util.stream.Collectors.toList()));
+    }
+
+    /** Admin: publish / hide an organisation on the public showcase page. */
+    @PutMapping("/{id}/showcase")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('organizations:update')")
+    public ResponseEntity<Void> setShowcased(@PathVariable Long id,
+                                             @RequestBody java.util.Map<String, Boolean> body) {
+        com.medianet.auth.entity.Organization o = organizationRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Organisation introuvable : " + id));
+        o.setShowcased(Boolean.TRUE.equals(body.get("showcased")));
+        organizationRepository.save(o);
+        return ResponseEntity.noContent().build();
+    }
 
     @GetMapping
     public ResponseEntity<List<OrganizationDto>> list(

@@ -21,9 +21,9 @@ export const ShimmerButton = React.forwardRef<
   (
     {
       shimmerColor,
-      background = 'linear-gradient(135deg, #6272f6, #a78bfa)',
-      borderRadius = '100px',
-      duration = 2.4,
+background = 'linear-gradient(90deg, #fbb431 0%, #0a8fb1 55%, #14c8f3 100%)', 
+borderRadius = '9999px',
+duration = 2,
       className,
       children,
       style,
@@ -53,12 +53,16 @@ export const ShimmerButton = React.forwardRef<
         onMouseLeave={() => setHovered(false)}
         style={{ background, borderRadius, ...style } as React.CSSProperties}
         className={cn(
-          'group relative flex cursor-pointer items-center justify-center gap-2',
-          'overflow-hidden whitespace-nowrap px-6 py-3 font-medium',
-          // Static border — no animation, neon only on hover
-          'border border-white/25 transition-[border-color,box-shadow] duration-300',
-          'hover:border-purple-300/60',
-          'hover:shadow-[0_0_18px_rgba(139,92,246,0.6),0_0_55px_rgba(139,92,246,0.28)]',
+          'group relative inline-flex items-center justify-center gap-2',
+  'overflow-hidden whitespace-nowrap rounded-full',
+  'px-7 py-3 font-semibold text-white',
+  'border border-white/20',
+  'shadow-[0_10px_30px_rgba(12,179,215,0.35)]',
+  'transition-all duration-300 ease-out',
+  'hover:scale-[1.03]',
+  'hover:border-white/40',
+  'hover:shadow-[0_15px_40px_rgba(12,179,215,0.45)]',
+  'active:scale-[0.97]',
           className,
         )}
         {...(props as any)}

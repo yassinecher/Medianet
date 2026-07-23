@@ -347,7 +347,7 @@ export const publicPartnersApi = {
   get: (id: number) => api.get(`/api/partners/public/${id}`),
 }
 
-/** Public catalogue of already-incubated companies. */
+/** Public « Sociétés incubées » — the showcased ORGANISATIONS (admin-selected). */
 export const incubatedApi = {
-  list: () => api.get('/api/incubated-companies/public'),
+  list: () => api.get('/api/organizations/public'),
 }

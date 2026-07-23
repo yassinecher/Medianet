@@ -31,6 +31,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { CandidaturePhasePanel, PreselectionPhasePanel } from './PhasePanels'
 import { SessionNotifyButton } from '@/app/programmes/[id]/SessionNotify'
+import { UpdateNotifySuggestion, type UpdateSuggest } from '@/app/programmes/[id]/SessionUpdateNotify'
 import { confirmDialog } from '@/lib/confirmDialog'
 import { performDelete } from '@/lib/deleteChoice'
 
@@ -184,6 +185,7 @@ const parseDate = (s?: string | null) => {
 const fmtISO   = (d: Date) => d.toISOString().slice(0, 10)
 const addDays  = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r }
 const fmtShort = (d: Date) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+const fmtDrag  = (d: Date) => d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
 const fmtMonthShort = (d: Date) => d.toLocaleDateString('fr-FR', { month: 'short' })
 const clampDate = (d: Date, lo?: Date | null, hi?: Date | null) => {
   let t = d.getTime()
@@ -293,6 +295,8 @@ function TimelineBoard({ programmeId, programme }: {
   const [loading,  setLoading]  = useState(true)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [presetModal, setPresetModal] = useState<{ mode: 'create' | 'edit'; preset?: Preset } | null>(null)
+  // Post-critical-update suggestion → « notifier les personnes concernées ? »
+  const [suggest, setSuggest] = useState<UpdateSuggest | null>(null)
   /** The Gantt IS the timeline now — the legacy band board ('edit') is retired
    *  (its code stays but is never rendered). */
   const [view] = useState<'edit' | 'preview'>('preview')
@@ -508,9 +512,14 @@ function TimelineBoard({ programmeId, programme }: {
     let end = kind === 'day' ? start : parseDate(patch.endDate ?? cur.endDate ?? cur.startDate)
     if (kind === 'range' && end && start.getTime() > end.getTime())
       return 'La date de début doit précéder la date de fin de la plage.'
-    // Nested journée → must stay within its parent range window.
-    if (cur.parentSessionId != null) {
-      const parent = sessions.find(s => s.id === cur.parentSessionId)
+    // Nested journée → must stay within its parent range window. When the patch
+    // RE-PARENTS the session (drag-to-nest / detach), validate against the NEW
+    // parent, not the old one.
+    const effParentId = 'parentSessionId' in patch
+      ? ((patch.parentSessionId as any) == null || (patch.parentSessionId as any) < 0 ? null : patch.parentSessionId)
+      : cur.parentSessionId
+    if (effParentId != null) {
+      const parent = sessions.find(s => s.id === effParentId)
       const ps = parent ? parseDate(parent.startDate) : null
       const pe = parent ? parseDate(parent.endDate ?? parent.startDate) : null
       if (ps && pe && (start < ps || start > pe || (end != null && (end < ps || end > pe))))
@@ -547,9 +556,25 @@ function TimelineBoard({ programmeId, programme }: {
     return { isMove, patches }
   }
 
+  // After a successful critical (date) change → suggest notifying related people.
+  const maybeSuggestNotify = (before: Session | undefined, local: Partial<Session>) => {
+    if (!before || !('startDate' in local || 'endDate' in local)) return
+    const dd = (x?: string | null) => (x ? String(x).slice(0, 10) : '')
+    const lbl = (x?: string | null) => { const p = parseDate(x ?? undefined); return p ? fmtShort(p) : '—' }
+    const os = before.startDate; const oe = before.endDate ?? os
+    const ns = (local.startDate ?? os) as string | undefined
+    const ne = (local.endDate ?? ns) as string | undefined
+    if (dd(os) === dd(ns) && dd(oe) === dd(ne)) return
+    setSuggest({
+      session: { ...before, ...local } as any,
+      changeSummary: `Dates : ${lbl(os)} → ${lbl(oe)}  ⇒  ${lbl(ns)} → ${lbl(ne)}`,
+    })
+  }
+
   const update = async (id: number, patch: Partial<Session>) => {
     const err = dateError(id, patch)
     if (err) { toast.error(err); return }   // reject without touching state — bar stays put
+    const before = sessions.find(s => s.id === id)
 
     // Moving/resizing a plage that contains nested journées: carry them along
     // (shift on move, clamp on resize) instead of blocking the change.
@@ -581,8 +606,23 @@ function TimelineBoard({ programmeId, programme }: {
     try {
       await sessionsApi.update(programmeId, id, patch)
       for (const cp of childPatches) await sessionsApi.update(programmeId, cp.id, { startDate: cp.startDate, endDate: cp.endDate })
+      maybeSuggestNotify(before, local)
     }
-    catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur'); reload() }
+    catch (e: any) {
+      // A drop that lands on another session must not block the gesture: switch
+      // the dragged session to « chevauchement parallèle » and retry once.
+      if (e?.response?.data?.code === 'SESSION_OVERLAP_DETECTED') {
+        try {
+          await sessionsApi.update(programmeId, id, { ...(patch as object), allowOverlap: true })
+          setSessions(arr => arr.map(s => (s.id === id ? { ...s, allowOverlap: true } : s)))
+          for (const cp of childPatches) await sessionsApi.update(programmeId, cp.id, { startDate: cp.startDate, endDate: cp.endDate })
+          toast.success('Sessions en parallèle — chevauchement activé automatiquement')
+          maybeSuggestNotify(before, local)
+          return
+        } catch (e2: any) { toast.error(e2?.response?.data?.message ?? 'Erreur'); reload(); return }
+      }
+      toast.error(e?.response?.data?.message ?? 'Erreur'); reload()
+    }
   }
 
   const remove = async (id: number) => {
@@ -860,12 +900,16 @@ function TimelineBoard({ programmeId, programme }: {
   return (
     <div className="flex flex-col h-full"
       onPointerMove={onBoardPointerMove} onPointerUp={onBoardPointerUp}>
+      {/* Post-critical-update « notifier ? » suggestion + role-by-role wizard */}
+      <UpdateNotifySuggestion programmeId={programmeId} programmeName={programme?.title ?? 'Programme'}
+        suggest={suggest} onClose={() => setSuggest(null)} />
       {/* HEADER */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-gradient-to-r from-amber-500/5 via-card to-rose-500/5 shrink-0">
-        <a href={`/programmes/${programmeId}`} title="Retour au programme"
+        {/* Client-side Link (no full page reload) straight back to the Sessions tab. */}
+        <Link href={`/programmes/${programmeId}?tab=phases`} title="Retour au parcours"
           className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-accent shrink-0">
           <ArrowLeft className="h-4 w-4" />
-        </a>
+        </Link>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-rose-500 text-white shadow-sm">
           <Calendar className="h-4 w-4" />
         </div>
@@ -1239,6 +1283,24 @@ function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset 
   const laneRef = useRef<HTMLDivElement>(null)   // first lane — all lanes share the same width
   const [drag, setDrag] = useState<GanttDrag | null>(null)
   const [dropHint, setDropHint] = useState<{ rowId: number | 'zone'; pctX: number; date: Date } | null>(null)
+  // Row currently hovered while dragging a bar — dropping there nests the session.
+  const [nestHint, setNestHint] = useState<number | null>(null)
+
+  // Keep the Gantt scroll position across navigations (open session → back).
+  const scrollKey = `gantt-scroll-${programmeId}`
+  const saveScroll = () => {
+    const el = scrollRef.current
+    if (el) try { sessionStorage.setItem(scrollKey, JSON.stringify({ l: el.scrollLeft, t: el.scrollTop })) } catch {}
+  }
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    try {
+      const raw = sessionStorage.getItem(scrollKey)
+      if (raw) { const { l, t } = JSON.parse(raw); el.scrollLeft = l ?? 0; el.scrollTop = t ?? 0 }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const byDate = (a: Session, b: Session) =>
     (parseDate(a.startDate)?.getTime() ?? 0) - (parseDate(b.startDate)?.getTime() ?? 0)
@@ -1265,9 +1327,21 @@ function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset 
   const months: { label: string; left: number }[] = []
   const cur = new Date(new Date(winStart).getFullYear(), new Date(winStart).getMonth(), 1)
   while (cur.getTime() <= winStart + span) {
-    if (cur.getTime() >= winStart) months.push({ label: cur.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), left: pct(cur.getTime()) })
+    if (cur.getTime() >= winStart) months.push({ label: cur.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }).replace('.', ''), left: pct(cur.getTime()) })
     cur.setMonth(cur.getMonth() + 1)
   }
+  // Day ruler + weekly gridlines — dates readable at a glance.
+  const dayStep = spanDays > 180 ? 14 : spanDays > 90 ? 7 : spanDays > 45 ? 3 : spanDays > 21 ? 2 : 1
+  const dayTicks: { left: number; day: number; monday: boolean; labeled: boolean }[] = []
+  {
+    let dd = new Date(winStart); dd.setHours(12, 0, 0, 0)
+    let i = 0
+    while (dd.getTime() <= winStart + span) {
+      dayTicks.push({ left: pct(dd.getTime()), day: dd.getDate(), monday: dd.getDay() === 1, labeled: i % dayStep === 0 })
+      dd = addDays(dd, 1); i++
+    }
+  }
+  const weekLines = dayTicks.filter(t => t.monday).map(t => t.left)
   const now = Date.now()
   const todayPct = now >= winStart && now <= winStart + span ? pct(now) : null
 
@@ -1287,22 +1361,62 @@ function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset 
     ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
     setDrag({ id, mode, startX: e.clientX, deltaDays: 0, moved: false })
   }
+  /** The range session whose ROW is under the pointer — dropping there nests the
+   *  dragged session inside it. A child row resolves to its parent range. */
+  const nestTargetFor = (draggedId: number, clientX: number, clientY: number): Session | null => {
+    const rowEl = (document.elementFromPoint(clientX, clientY) as HTMLElement | null)?.closest?.('[data-gantt-row]') as HTMLElement | null
+    if (!rowEl) return null
+    const rowId = Number(rowEl.dataset.ganttRow)
+    if (!Number.isFinite(rowId) || rowId === draggedId) return null
+    const all = rows.map(r => r.s)
+    const target = all.find(x => x.id === rowId)
+    if (!target) return null
+    const host = target.parentSessionId != null ? all.find(x => x.id === target.parentSessionId) : target
+    if (!host || host.id === draggedId) return null
+    if (host.id === all.find(x => x.id === draggedId)?.parentSessionId) return null   // already inside
+    if (kindOf(host) !== 'range') return null
+    if (childrenOf(draggedId).some(c => c.id === host.id)) return null                // can't nest into own child
+    return host
+  }
   const onMovePointer = (e: React.PointerEvent) => {
     if (!drag) return
     const deltaDays = daysFromPx(e.clientX - drag.startX)
     const moved = drag.moved || Math.abs(e.clientX - drag.startX) > 4
     if (deltaDays !== drag.deltaDays || moved !== drag.moved) setDrag({ ...drag, deltaDays, moved })
+    // Live « déposer pour imbriquer » hint on the hovered range row.
+    if (drag.mode === 'move' && (moved || drag.moved)) {
+      const host = nestTargetFor(drag.id, e.clientX, e.clientY)
+      setNestHint(host ? host.id : null)
+    }
   }
-  const endDrag = () => {
+  const endDrag = (e?: React.PointerEvent) => {
     if (!drag) return
     const d = drag
-    setDrag(null)
+    setDrag(null); setNestHint(null)
     const s = rows.map(r => r.s).find(x => x.id === d.id)
     if (!s) return
-    if (!d.moved) { router.push(`/programmes/${programmeId}/sessions/${s.id}`); return }
-    if (d.deltaDays === 0) return
+    if (!d.moved) { saveScroll(); router.push(`/programmes/${programmeId}/sessions/${s.id}`); return }
     const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
     if (!sd || !ed) return
+    // Dropped ON another session's row → nest inside it (dates carried along,
+    // clamped into the host window). Works even without horizontal movement.
+    if (d.mode === 'move' && e) {
+      const host = nestTargetFor(d.id, e.clientX, e.clientY)
+      if (host) {
+        const ps = parseDate(host.startDate); const pe = parseDate(host.endDate ?? host.startDate)
+        if (ps && pe) {
+          let ns = addDays(sd, d.deltaDays); let ne = addDays(ed, d.deltaDays)
+          const durDays = Math.round((ne.getTime() - ns.getTime()) / DAY_MS)
+          if (ns.getTime() < ps.getTime()) { ns = ps; ne = addDays(ns, durDays) }
+          if (ns.getTime() > pe.getTime()) { ns = pe; ne = addDays(ns, durDays) }
+          // A nested session must fit ENTIRELY inside the host window — shrink if needed.
+          if (ne.getTime() > pe.getTime()) { ne = pe; if (ns.getTime() > ne.getTime()) ns = ne }
+          onUpdate(s.id, { startDate: fmtISO(ns), endDate: fmtISO(ne), parentSessionId: host.id })
+          return
+        }
+      }
+    }
+    if (d.deltaDays === 0) return
     if (d.mode === 'move') {
       onUpdate(s.id, { startDate: fmtISO(addDays(sd, d.deltaDays)), endDate: fmtISO(addDays(ed, d.deltaDays)) })
     } else if (d.mode === 'l') {
@@ -1337,21 +1451,31 @@ function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset 
   const dragPct = drag ? (drag.deltaDays / spanDays) * 100 : 0
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-auto"
-      onPointerMove={onMovePointer} onPointerUp={endDrag} onPointerCancel={() => setDrag(null)}>
+    <div ref={scrollRef} className="flex-1 overflow-auto" onScroll={saveScroll}
+      onPointerMove={onMovePointer} onPointerUp={endDrag} onPointerCancel={() => { setDrag(null); setNestHint(null) }}>
       <div style={{ minWidth: 240 + trackMin }}>
-        {/* Header: corner + month axis + scroll buttons */}
+        {/* Header: corner + month axis + day ruler + scroll buttons */}
         <div className="sticky top-0 z-20 flex border-b-2 border-border bg-card">
-          <div className="sticky left-0 z-10 flex h-10 w-[150px] shrink-0 items-center gap-2 border-r border-border bg-card px-3 text-xs font-bold text-muted-foreground sm:w-[240px]">
+          <div className="sticky left-0 z-10 flex h-14 w-[150px] shrink-0 items-center gap-2 border-r border-border bg-card px-3 text-xs font-bold text-muted-foreground sm:w-[240px]">
             <Calendar className="h-3.5 w-3.5" />Sessions
           </div>
-          <div className="relative h-10 flex-1">
+          <div className="relative h-14 flex-1">
+            {/* Months (top row) */}
             {months.map((m, i) => (
-              <div key={i} className="absolute bottom-1 top-0 border-l border-border/60 pl-1.5 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground"
+              <div key={i} className="absolute bottom-5 top-0 border-l border-border/60 pl-1.5 pt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground"
                 style={{ left: `${m.left}%` }}>{m.label}</div>
             ))}
+            {/* Day numbers (bottom row) */}
+            {dayTicks.filter((t) => t.labeled).map((t, i) => (
+              <span key={i} className="absolute bottom-0.5 -translate-x-1/2 text-[9px] font-semibold tabular-nums text-muted-foreground/80"
+                style={{ left: `${t.left}%` }}>{t.day}</span>
+            ))}
+            {/* Week (Monday) ticks */}
+            {weekLines.map((l, i) => (
+              <span key={i} className="absolute bottom-4 h-1.5 w-px bg-border" style={{ left: `${l}%` }} />
+            ))}
           </div>
-          <div className="sticky right-0 z-10 flex h-10 shrink-0 items-center gap-0.5 border-l border-border bg-card px-1">
+          <div className="sticky right-0 z-10 flex h-14 shrink-0 items-center gap-0.5 border-l border-border bg-card px-1">
             <button type="button" title="Défiler vers la gauche"
               onClick={() => scrollRef.current?.scrollBy({ left: -420, behavior: 'smooth' })}
               className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground">
@@ -1377,11 +1501,13 @@ function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset 
           const dragLabel = isDragged && drag!.moved && sd && ed ? (() => {
             const ns = drag!.mode === 'r' ? sd : addDays(sd, drag!.deltaDays)
             const ne = drag!.mode === 'l' ? ed : addDays(ed, drag!.deltaDays)
-            return kind === 'day' ? fmtShort(ns) : `${fmtShort(ns)} → ${fmtShort(ne)}`
+            return kind === 'day' ? fmtDrag(ns) : `${fmtDrag(ns)} → ${fmtDrag(ne)}`
           })() : null
+          const isNestTarget = nestHint != null && (nestHint === s.id || nestHint === s.parentSessionId)
           return (
-            <div key={s.id} className="flex border-t border-border/40 transition-colors hover:bg-brand-500/[0.05]">
-              <Link href={`/programmes/${programmeId}/sessions/${s.id}`} title="Ouvrir la session"
+            <div key={s.id} data-gantt-row={s.id}
+              className={`flex border-t border-border/40 transition-colors ${isNestTarget ? 'bg-emerald-500/10' : 'hover:bg-brand-500/[0.05]'}`}>
+              <Link href={`/programmes/${programmeId}/sessions/${s.id}`} title="Ouvrir la session" onClick={saveScroll}
                 className={`sticky left-0 z-10 flex w-[150px] shrink-0 items-center gap-2 border-r border-border bg-card px-3 py-2 sm:w-[240px] ${depth > 0 ? 'pl-5 sm:pl-7' : ''}`}>
                 {depth > 0 && <span className="shrink-0 text-muted-foreground">↳</span>}
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c }} />
@@ -1392,6 +1518,14 @@ function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset 
               </Link>
               <div ref={i === 0 ? laneRef : undefined} className="relative min-h-[46px] flex-1"
                 onDragOver={(e) => laneDragOver(e, s)} onDrop={(e) => laneDrop(e, s)}>
+                {weekLines.map((l, wi) => (
+                  <span key={wi} className="pointer-events-none absolute inset-y-0 z-0 w-px bg-border/30" style={{ left: `${l}%` }} />
+                ))}
+                {isNestTarget && nestHint === s.id && (
+                  <span className="pointer-events-none absolute right-2 top-1/2 z-30 -translate-y-1/2 whitespace-nowrap rounded-full bg-emerald-500 px-2 py-0.5 text-[9px] font-bold text-white shadow">
+                    Déposer pour imbriquer ici
+                  </span>
+                )}
                 {todayPct != null && <div className="pointer-events-none absolute inset-y-0 z-0 w-px bg-rose-500/50" style={{ left: `${todayPct}%` }} />}
                 {dropHint?.rowId === s.id && (
                   <div className="pointer-events-none absolute inset-y-0 z-20 w-0.5 rounded bg-emerald-500" style={{ left: `${dropHint.pctX}%` }}>

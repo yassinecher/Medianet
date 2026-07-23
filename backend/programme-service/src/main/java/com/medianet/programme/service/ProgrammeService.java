@@ -24,6 +24,7 @@ public class ProgrammeService {
     private final com.medianet.programme.validation.SessionValidator sessionValidator;
     private final InvitationLookup            invitationLookup;
     private final ContributorNotifier         contributorNotifier;
+    private final SessionAuditTrail           auditTrail;
 
     // ── Programme CRUD ────────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ public class ProgrammeService {
         if (req.getMaxStartups()         != null) p.setMaxStartups(req.getMaxStartups());
         if (req.getObjectives()          != null) p.setObjectives(req.getObjectives());
         if (req.getBenefits()            != null) p.setBenefits(req.getBenefits());
+        if (req.getGalleryUrls()         != null) p.setGalleryUrls(req.getGalleryUrls());
         Programme saved = programmeRepository.save(p);
         notifyContributorsOfCriticalChange(saved, oldStatus, oldStart, oldEnd, oldDeadline);
         return toDto(saved);
@@ -312,6 +314,8 @@ public class ProgrammeService {
         boolean changed = programmeLifecycle.recompute(p);
         if (syncApplicationDeadline(p)) changed = true;
         if (changed) programmeRepository.save(p);
+        auditTrail.record(phase, "CREATED",
+                "Session créée (" + dateStr(phase.getStartDate()) + " → " + dateStr(phase.getEndDate()) + ")");
         return toPhaseDto(phaseRepository.save(phase));
     }
 
@@ -323,6 +327,8 @@ public class ProgrammeService {
         // day-sessions along when the range is moved, enlarged or shrunk.
         java.time.LocalDate rangeOldStart = phase.getStartDate();
         java.time.LocalDate rangeOldEnd   = phase.getEndDate();
+        // Snapshot for the audit trail (who changed what, from which IP).
+        Map<String, Object> before = auditSnapshot(phase);
         if (req.getTitle()           != null) phase.setTitle(req.getTitle());
         if (req.getDescription()     != null) phase.setDescription(req.getDescription());
         if (req.getPhaseOrder()      != null) phase.setPhaseOrder(req.getPhaseOrder());
@@ -335,6 +341,7 @@ public class ProgrammeService {
         if (req.getResponsibles()    != null) phase.setResponsibles(req.getResponsibles());
         if (req.getGuests()          != null) phase.setGuests(req.getGuests());
         if (req.getStartupIds()      != null) phase.setStartupIds(req.getStartupIds());
+        if (req.getGalleryUrls()     != null) phase.setGalleryUrls(req.getGalleryUrls());
         if (req.getTasks()           != null) phase.setTasks(req.getTasks());
         if (req.getCriterionWeightsJson() != null) phase.setCriterionWeightsJson(req.getCriterionWeightsJson());
         // -1 = explicit clear (back to « toutes les candidatures »)
@@ -355,7 +362,11 @@ public class ProgrammeService {
         if (req.getParentSessionId() != null) {
             // -1 is the explicit "detach" sentinel from the UI/AI
             if (req.getParentSessionId() < 0) {
+                // A freshly detached session sits, by construction, inside its former
+                // parent's window on the same lane — flip it to « chevauchement
+                // parallèle » so the detach never fails with an overlap error.
                 phase.setParentSessionId(null);
+                if (!Boolean.TRUE.equals(phase.getAllowOverlap())) phase.setAllowOverlap(Boolean.TRUE);
             } else {
                 phase.setParentSessionId(validateParent(programmeId, req.getParentSessionId(),
                         phase.getDurationKind(), phase.getStartDate()));
@@ -368,8 +379,19 @@ public class ProgrammeService {
                 || req.getDurationKind() != null || req.getParentSessionId() != null;
         validateAndNormalizeDates(phase, datesTouched);
         if (datesTouched) {
-            sessionValidator.validate(phase, phase.getProgramme(),
-                    phaseRepository.findByProgrammeIdOrderByPhaseOrderAsc(programmeId));
+            try {
+                sessionValidator.validate(phase, phase.getProgramme(),
+                        phaseRepository.findByProgrammeIdOrderByPhaseOrderAsc(programmeId));
+            } catch (com.medianet.programme.validation.ValidationException ex) {
+                // A re-parenting edit (nest into a range / detach from one) lands the
+                // session next to its new siblings on purpose — switch it to parallel
+                // instead of failing the drag with an overlap error.
+                boolean reParented = req.getParentSessionId() != null;
+                if (reParented && com.medianet.programme.validation.ValidationException.ValidationCode
+                        .SESSION_OVERLAP_DETECTED.name().equals(ex.getCode())) {
+                    phase.setAllowOverlap(Boolean.TRUE);
+                } else throw ex;
+            }
         }
         phase = phaseRepository.save(phase);
 
@@ -390,6 +412,9 @@ public class ProgrammeService {
             contributorNotifier.notifyCriticalChange(p, "deadline",
                     "La clôture des candidatures du programme « " + safeProgrammeTitle(p) + " » a changé : "
                     + dateStr(oldDeadline) + "  →  " + dateStr(p.getApplicationDeadline()) + ".");
+        // Update history: one line per edit, with the field-by-field diff.
+        String diff = auditDiff(before, auditSnapshot(phase));
+        if (!diff.isEmpty()) auditTrail.record(phase, "UPDATED", diff);
         return toPhaseDto(phase);
     }
 
@@ -405,11 +430,16 @@ public class ProgrammeService {
         if (!children.isEmpty()) phaseRepository.saveAll(children);
         phase.setDeletedAt(now);
         phaseRepository.save(phase);
+        auditTrail.record(phase, "TRASHED", children.isEmpty()
+                ? "Session mise à la corbeille"
+                : "Session mise à la corbeille avec " + children.size() + " journée(s) imbriquée(s)");
         // Removing a session may imply a programme status transition.
+        // NB: never remove the phase from p.getPhases() here — the collection has
+        // orphanRemoval=true, so removing it would HARD-delete the row at flush and
+        // wipe the soft-delete (the session would never reach the trash). The
+        // lifecycle/deadline recompute skip deletedAt != null instead.
         Programme p = phase.getProgramme();
         if (p != null) {
-            p.getPhases().removeIf(ph -> ph.getId().equals(phaseId)
-                    || children.stream().anyMatch(c -> c.getId().equals(ph.getId())));
             boolean changed = programmeLifecycle.recompute(p);
             if (syncApplicationDeadline(p)) changed = true;
             if (changed) programmeRepository.save(p);
@@ -452,6 +482,7 @@ public class ProgrammeService {
                 .maxStartups(p.getMaxStartups())
                 .objectives(p.getObjectives() != null ? new ArrayList<>(p.getObjectives()) : new ArrayList<>())
                 .benefits(p.getBenefits() != null ? new ArrayList<>(p.getBenefits()) : new ArrayList<>())
+                .galleryUrls(p.getGalleryUrls() != null ? new ArrayList<>(p.getGalleryUrls()) : new ArrayList<>())
                 .acceptingApplications(isAccepting(p))
                 .candidatureSessionId(cs != null ? cs.getId() : null)
                 .candidatureDeadline(cs != null ? (cs.getEndDate() != null ? cs.getEndDate() : cs.getStartDate()) : null)
@@ -476,6 +507,7 @@ public class ProgrammeService {
     private ProgrammePhase candidatureSession(Programme p) {
         if (p.getPhases() == null) return null;
         return p.getPhases().stream()
+                .filter(ph -> ph.getDeletedAt() == null)   // trashed phases may linger in-memory
                 .filter(ph -> ph.getParentSessionId() == null)
                 .filter(ph -> ph.getSessionType() == SessionType.CANDIDATURE_SUBMISSION)
                 .filter(ph -> ph.getStartDate() != null)
@@ -524,6 +556,7 @@ public class ProgrammeService {
                 .responsibles(ph.getResponsibles())
                 .guests(ph.getGuests())
                 .startupIds(ph.getStartupIds())
+                .galleryUrls(ph.getGalleryUrls())
                 .tasks(ph.getTasks())
                 .criterionWeightsJson(ph.getCriterionWeightsJson())
                 .evaluationSelectionId(ph.getEvaluationSelectionId())
@@ -884,5 +917,40 @@ public class ProgrammeService {
                     + parent.getStartDate() + " → " + parent.getEndDate() + ").");
         }
         return parentId;
+    }
+
+    // ── Audit trail helpers (update history: who changed what) ───────────────
+
+    /** The audited fields of a session, keyed by their French label. */
+    private Map<String, Object> auditSnapshot(ProgrammePhase ph) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("Titre",          ph.getTitle());
+        m.put("Début",          ph.getStartDate());
+        m.put("Fin",            ph.getEndDate());
+        m.put("Statut",         ph.getStatus());
+        m.put("Type",           ph.getSessionType());
+        m.put("Visibilité",     ph.getVisibility());
+        m.put("Voie",           ph.getLane());
+        m.put("Couleur",        ph.getColor());
+        m.put("Session parente", ph.getParentSessionId());
+        m.put("Chevauchement parallèle", ph.getAllowOverlap());
+        m.put("Activités",      ph.getAllowActivities());
+        m.put("Lieu",           ph.getLocation());
+        m.put("Description",    ph.getDescription());
+        return m;
+    }
+
+    /** « Champ : ancien → nouveau » joined with · ; long values become « X modifié ». */
+    private String auditDiff(Map<String, Object> before, Map<String, Object> after) {
+        List<String> parts = new ArrayList<>();
+        for (String k : before.keySet()) {
+            Object a = before.get(k), b = after.get(k);
+            if (Objects.equals(a, b)) continue;
+            String as = a == null ? "—" : String.valueOf(a);
+            String bs = b == null ? "—" : String.valueOf(b);
+            if (as.length() > 40 || bs.length() > 40) parts.add(k + " modifié");
+            else parts.add(k + " : " + as + " → " + bs);
+        }
+        return String.join(" · ", parts);
     }
 }

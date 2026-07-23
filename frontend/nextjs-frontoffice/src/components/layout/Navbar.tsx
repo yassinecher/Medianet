@@ -7,7 +7,7 @@ import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { useAuthStore, useUser, frontofficeRolesOf, permsOf, type FrontofficeRole } from '@/store/auth.store'
 import { Button } from '@/components/ui/button'
 import { cn, getInitials } from '@/lib/utils'
-
+import { MedianetLogoMain } from '@/components/brand/MedianetLogoMain'
 const navLinks = [
   { label: 'Programmes', href: '/programmes' }, // public — always visible
   // Discovery pages — navbar shows them to VISITORS (logged-in users keep a
@@ -17,7 +17,9 @@ const navLinks = [
   { label: 'À propos', href: '/a-propos', publicOnly: true },
   { label: 'Tableau de bord', href: '/dashboard', auth: true },
   { label: 'Mes candidatures', href: '/candidatures', auth: true, perm: 'candidatures:read' },
-  { label: 'Mes organisations', href: '/organizations', auth: true, perm: 'organizations:read' },
+  // Organisations belong to porteurs — jury/mentor see org info inside their
+  // evaluations, never as a nav destination.
+  { label: 'Mes organisations', href: '/organizations', auth: true, roles: ['PORTEUR'] },
   { label: 'Mes tâches', href: '/tasks', auth: true, perm: 'tasks:read' },
 ] as const
 
@@ -63,13 +65,8 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-purple-600">
-            <span className="text-xs font-bold text-white">M</span>
-          </div>
-          <span className="font-bold text-foreground">Medianet Incubateur</span>
-        </Link>
+        {/* Logo — the Medianet wordmark (MEDIA blue / NET grey + stripe) */}
+        <MedianetLogoMain size="lg" href="/" />
 
         {/* Desktop nav */}
         <nav className="hidden items-center gap-1 md:flex">

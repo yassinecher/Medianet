@@ -176,6 +176,10 @@ services:
       SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 2GB
       SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 2GB
       SERVER_TOMCAT_MAX_SWALLOW_SIZE: "-1"
+      # Canva Connect (optional — set in the server .env; empty = feature off)
+      CANVA_CLIENT_ID: ${CANVA_CLIENT_ID:-}
+      CANVA_CLIENT_SECRET: ${CANVA_CLIENT_SECRET:-}
+      CANVA_REDIRECT_URI: ${CANVA_REDIRECT_URI:-https://app.medianet.dz/api/canva/callback}
     depends_on:
       postgres-programme: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
