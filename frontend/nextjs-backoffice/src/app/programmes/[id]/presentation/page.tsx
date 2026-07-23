@@ -99,7 +99,8 @@ const styleCss = (st?: TStyle): React.CSSProperties => !st ? {} : {
 }
 
 interface Contributor { name: string; role: string; photoUrl?: string; team?: string }
-interface ExtraSlide { id: string; label: string }
+/** Extra slide — blank, or a MIRROR of an existing slide's layout (base key). */
+interface ExtraSlide { id: string; label: string; base?: string }
 /** Per-BLOCK decoration (bordure, fond, rayon) applied to the Movable wrapper. */
 interface BlockStyle {
   borderColor?: string; borderWidth?: number
@@ -109,8 +110,9 @@ interface BlockStyle {
 }
 interface Deck {
   theme: string; overrides: Record<string, string>; hidden: string[]
-  /** x/y offset · s = uniform scale · sx/sy = horizontal / vertical stretch. */
-  pos: Record<string, { x: number; y: number; s?: number; sx?: number; sy?: number }>
+  /** x/y offset · s = uniform scale · w = box width (reflow, text-safe) ·
+   *  sx/sy = stretch (shapes/images only — text is never distorted). */
+  pos: Record<string, { x: number; y: number; s?: number; w?: number; sx?: number; sy?: number }>
   custom: Record<string, CustomBlock[]>
   styles: Record<string, TStyle>
   /** Per-slide background override (base = thème). */
@@ -127,11 +129,13 @@ interface Deck {
   blockStyles: Record<string, BlockStyle>
   /** Slide order chosen by the user (keys); missing keys keep natural order. */
   order: string[]
+  /** Numérotation: première diapo numérotée (1-based, visible) + numéro initial. */
+  pageStart: { from: number; num: number }
 }
 const EMPTY_DECK: Deck = {
   theme: 'emeraude', overrides: {}, hidden: [], pos: {}, custom: {}, styles: {},
   bg: {}, hiddenBlocks: [], extraSlides: [], contributors: [],
-  z: {}, blockStyles: {}, order: [],
+  z: {}, blockStyles: {}, order: [], pageStart: { from: 2, num: 1 },
 }
 
 // ── Contexts ─────────────────────────────────────────────────────────────────
@@ -139,7 +143,7 @@ const ScaleCtx = createContext(1)
 const StudioCtx = createContext<{
   editable: boolean; deck: Deck; T: Theme
   setText: (k: string, v: string) => void
-  setPos: (k: string, p: { x: number; y: number; s?: number; sx?: number; sy?: number }) => void
+  setPos: (k: string, p: { x: number; y: number; s?: number; w?: number; sx?: number; sy?: number }) => void
   hideBlock: (k: string) => void
   removeBlock: (slideKey: string, id: string) => void
   duplicateCustom: (slideKey: string, id: string) => void
@@ -192,24 +196,29 @@ function Ed({ k, def, className, style, block }: {
   )
 }
 
-// ── Movable block — click = select · ⠿ drag · ⤡ resize · ↔↕ stretch · 👁 hide ─
-function Movable({ k, children, className, style, corner = 'tl', deletable = true }: {
+// ── Movable block — click = select · ⠿ drag · ⤡ resize · 👁 hide ─────────────
+// Text-safe by default: the corner handle scales PROPORTIONNELLEMENT and the
+// side handle changes the box WIDTH (le texte se réorganise, jamais étiré).
+// `stretch` (formes / images) enables true horizontal/vertical stretching.
+function Movable({ k, children, className, style, corner = 'tl', deletable = true, stretch = false }: {
   k: string; children: React.ReactNode; className?: string; style?: React.CSSProperties
   corner?: 'tl' | 'tr'
   /** Show the hide (delete) button. Custom blocks bring their own real delete. */
   deletable?: boolean
+  /** Allow real H/V stretching (shapes & images only — never text). */
+  stretch?: boolean
 }) {
   const { editable, deck, setPos, hideBlock, selectedKey, setSelectedKey, bumpZ } = useContext(StudioCtx)
   const scale = useContext(ScaleCtx)
   const rootRef = useRef<HTMLDivElement>(null)
   const saved = deck.pos[k] ?? { x: 0, y: 0 }
-  const [live, setLive] = useState<{ x: number; y: number; s?: number; sx?: number; sy?: number } | null>(null)
+  const [live, setLive] = useState<{ x: number; y: number; s?: number; w?: number; sx?: number; sy?: number } | null>(null)
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
-  const sizeRef = useRef<{ sx: number; sy: number; os: number; axis: 'u' | 'x' | 'y' } | null>(null)
+  const sizeRef = useRef<{ sx: number; sy: number; os: number; axis: 'u' | 'x' | 'y' | 'w' } | null>(null)
   const cur = live ?? saved
   const scU = cur.s ?? 1
-  const scX = scU * (cur.sx ?? 1)
-  const scY = scU * (cur.sy ?? 1)
+  const scX = scU * (stretch ? (cur.sx ?? 1) : 1)
+  const scY = scU * (stretch ? (cur.sy ?? 1) : 1)
   const isSel = editable && selectedKey === k
 
   if (deck.hiddenBlocks?.includes(k)) return null
@@ -245,14 +254,24 @@ function Movable({ k, children, className, style, corner = 'tl', deletable = tru
     if (d && live) setPos(k, { ...saved, x: Math.round(live.x), y: Math.round(live.y) })
     setLive(null)
   }
-  const startSize = (axis: 'u' | 'x' | 'y') => (e: React.PointerEvent) => {
+  const startSize = (axis: 'u' | 'x' | 'y' | 'w') => (e: React.PointerEvent) => {
     e.preventDefault(); e.stopPropagation()
     ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
-    const os = axis === 'u' ? (saved.s ?? 1) : axis === 'x' ? (saved.sx ?? 1) : (saved.sy ?? 1)
+    let os: number
+    if (axis === 'w') {
+      // Base width in design px (mesurée si jamais redimensionné).
+      const el = rootRef.current
+      os = saved.w ?? (el ? el.getBoundingClientRect().width / scale / (saved.s ?? 1) : 240)
+    } else os = axis === 'u' ? (saved.s ?? 1) : axis === 'x' ? (saved.sx ?? 1) : (saved.sy ?? 1)
     sizeRef.current = { sx: e.clientX, sy: e.clientY, os, axis }
   }
   const onSizeMove = (e: React.PointerEvent) => {
     const d = sizeRef.current; if (!d) return
+    if (d.axis === 'w') {
+      const w = Math.min(CW, Math.max(60, d.os + (e.clientX - d.sx) / scale))
+      setLive({ ...saved, w })
+      return
+    }
     const delta = d.axis === 'x' ? (e.clientX - d.sx) / scale
       : d.axis === 'y' ? (e.clientY - d.sy) / scale
       : ((e.clientX - d.sx) + (e.clientY - d.sy)) / 2 / scale
@@ -262,8 +281,11 @@ function Movable({ k, children, className, style, corner = 'tl', deletable = tru
   const onSizeUp = () => {
     const d = sizeRef.current; sizeRef.current = null
     if (d && live) {
-      const v = Math.round(((d.axis === 'u' ? live.s : d.axis === 'x' ? live.sx : live.sy) ?? 1) * 100) / 100
-      setPos(k, { ...saved, ...(d.axis === 'u' ? { s: v } : d.axis === 'x' ? { sx: v } : { sy: v }) })
+      if (d.axis === 'w') setPos(k, { ...saved, w: Math.round(live.w ?? 240) })
+      else {
+        const v = Math.round(((d.axis === 'u' ? live.s : d.axis === 'x' ? live.sx : live.sy) ?? 1) * 100) / 100
+        setPos(k, { ...saved, ...(d.axis === 'u' ? { s: v } : d.axis === 'x' ? { sx: v } : { sy: v }) })
+      }
     }
     setLive(null)
   }
@@ -285,6 +307,7 @@ function Movable({ k, children, className, style, corner = 'tl', deletable = tru
       className={cn('relative', editable && 'group/mv', isSel && 'outline outline-2 outline-sky-500/80', className)}
       style={{
         ...style, ...bsCss,
+        ...(cur.w ? { width: cur.w, maxWidth: 'none' } : {}),
         transform: `translate(${cur.x}px, ${cur.y}px) scale(${scX}, ${scY})`,
         transformOrigin: 'top left',
         zIndex: 10 + (deck.z?.[k] ?? 0),
@@ -316,16 +339,27 @@ function Movable({ k, children, className, style, corner = 'tl', deletable = tru
       )}
       {editable && (
         <>
-          {/* ⤡ uniforme (coin) · ↔ horizontal (droite) · ↕ vertical (bas) */}
-          <span title="Redimensionner (uniforme)"
+          {/* ⤡ coin = échelle proportionnelle (jamais de distorsion du texte) */}
+          <span title="Redimensionner (proportionnel)"
             onPointerDown={startSize('u')} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
             className={cn('absolute -bottom-2.5 -right-2.5 z-30 h-5 w-5 cursor-nwse-resize touch-none rounded-md border-2 border-white bg-sky-500 shadow', isSel ? 'block' : 'hidden group-hover/mv:block')} />
-          <span title="Étirer horizontalement"
-            onPointerDown={startSize('x')} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
-            className={cn('absolute -right-2.5 top-1/2 z-30 h-5 w-3.5 -translate-y-1/2 cursor-ew-resize touch-none rounded-md border-2 border-white bg-emerald-500 shadow', isSel ? 'block' : 'hidden group-hover/mv:block')} />
-          <span title="Étirer verticalement"
-            onPointerDown={startSize('y')} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
-            className={cn('absolute -bottom-2.5 left-1/2 z-30 h-3.5 w-5 -translate-x-1/2 cursor-ns-resize touch-none rounded-md border-2 border-white bg-emerald-500 shadow', isSel ? 'block' : 'hidden group-hover/mv:block')} />
+          {stretch ? (
+            <>
+              {/* Formes / images : étirement réel autorisé */}
+              <span title="Étirer horizontalement"
+                onPointerDown={startSize('x')} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
+                className={cn('absolute -right-2.5 top-1/2 z-30 h-5 w-3.5 -translate-y-1/2 cursor-ew-resize touch-none rounded-md border-2 border-white bg-emerald-500 shadow', isSel ? 'block' : 'hidden group-hover/mv:block')} />
+              <span title="Étirer verticalement"
+                onPointerDown={startSize('y')} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
+                className={cn('absolute -bottom-2.5 left-1/2 z-30 h-3.5 w-5 -translate-x-1/2 cursor-ns-resize touch-none rounded-md border-2 border-white bg-emerald-500 shadow', isSel ? 'block' : 'hidden group-hover/mv:block')} />
+            </>
+          ) : (
+            /* Texte / cartes : la poignée latérale change la LARGEUR (le contenu
+               se réorganise — hauteur automatique, aucun étirement). */
+            <span title="Changer la largeur (le texte se réorganise)"
+              onPointerDown={startSize('w')} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
+              className={cn('absolute -right-2.5 top-1/2 z-30 h-5 w-3.5 -translate-y-1/2 cursor-ew-resize touch-none rounded-md border-2 border-white bg-emerald-500 shadow', isSel ? 'block' : 'hidden group-hover/mv:block')} />
+          )}
         </>
       )}
       {children}
@@ -371,7 +405,8 @@ function CustomBlocksLayer({ slideKey }: { slideKey: string }) {
         const isShape = !['heading', 'text', 'pill', 'image'].includes(b.kind)
         const selCls = selectedKey === `cb.${b.id}.mv` ? 'flex' : 'hidden group-hover/mv:flex'
         return (
-          <Movable key={b.id} k={`cb.${b.id}.mv`} className="absolute z-20" style={cbBase(i)} deletable={false}>
+          <Movable key={b.id} k={`cb.${b.id}.mv`} className="absolute z-20" style={cbBase(i)} deletable={false}
+            stretch={isShape || b.kind === 'image'}>
             {editable && (
               <span className={cn('absolute -right-3.5 -top-3.5 z-30 items-center gap-1', selCls)}>
                 <button type="button" title="Dupliquer ce bloc" onClick={() => duplicateCustom(slideKey, b.id)}
@@ -628,7 +663,7 @@ export default function PresentationStudioPage() {
       <div className="flex items-center justify-between" style={{ height: 84, background: T.band, padding: '0 48px' }}>
         <Movable k="band.logo.mv"><DotsLogo dark={dark} /></Movable>
         <Movable k="band.name.mv" corner="tr">
-          <span style={{ fontSize: 22, fontWeight: 800, color: T.accent }}>{name}</span>
+          <Ed k="band.name" def={name} style={{ fontSize: 22, fontWeight: 800, color: T.accent }} />
         </Movable>
       </div>
     )
@@ -685,9 +720,9 @@ export default function PresentationStudioPage() {
         </Movable>
         {(p.startDate || p.location) && (
           <Movable k="cover.dates.mv" className="absolute" style={{ left: 64, top: 505 }}>
-            <div style={{ fontSize: 15, color: T.muted }}>
-              {p.startDate && <>{fmtD(p.startDate)} → {fmtD(p.endDate)}</>}{p.location && <>&nbsp;&nbsp;·&nbsp;&nbsp;{p.location}</>}
-            </div>
+            <Ed k="cover.dates"
+              def={[p.startDate ? `${fmtD(p.startDate)} → ${fmtD(p.endDate)}` : '', p.location ?? ''].filter(Boolean).join('   ·   ')}
+              block style={{ fontSize: 15, color: T.muted }} />
           </Movable>
         )}
         <Movable k="cover.socials.mv" className="absolute" style={{ left: 64, top: 610 }}>
@@ -695,7 +730,7 @@ export default function PresentationStudioPage() {
             <Facebook style={{ width: 16, height: 16, color: T.fg }} />
             <Instagram style={{ width: 16, height: 16, color: T.fg }} />
             <Linkedin style={{ width: 16, height: 16, color: T.fg }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: T.fg }}>MEDIANET Incubator</span>
+            <Ed k="cover.socials" def="MEDIANET Incubator" style={{ fontSize: 14, fontWeight: 600, color: T.fg }} />
           </div>
         </Movable>
       </Page>
@@ -729,7 +764,7 @@ export default function PresentationStudioPage() {
                 <Movable key={s} k={`secteurs.${i}.mv`} corner="tr">
                   <div className="flex items-center rounded-2xl" style={{ gap: 12, background: T.card, padding: '20px 30px' }}>
                     <span className="rounded-full" style={{ width: 14, height: 14, background: DOTS[i % DOTS.length] }} />
-                    <span style={{ fontSize: 22, fontWeight: 700, color: T.fg }}>{s}</span>
+                    <Ed k={`secteurs.${i}`} def={s} style={{ fontSize: 22, fontWeight: 700, color: T.fg }} />
                   </div>
                 </Movable>
               ))}
@@ -752,8 +787,8 @@ export default function PresentationStudioPage() {
                   <div className="flex items-center rounded-2xl" style={{ gap: 20, background: T.card, padding: '14px 26px' }}>
                     <span className="flex items-center justify-center rounded-full font-extrabold"
                       style={{ width: 40, height: 40, background: s.color || T.accent, color: '#fff', fontSize: 17 }}>{i + 1}</span>
-                    <span className="min-w-0 flex-1 truncate" style={{ fontSize: 21, fontWeight: 700, color: T.fg }}>{s.title}</span>
-                    <span style={{ fontSize: 15, color: T.muted }}>{fmtD(s.startDate)}</span>
+                    <Ed k={`parcours.${i}.t`} def={s.title} className="min-w-0 flex-1" style={{ fontSize: 21, fontWeight: 700, color: T.fg }} />
+                    <Ed k={`parcours.${i}.d`} def={fmtD(s.startDate)} style={{ fontSize: 15, color: T.muted }} />
                   </div>
                 </Movable>
               ))}
@@ -774,8 +809,8 @@ export default function PresentationStudioPage() {
               {stats.map((s, i) => (
                 <Movable key={s.l} k={`chiffres.${i}.mv`} corner="tr">
                   <div className="rounded-3xl text-center" style={{ background: T.card, padding: '30px 20px' }}>
-                    <div className="font-extrabold" style={{ fontSize: 66, lineHeight: 1, color: T.accent }}>{s.n}</div>
-                    <div className="font-bold uppercase" style={{ fontSize: 15, letterSpacing: 2, marginTop: 10, color: T.fg }}>{s.l}</div>
+                    <Ed k={`chiffres.${i}.n`} def={String(s.n)} block className="font-extrabold" style={{ fontSize: 66, lineHeight: 1, color: T.accent }} />
+                    <Ed k={`chiffres.${i}.l`} def={s.l} block className="font-bold uppercase" style={{ fontSize: 15, letterSpacing: 2, marginTop: 10, color: T.fg }} />
                   </div>
                 </Movable>
               ))}
@@ -829,7 +864,7 @@ export default function PresentationStudioPage() {
                       ? /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={pt.logoUrl} alt={pt.name} style={{ maxHeight: 56, maxWidth: '100%', objectFit: 'contain' }} />
                       : <Building2 style={{ width: 30, height: 30, color: '#94a3b8' }} />}
-                    <span className="truncate" style={{ fontSize: 12, fontWeight: 700, color: '#334155', maxWidth: '100%' }}>{pt.name}</span>
+                    <Ed k={`partenaires.${i}.n`} def={pt.name} className="truncate" style={{ fontSize: 12, fontWeight: 700, color: '#334155', maxWidth: '100%' }} />
                   </div>
                 </Movable>
               ))}
@@ -885,8 +920,8 @@ export default function PresentationStudioPage() {
                         </span>
                       )}
                       <div className="min-w-0">
-                        <p className="truncate" style={{ fontSize: 18, fontWeight: 700, color: T.fg }}>{c.name}</p>
-                        <p className="truncate" style={{ fontSize: 13, fontWeight: 600, color: T.accent }}>{c.role}</p>
+                        <Ed k={`${g.key}.${i}.n`} def={c.name} block className="truncate" style={{ fontSize: 18, fontWeight: 700, color: T.fg }} />
+                        <Ed k={`${g.key}.${i}.r`} def={c.role} block className="truncate" style={{ fontSize: 13, fontWeight: 600, color: T.accent }} />
                       </div>
                     </div>
                   </Movable>
@@ -898,9 +933,12 @@ export default function PresentationStudioPage() {
       ) })
     }
 
-    // Extra blank slides (added by the user / the wizard)
+    // Extra slides: blank pages, or MIRRORS of an existing slide's layout
+    // (duplication — même mise en page, blocs ajoutés indépendants).
+    const builtByKey = new Map(out.map((s) => [s.key, s]))
     for (const xs of deck.extraSlides ?? []) {
-      out.push({ key: `xtra-${xs.id}`, label: xs.label || 'Diapositive', el: (
+      const src = xs.base ? builtByKey.get(xs.base) : undefined
+      out.push({ key: `xtra-${xs.id}`, label: xs.label || 'Diapositive', el: src ? src.el : (
         <Page k={`xtra-${xs.id}`}>
           <Movable k={`xtra-${xs.id}.logo.mv`} className="absolute" style={{ left: 64, top: 48 }}><DotsLogo dark={dark} /></Movable>
         </Page>
@@ -935,19 +973,22 @@ export default function PresentationStudioPage() {
       out.sort((a, b) => idx(a.key) - idx(b.key))
     }
 
-    // Custom blocks above each slide + numéro de page (déplaçable, masquable).
+    // Custom blocks above each slide + numéro de page (déplaçable, masquable,
+    // départ configurable : « dès la diapo X, commencer à Y »).
     const visible = out.filter((s) => !deck.hidden.includes(s.key))
+    const pcfg = deck.pageStart ?? { from: 2, num: 1 }
     return out.map((s) => {
       const visIdx = visible.findIndex((v) => v.key === s.key)
+      const pageNo = visIdx + 1
       return {
         ...s,
         el: (
           <>
             {s.el}
             <CustomBlocksLayer slideKey={s.key} />
-            {visIdx > 0 && (
+            {visIdx >= 0 && pageNo >= pcfg.from && (
               <Movable k="pagenum.mv" corner="tr" className="absolute" style={{ right: 28, bottom: 16 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: T.muted }}>{visIdx + 1}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: T.muted }}>{pageNo - pcfg.from + pcfg.num}</span>
               </Movable>
             )}
           </>
@@ -977,9 +1018,12 @@ export default function PresentationStudioPage() {
     const custom = { ...deck.custom }; delete custom[key]
     saveDeck({ ...deck, extraSlides: (deck.extraSlides ?? []).filter((x) => x.id !== xid), custom })
   }
-  /** Duplicate = new blank slide carrying a copy of the source's ADDED blocks. */
+  /** Duplicate: MIRROR of the source layout (same content) + independent copies
+   *  of its added blocks. A blank extra slide duplicates as another blank. */
   const duplicateSlide = (srcKey: string, label: string) => {
-    const xs = { id: rid(), label: `${label} (copie)` }
+    const srcExtra = srcKey.startsWith('xtra-') ? deck.extraSlides.find((x) => `xtra-${x.id}` === srcKey) : undefined
+    const base = srcExtra ? srcExtra.base : srcKey
+    const xs: ExtraSlide = { id: rid(), label: `${label} (copie)`, ...(base ? { base } : {}) }
     const dstKey = `xtra-${xs.id}`
     const overrides = { ...deck.overrides }; const pos = { ...deck.pos }; const styles = { ...deck.styles }
     const copies = (deck.custom[srcKey] ?? []).map((b) => {
@@ -995,7 +1039,7 @@ export default function PresentationStudioPage() {
       custom: { ...deck.custom, [dstKey]: copies },
       bg: deck.bg?.[srcKey] ? { ...deck.bg, [dstKey]: deck.bg[srcKey] } : deck.bg,
     })
-    toast.success('Diapositive dupliquée (blocs ajoutés) — en fin de présentation')
+    toast.success('Diapositive dupliquée — en fin de présentation (réordonnez avec ↑ ↓)')
   }
   /** Déplacer une diapositive vers le haut / le bas (ordre libre, comme Canva). */
   const moveSlide = (key: string, dir: -1 | 1) => {
@@ -1151,7 +1195,7 @@ export default function PresentationStudioPage() {
       const band = (s: any) => {
         s.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.66, fill: { color: T.band.replace('#', '') }, line: { type: 'none' } })
         if (!hid('band.logo.mv')) dots(s, 0.35, 0.2)
-        if (!hid('band.name.mv')) s.addText(name, { x: W - 3.6, y: 0.12, w: 3.3, h: 0.42, align: 'right', fontSize: 14, bold: true, color: T.pptxAccent })
+        if (!hid('band.name.mv')) s.addText(t('band.name', name), sty('band.name', { x: W - 3.6, y: 0.12, w: 3.3, h: 0.42, align: 'right', fontSize: 14, bold: true, color: T.pptxAccent }))
       }
       const title = (s: any, txt: string, k = '', y = 0.95) =>
         s.addText(txt, sty(k, { x: 0.6, y, w: 8.8, h: 0.6, fontSize: 26, bold: true, color: T.pptxAccent }))
@@ -1164,8 +1208,14 @@ export default function PresentationStudioPage() {
       let slideNo = 0
       for (const sl of slides) {
         const s = pres.addSlide()
-        s.background = { color: (deck.bg?.[sl.key] ?? T.page).replace('#', '') }
-        if (sl.key === 'cover') {
+        // Mirror slides (duplication) render their SOURCE layout; their own
+        // added blocks stay keyed on the mirror itself.
+        const xsrc = sl.key.startsWith('xtra-')
+          ? (deck.extraSlides ?? []).find((x) => `xtra-${x.id}` === sl.key)?.base
+          : undefined
+        const lk = xsrc ?? sl.key
+        s.background = { color: (deck.bg?.[lk] ?? T.page).replace('#', '') }
+        if (lk === 'cover') {
           if (!hid('cover.logo.mv')) dots(s, 0.4, 0.35, 0.13)
           if (!hid('cover.title.mv')) {
             const o = off('cover.title.mv')
@@ -1178,7 +1228,7 @@ export default function PresentationStudioPage() {
           if ((p.startDate || p.location) && !hid('cover.dates.mv')) {
             const dOff = off('cover.dates.mv')
             const dateTxt = [p.startDate ? `${fmtD(p.startDate)} → ${fmtD(p.endDate)}` : '', p.location ?? ''].filter(Boolean).join('   ·   ')
-            s.addText(dateTxt, { x: 0.5 + dOff.dx, y: 3.95 + dOff.dy, w: 6, h: 0.4, fontSize: 12, color: T.pptxMuted })
+            s.addText(t('cover.dates', dateTxt), sty('cover.dates', { x: 0.5 + dOff.dx, y: 3.95 + dOff.dy, w: 6, h: 0.4, fontSize: 12, color: T.pptxMuted }))
           }
           if (!hid('cover.pill.mv')) {
             const po = off('cover.pill.mv')
@@ -1188,14 +1238,14 @@ export default function PresentationStudioPage() {
           }
           const img = p.bannerImageUrl || p.logoUrl
           if (img && !hid('cover.visual.mv')) { const data = await fetchData(img); if (data) s.addImage({ data, x: 6.6, y: 0, w: 3.4, h: H }) }
-        } else if (sl.key === 'programme') {
+        } else if (lk === 'programme') {
           band(s); title(s, `Programme ${t('programme.title', name)}`, 'programme.title')
           if (!hid('programme.body.mv')) {
             const o = off('programme.body.mv')
             s.addShape(pres.ShapeType.roundRect, { x: 0.6 + o.dx, y: 1.7 + o.dy, w: 8.8, h: 3.3, rectRadius: 0.19, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
             s.addText(t('programme.body', p.description ?? ''), sty('programme.body', { x: 0.9 + o.dx, y: 1.9 + o.dy, w: 8.2, h: 2.9, align: 'center', fontSize: 15, color: T.pptxFg, valign: 'middle' }))
           }
-        } else if (sl.key === 'secteurs') {
+        } else if (lk === 'secteurs') {
           band(s); title(s, t('secteurs.title', 'Secteurs'), 'secteurs.title')
           if (!hid('secteurs.grid.mv')) p.sectors.slice(0, 8).forEach((sec: string, i: number) => {
             if (hid(`secteurs.${i}.mv`)) return
@@ -1203,16 +1253,17 @@ export default function PresentationStudioPage() {
             const o = off(`secteurs.${i}.mv`)
             const x = 0.6 + col * 2.3 + o.dx, y = 1.9 + row * 1.0 + o.dy
             s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.1, h: 0.8, rectRadius: 0.125, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
-            s.addText(sec, { x, y, w: 2.1, h: 0.8, align: 'center', valign: 'middle', fontSize: 13, bold: true, color: T.pptxFg })
+            s.addText(t(`secteurs.${i}`, sec), sty(`secteurs.${i}`, { x, y, w: 2.1, h: 0.8, align: 'center', valign: 'middle', fontSize: 13, bold: true, color: T.pptxFg }))
           })
-        } else if (sl.key === 'parcours') {
+        } else if (lk === 'parcours') {
           band(s); title(s, t('parcours.title', 'Le parcours'), 'parcours.title')
           if (!hid('parcours.list.mv')) ordered.forEach((ses, i) => {
             if (hid(`parcours.${i}.mv`)) return
             const o = off(`parcours.${i}.mv`)
-            s.addText(`${i + 1}.  ${ses.title}   —   ${fmtD(ses.startDate)}`, { x: 0.7 + o.dx, y: 1.75 + i * 0.5 + o.dy, w: 8.6, h: 0.45, fontSize: 14, color: T.pptxFg })
+            s.addText(`${i + 1}.  ${t(`parcours.${i}.t`, ses.title)}   —   ${t(`parcours.${i}.d`, fmtD(ses.startDate))}`,
+              sty(`parcours.${i}.t`, { x: 0.7 + o.dx, y: 1.75 + i * 0.5 + o.dy, w: 8.6, h: 0.45, fontSize: 14, color: T.pptxFg }))
           })
-        } else if (sl.key === 'chiffres') {
+        } else if (lk === 'chiffres') {
           band(s); title(s, t('chiffres.title', 'Chiffres clés'), 'chiffres.title')
           if (!hid('chiffres.grid.mv')) stats.slice(0, 4).forEach((st2, i) => {
             if (hid(`chiffres.${i}.mv`)) return
@@ -1220,22 +1271,22 @@ export default function PresentationStudioPage() {
             const o = off(`chiffres.${i}.mv`)
             const x = 0.7 + col * 4.5 + o.dx, y = 1.75 + row * 1.75 + o.dy
             s.addShape(pres.ShapeType.roundRect, { x, y, w: 4.1, h: 1.55, rectRadius: 0.19, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
-            s.addText(String(st2.n), { x, y: y + 0.1, w: 4.1, h: 0.85, align: 'center', fontSize: 40, bold: true, color: T.pptxAccent })
-            s.addText(st2.l.toUpperCase(), { x, y: y + 0.97, w: 4.1, h: 0.4, align: 'center', fontSize: 10, bold: true, color: T.pptxFg })
+            s.addText(t(`chiffres.${i}.n`, String(st2.n)), sty(`chiffres.${i}.n`, { x, y: y + 0.1, w: 4.1, h: 0.85, align: 'center', fontSize: 40, bold: true, color: T.pptxAccent }))
+            s.addText(t(`chiffres.${i}.l`, st2.l).toUpperCase(), sty(`chiffres.${i}.l`, { x, y: y + 0.97, w: 4.1, h: 0.4, align: 'center', fontSize: 10, bold: true, color: T.pptxFg }))
           })
-        } else if (sl.key === 'objectifs' || sl.key === 'benefices') {
-          const isObj = sl.key === 'objectifs'
-          const bullet = deck.overrides[`${sl.key}.bullets`] !== 'off' ? '●  ' : ''
-          band(s); title(s, t(`${sl.key}.title`, isObj ? 'Objectifs' : 'Ce que gagnent les participants'), `${sl.key}.title`)
-          if (!hid(`${sl.key}.list.mv`)) {
-            const items = (isObj ? p.objectives : p.benefits).slice(0, 6).map((x: string, i: number) => t(`${sl.key}.${i}`, x))
+        } else if (lk === 'objectifs' || lk === 'benefices') {
+          const isObj = lk === 'objectifs'
+          const bullet = deck.overrides[`${lk}.bullets`] !== 'off' ? '●  ' : ''
+          band(s); title(s, t(`${lk}.title`, isObj ? 'Objectifs' : 'Ce que gagnent les participants'), `${lk}.title`)
+          if (!hid(`${lk}.list.mv`)) {
+            const items = (isObj ? p.objectives : p.benefits).slice(0, 6).map((x: string, i: number) => t(`${lk}.${i}`, x))
             items.forEach((x: string, i: number) => {
-              if (hid(`${sl.key}.${i}.mv`)) return
-              const o = off(`${sl.key}.${i}.mv`)
-              s.addText(`${bullet}${x}`, sty(`${sl.key}.${i}`, { x: 0.7 + o.dx, y: 1.8 + i * 0.55 + o.dy, w: 8.6, h: 0.5, fontSize: 16, color: T.pptxFg }))
+              if (hid(`${lk}.${i}.mv`)) return
+              const o = off(`${lk}.${i}.mv`)
+              s.addText(`${bullet}${x}`, sty(`${lk}.${i}`, { x: 0.7 + o.dx, y: 1.8 + i * 0.55 + o.dy, w: 8.6, h: 0.5, fontSize: 16, color: T.pptxFg }))
             })
           }
-        } else if (sl.key === 'partenaires') {
+        } else if (lk === 'partenaires') {
           band(s); title(s, t('partenaires.title', 'Partenaires'), 'partenaires.title')
           const list = p.partners.slice(0, 8)
           if (!hid('partenaires.grid.mv')) for (let i = 0; i < list.length; i++) {
@@ -1246,9 +1297,9 @@ export default function PresentationStudioPage() {
             s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.1, h: 1.4, rectRadius: 0.1, fill: { color: 'FFFFFF' }, line: { color: 'E2E8F0', width: 0.75 } })
             const data = list[i].logoUrl ? await fetchData(list[i].logoUrl) : null
             if (data) s.addImage({ data, x: x + 0.4, y: y + 0.15, w: 1.3, h: 0.75 })
-            s.addText(list[i].name, { x, y: y + 0.95, w: 2.1, h: 0.35, align: 'center', fontSize: 9, bold: true, color: '334155' })
+            s.addText(t(`partenaires.${i}.n`, list[i].name), sty(`partenaires.${i}.n`, { x, y: y + 0.95, w: 2.1, h: 0.35, align: 'center', fontSize: 9, bold: true, color: '334155' }))
           }
-        } else if (sl.key === 'images') {
+        } else if (lk === 'images') {
           band(s); title(s, t('images.title', 'Retour en images'), 'images.title')
           const urls: string[] = galleryPool.slice(0, 6)
           if (!hid('images.grid.mv')) for (let i = 0; i < urls.length; i++) {
@@ -1258,16 +1309,16 @@ export default function PresentationStudioPage() {
             const o = off(`images.${i}.mv`)
             s.addImage({ data, x: 0.6 + col * 3.05 + o.dx, y: 1.75 + row * 1.85 + o.dy, w: 2.85, h: 1.7 })
           }
-        } else if (sl.key.startsWith('contributeurs')) {
-          const g = contribGroups.find((x) => x.key === sl.key)
-          band(s); title(s, t(`${sl.key}.title`, g?.team ? `Équipe ${g.team}` : 'Ils font le programme'), `${sl.key}.title`)
-          if (g && !hid(`${sl.key}.grid.mv`)) {
+        } else if (lk.startsWith('contributeurs')) {
+          const g = contribGroups.find((x) => x.key === lk)
+          band(s); title(s, t(`${lk}.title`, g?.team ? `Équipe ${g.team}` : 'Ils font le programme'), `${lk}.title`)
+          if (g && !hid(`${lk}.grid.mv`)) {
             const list = g.list.slice(0, 9)
             for (let i = 0; i < list.length; i++) {
-              if (hid(`${sl.key}.${i}.mv`)) continue
+              if (hid(`${lk}.${i}.mv`)) continue
               const c = list[i]
               const col = i % 3, row = Math.floor(i / 3)
-              const o = off(`${sl.key}.${i}.mv`)
+              const o = off(`${lk}.${i}.mv`)
               const x = 0.55 + col * 3.1 + o.dx, y = 1.75 + row * 1.15 + o.dy
               s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.9, h: 0.95, rectRadius: 0.125, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
               let tx = x + 0.15
@@ -1275,16 +1326,16 @@ export default function PresentationStudioPage() {
                 const data = await fetchData(c.photoUrl)
                 if (data) { s.addImage({ data, x: x + 0.12, y: y + 0.14, w: 0.66, h: 0.66, rounding: true }); tx = x + 0.9 }
               }
-              s.addText(c.name, { x: tx, y: y + 0.1, w: 2.9 - (tx - x) - 0.1, h: 0.4, fontSize: 13, bold: true, color: T.pptxFg })
-              s.addText(c.role, { x: tx, y: y + 0.5, w: 2.9 - (tx - x) - 0.1, h: 0.35, fontSize: 11, bold: true, color: T.pptxAccent })
+              s.addText(t(`${lk}.${i}.n`, c.name), sty(`${lk}.${i}.n`, { x: tx, y: y + 0.1, w: 2.9 - (tx - x) - 0.1, h: 0.4, fontSize: 13, bold: true, color: T.pptxFg }))
+              s.addText(t(`${lk}.${i}.r`, c.role), sty(`${lk}.${i}.r`, { x: tx, y: y + 0.5, w: 2.9 - (tx - x) - 0.1, h: 0.35, fontSize: 11, bold: true, color: T.pptxAccent }))
             }
           }
-        } else if (sl.key === 'merci') {
+        } else if (lk === 'merci') {
           if (!hid('merci.logo.mv')) dots(s, 0.4, 0.35, 0.13)
           if (!hid('merci.title.mv')) s.addText(t('merci.title', 'Merci !'), sty('merci.title', { x: 0.5, y: 1.9, w: 9, h: 1.2, align: 'center', fontSize: 54, bold: true, color: T.pptxAccent }))
           if (!hid('merci.sub.mv')) s.addText(t('merci.sub', `${name} — un programme Medianet Incubator`), sty('merci.sub', { x: 1, y: 3.2, w: 8, h: 0.6, align: 'center', fontSize: 16, color: T.pptxMuted }))
-        } else if (sl.key.startsWith('xtra-')) {
-          if (!hid(`${sl.key}.logo.mv`)) dots(s, 0.4, 0.35, 0.13)
+        } else if (lk.startsWith('xtra-')) {
+          if (!hid(`${lk}.logo.mv`)) dots(s, 0.4, 0.35, 0.13)
         }
 
         // Custom blocks added on this slide (same base spots as on screen).
@@ -1326,11 +1377,13 @@ export default function PresentationStudioPage() {
           }
         }
 
-        // Automatic page number (skip the cover; movable/hideable like on screen).
+        // Numéro de page — départ configurable, déplaçable, masquable.
         slideNo += 1
-        if (slideNo > 1 && !hid('pagenum.mv')) {
+        const pcfg = deck.pageStart ?? { from: 2, num: 1 }
+        if (slideNo >= pcfg.from && !hid('pagenum.mv')) {
           const po2 = off('pagenum.mv')
-          s.addText(String(slideNo), { x: W - 0.7 + po2.dx, y: H - 0.42 + po2.dy, w: 0.5, h: 0.3, align: 'right', fontSize: 10, color: T.pptxMuted })
+          s.addText(String(slideNo - pcfg.from + pcfg.num),
+            { x: W - 0.7 + po2.dx, y: H - 0.42 + po2.dy, w: 0.5, h: 0.3, align: 'right', fontSize: 10, color: T.pptxMuted })
         }
       }
 
@@ -1455,6 +1508,22 @@ export default function PresentationStudioPage() {
                 )}
               </div>
             )}
+            {/* Numérotation des pages : diapo de départ + numéro initial */}
+            <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/30 p-1" title="Numérotation : à partir de quelle diapo, et avec quel numéro">
+              <span className="ml-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">N°</span>
+              <label className="flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground">
+                dès diapo
+                <input type="number" min={1} max={40} value={(deck.pageStart ?? { from: 2, num: 1 }).from}
+                  onChange={(e) => saveDeck({ ...deck, pageStart: { ...(deck.pageStart ?? { from: 2, num: 1 }), from: Math.max(1, Number(e.target.value) || 1) } })}
+                  className="h-6 w-12 rounded-md border border-border bg-background px-1 text-xs text-foreground" />
+              </label>
+              <label className="flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground">
+                départ
+                <input type="number" min={0} max={99} value={(deck.pageStart ?? { from: 2, num: 1 }).num}
+                  onChange={(e) => saveDeck({ ...deck, pageStart: { ...(deck.pageStart ?? { from: 2, num: 1 }), num: Number(e.target.value) || 0 } })}
+                  className="h-6 w-12 rounded-md border border-border bg-background px-1 text-xs text-foreground" />
+              </label>
+            </div>
             {/* Puces on/off pour les listes */}
             {(curKey === 'objectifs' || curKey === 'benefices') && (
               <button onClick={() => saveDeck({ ...deck, overrides: { ...deck.overrides, [`${curKey}.bullets`]: deck.overrides[`${curKey}.bullets`] === 'off' ? 'on' : 'off' } })}
@@ -1639,13 +1708,15 @@ export default function PresentationStudioPage() {
             {/* Canvas — cliquer dans le vide désélectionne */}
             <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 overflow-y-auto bg-muted/40 p-6"
               onClick={() => setSelectedKey(null)}>
-              <div className="w-full max-w-5xl overflow-hidden rounded-xl border border-border shadow-2xl">
+              {/* Pas de coins arrondis ici : ils masquaient les angles de la diapo
+                  et ne correspondaient pas au rendu en présentation. */}
+              <div className="w-full max-w-5xl overflow-hidden border border-border shadow-2xl">
                 {slides[safeCur] && <SlideCanvas>{slides[safeCur].el}</SlideCanvas>}
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Pencil className="h-3.5 w-3.5" />Cliquez un texte pour l&apos;éditer
+                <Pencil className="h-3.5 w-3.5" />Tout texte est cliquable et éditable
                 <span className="text-border">|</span>
-                <Move className="h-3.5 w-3.5" />⠿ déplacer · carré bleu redimensionner · 👁 supprimer
+                <Move className="h-3.5 w-3.5" />⠿ déplacer · bleu = échelle · vert = largeur · 👁 supprimer
               </div>
               <div className="flex items-center gap-1.5">
                 <Button variant="outline" size="sm" onClick={prev} disabled={safeCur === 0}><ArrowLeft className="h-4 w-4" /></Button>
