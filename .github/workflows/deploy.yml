@@ -90,4 +90,6 @@ jobs:
             docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 240 rabbitmq minio eureka-server && \
             echo '==> phase 2: application services' && \
             docker compose -f docker-compose.prod.yml up -d --remove-orphans && \
-            docker image prune -f"
+            docker image prune -f && \
+            echo '==> purge reverse-proxy cache (stale HTML would reference dead chunk hashes)' && \
+            { rm -rf /www/server/nginx/proxy_cache_dir/* 2>/dev/null; nginx -s reload 2>/dev/null; true; }"
