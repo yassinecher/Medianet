@@ -7,7 +7,7 @@ import {
   LayoutDashboard, FolderKanban, FileText, CheckSquare,
   Bell, Users, Settings, LogOut, Moon, Sun,
   ChevronRight, Menu, X, Shield, Home, Sparkles, Building2, Tags, KeyRound, BarChart3, Trash2,
-  Handshake,
+  Handshake, BookOpen,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuthStore, useUser } from '@/store/auth.store'
@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn, getInitials } from '@/lib/utils'
 
-const navItems = [
+const navItems: { label: string; href: string; icon: any; module?: string; highlight?: boolean }[] = [
   { label: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
   { label: 'Assistant IA', href: '/ai-assistant', icon: Sparkles, highlight: true, module: 'ai' },
   { label: 'Programmes', href: '/programmes', icon: FolderKanban, module: 'programmes' },
@@ -34,7 +34,9 @@ const navItems = [
   { label: 'Référentiels', href: '/catalogs', icon: Tags, module: 'settings' },
   { label: 'Corbeille', href: '/trash', icon: Trash2, module: 'programmes' },
   { label: 'Paramètres', href: '/settings', icon: Settings, module: 'settings' },
-] as const
+  // No `module` → always visible: the guide is help content everyone may read.
+  { label: 'Guide & aide', href: '/documentation', icon: BookOpen },
+]
 
 const ROLE_LABEL: Record<string, string> = {
   ADMIN: 'Administrateur', PORTEUR: 'Porteur', MENTOR: 'Mentor', JURY: 'Juré', CANDIDAT: 'Candidat',

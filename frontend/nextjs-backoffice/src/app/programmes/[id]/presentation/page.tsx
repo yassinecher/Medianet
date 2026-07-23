@@ -161,10 +161,15 @@ function SlideCanvas({ children, fixedScale }: { children: React.ReactNode; fixe
   useLayoutEffect(() => {
     if (fixedScale) return
     const el = ref.current; if (!el) return
-    const upd = () => setScale(el.clientWidth / CW)
+    const upd = () => { const w = el.clientWidth; if (w > 0) setScale(w / CW) }
     upd()
     const ro = new ResizeObserver(upd); ro.observe(el)
-    return () => ro.disconnect()
+    // Browser zoom doesn't always resize the (max-width-capped) element, so also
+    // recompute on window resize + after layout/fonts settle → never needs a
+    // manual zoom to look right.
+    window.addEventListener('resize', upd)
+    const r = requestAnimationFrame(upd)
+    return () => { ro.disconnect(); window.removeEventListener('resize', upd); cancelAnimationFrame(r) }
   }, [fixedScale])
   return (
     <div ref={ref} className="relative w-full overflow-hidden" style={{ aspectRatio: '16 / 9' }}>
@@ -1708,9 +1713,11 @@ export default function PresentationStudioPage() {
             {/* Canvas — cliquer dans le vide désélectionne */}
             <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 overflow-y-auto bg-muted/40 p-6"
               onClick={() => setSelectedKey(null)}>
-              {/* Pas de coins arrondis ici : ils masquaient les angles de la diapo
-                  et ne correspondaient pas au rendu en présentation. */}
-              <div className="w-full max-w-5xl overflow-hidden border border-border shadow-2xl">
+              {/* Pas de coins arrondis (ils masquaient les angles) · la diapo
+                  remplit l'espace, bornée par la hauteur pour rester entière
+                  et nette à 100 % (plus besoin de dézoomer). */}
+              <div className="w-full overflow-hidden border border-border shadow-2xl"
+                style={{ maxWidth: 'min(100%, calc((100dvh - 15rem) * 16 / 9))' }}>
                 {slides[safeCur] && <SlideCanvas>{slides[safeCur].el}</SlideCanvas>}
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
