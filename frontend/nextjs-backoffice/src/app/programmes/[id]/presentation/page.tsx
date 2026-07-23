@@ -12,10 +12,11 @@ import {
   Bold, Italic, AlignCenter, AlignRight,
   Undo2, Redo2, Plus, Copy, Trash2, Users, Sparkles, Loader2,
   Square, Circle as CircleIcon, Minus, MoveRight, Star, Triangle, FilePlus2,
-  ChevronLeft, ChevronRight, Check,
+  ChevronLeft, ChevronRight, Check, ChevronUp, ChevronDown,
+  BringToFront, SendToBack, Camera,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { programmesApi, sessionsApi, canvaApi, adminAiApi, notificationsApi } from '@/lib/api'
+import { programmesApi, sessionsApi, canvaApi, adminAiApi, notificationsApi, filesApi } from '@/lib/api'
 import { ImageUpload } from '@/components/upload/ImageUpload'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -37,6 +38,7 @@ interface Session { id: number; title: string; startDate?: string; endDate?: str
 const DOTS = ['#00AEEF', '#8DC63F', '#FFCB05', '#ED1C24']
 const fmtD = (s?: string) => (s ? new Date(s.substring(0, 10) + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '')
 const rid = () => Math.random().toString(36).slice(2, 9)
+const slug = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')
 
 // ── Themes (all speak the Medianet deck language; Nuit is the dark variant) ──
 interface Theme {
@@ -96,11 +98,19 @@ const styleCss = (st?: TStyle): React.CSSProperties => !st ? {} : {
   ...(st.align ? { textAlign: st.align, display: 'block' } : {}),
 }
 
-interface Contributor { name: string; role: string }
+interface Contributor { name: string; role: string; photoUrl?: string; team?: string }
 interface ExtraSlide { id: string; label: string }
+/** Per-BLOCK decoration (bordure, fond, rayon) applied to the Movable wrapper. */
+interface BlockStyle {
+  borderColor?: string; borderWidth?: number
+  bg?: string; bgImage?: string
+  /** Corner radius in px — 0 = angles droits (comme Canva). */
+  radius?: number
+}
 interface Deck {
   theme: string; overrides: Record<string, string>; hidden: string[]
-  pos: Record<string, { x: number; y: number; s?: number }>
+  /** x/y offset · s = uniform scale · sx/sy = horizontal / vertical stretch. */
+  pos: Record<string, { x: number; y: number; s?: number; sx?: number; sy?: number }>
   custom: Record<string, CustomBlock[]>
   styles: Record<string, TStyle>
   /** Per-slide background override (base = thème). */
@@ -109,12 +119,19 @@ interface Deck {
   hiddenBlocks: string[]
   /** Blank slides added by the user. */
   extraSlides: ExtraSlide[]
-  /** People shown on the « Contributeurs » slide (name + role). */
+  /** People shown on the « Contributeurs » slides (name + role + photo + équipe). */
   contributors: Contributor[]
+  /** Z-order per block (avancer / reculer). */
+  z: Record<string, number>
+  /** Per-block decoration (bordure / fond / rayon). */
+  blockStyles: Record<string, BlockStyle>
+  /** Slide order chosen by the user (keys); missing keys keep natural order. */
+  order: string[]
 }
 const EMPTY_DECK: Deck = {
   theme: 'emeraude', overrides: {}, hidden: [], pos: {}, custom: {}, styles: {},
   bg: {}, hiddenBlocks: [], extraSlides: [], contributors: [],
+  z: {}, blockStyles: {}, order: [],
 }
 
 // ── Contexts ─────────────────────────────────────────────────────────────────
@@ -122,11 +139,15 @@ const ScaleCtx = createContext(1)
 const StudioCtx = createContext<{
   editable: boolean; deck: Deck; T: Theme
   setText: (k: string, v: string) => void
-  setPos: (k: string, p: { x: number; y: number; s?: number }) => void
+  setPos: (k: string, p: { x: number; y: number; s?: number; sx?: number; sy?: number }) => void
   hideBlock: (k: string) => void
   removeBlock: (slideKey: string, id: string) => void
+  duplicateCustom: (slideKey: string, id: string) => void
   setBlockColor: (slideKey: string, id: string, color: string) => void
   setActiveKey: (k: string | null) => void
+  selectedKey: string | null
+  setSelectedKey: (k: string | null) => void
+  bumpZ: (k: string, dir: 1 | -1) => void
 }>(null as any)
 
 // ── Fixed-size canvas, scaled to its container ───────────────────────────────
@@ -171,21 +192,25 @@ function Ed({ k, def, className, style, block }: {
   )
 }
 
-// ── Movable block — drag ⠿, resize ⤡, hide 👁 (saved per présentation) ───────
+// ── Movable block — click = select · ⠿ drag · ⤡ resize · ↔↕ stretch · 👁 hide ─
 function Movable({ k, children, className, style, corner = 'tl', deletable = true }: {
   k: string; children: React.ReactNode; className?: string; style?: React.CSSProperties
   corner?: 'tl' | 'tr'
   /** Show the hide (delete) button. Custom blocks bring their own real delete. */
   deletable?: boolean
 }) {
-  const { editable, deck, setPos, hideBlock } = useContext(StudioCtx)
+  const { editable, deck, setPos, hideBlock, selectedKey, setSelectedKey, bumpZ } = useContext(StudioCtx)
   const scale = useContext(ScaleCtx)
+  const rootRef = useRef<HTMLDivElement>(null)
   const saved = deck.pos[k] ?? { x: 0, y: 0 }
-  const [live, setLive] = useState<{ x: number; y: number; s?: number } | null>(null)
+  const [live, setLive] = useState<{ x: number; y: number; s?: number; sx?: number; sy?: number } | null>(null)
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
-  const sizeRef = useRef<{ sx: number; sy: number; os: number } | null>(null)
+  const sizeRef = useRef<{ sx: number; sy: number; os: number; axis: 'u' | 'x' | 'y' } | null>(null)
   const cur = live ?? saved
-  const sc = cur.s ?? 1
+  const scU = cur.s ?? 1
+  const scX = scU * (cur.sx ?? 1)
+  const scY = scU * (cur.sy ?? 1)
+  const isSel = editable && selectedKey === k
 
   if (deck.hiddenBlocks?.includes(k)) return null
 
@@ -196,40 +221,89 @@ function Movable({ k, children, className, style, corner = 'tl', deletable = tru
   }
   const onMove = (e: React.PointerEvent) => {
     const d = dragRef.current; if (!d) return
-    setLive({ x: d.ox + (e.clientX - d.sx) / scale, y: d.oy + (e.clientY - d.sy) / scale, s: saved.s })
+    let nx = d.ox + (e.clientX - d.sx) / scale
+    let ny = d.oy + (e.clientY - d.sy) / scale
+    // Auto-alignement : aimante le bloc au centre / aux marges (64px) du canvas.
+    const el = rootRef.current
+    const root = el?.closest('[data-slide-root]') as HTMLElement | null
+    if (el && root) {
+      const r = el.getBoundingClientRect(); const rr = root.getBoundingClientRect()
+      const left = (r.left - rr.left) / scale + (nx - cur.x)
+      const top  = (r.top - rr.top) / scale + (ny - cur.y)
+      const w = r.width / scale, h = r.height / scale
+      for (const target of [CW / 2 - w / 2, 64, CW - 64 - w]) {
+        if (Math.abs(left - target) < 8) { nx += target - left; break }
+      }
+      for (const target of [CH / 2 - h / 2, 64, CH - 64 - h]) {
+        if (Math.abs(top - target) < 8) { ny += target - top; break }
+      }
+    }
+    setLive({ ...saved, x: nx, y: ny })
   }
   const onUp = () => {
     const d = dragRef.current; dragRef.current = null
-    if (d && live) setPos(k, { x: Math.round(live.x), y: Math.round(live.y), s: saved.s })
+    if (d && live) setPos(k, { ...saved, x: Math.round(live.x), y: Math.round(live.y) })
     setLive(null)
   }
-  const onSizeDown = (e: React.PointerEvent) => {
+  const startSize = (axis: 'u' | 'x' | 'y') => (e: React.PointerEvent) => {
     e.preventDefault(); e.stopPropagation()
     ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
-    sizeRef.current = { sx: e.clientX, sy: e.clientY, os: saved.s ?? 1 }
+    const os = axis === 'u' ? (saved.s ?? 1) : axis === 'x' ? (saved.sx ?? 1) : (saved.sy ?? 1)
+    sizeRef.current = { sx: e.clientX, sy: e.clientY, os, axis }
   }
   const onSizeMove = (e: React.PointerEvent) => {
     const d = sizeRef.current; if (!d) return
-    const delta = ((e.clientX - d.sx) + (e.clientY - d.sy)) / 2 / scale
-    const s = Math.min(3, Math.max(0.25, d.os + delta / 180))
-    setLive({ x: saved.x, y: saved.y, s })
+    const delta = d.axis === 'x' ? (e.clientX - d.sx) / scale
+      : d.axis === 'y' ? (e.clientY - d.sy) / scale
+      : ((e.clientX - d.sx) + (e.clientY - d.sy)) / 2 / scale
+    const v = Math.min(3, Math.max(0.25, d.os + delta / 180))
+    setLive({ ...saved, ...(d.axis === 'u' ? { s: v } : d.axis === 'x' ? { sx: v } : { sy: v }) })
   }
   const onSizeUp = () => {
     const d = sizeRef.current; sizeRef.current = null
-    if (d && live?.s) setPos(k, { x: saved.x, y: saved.y, s: Math.round(live.s * 100) / 100 })
+    if (d && live) {
+      const v = Math.round(((d.axis === 'u' ? live.s : d.axis === 'x' ? live.sx : live.sy) ?? 1) * 100) / 100
+      setPos(k, { ...saved, ...(d.axis === 'u' ? { s: v } : d.axis === 'x' ? { sx: v } : { sy: v }) })
+    }
     setLive(null)
   }
 
+  // Per-block decoration (bordure / fond / rayon).
+  const bs = deck.blockStyles?.[k]
+  const bsCss: React.CSSProperties = bs ? {
+    ...(bs.bg ? { background: bs.bg } : {}),
+    ...(bs.bgImage ? { backgroundImage: `url(${bs.bgImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}),
+    ...(bs.borderColor || bs.borderWidth ? { border: `${bs.borderWidth ?? 2}px solid ${bs.borderColor ?? '#111827'}` } : {}),
+    ...(bs.radius != null ? { borderRadius: bs.radius } : {}),
+    ...((bs.bg || bs.bgImage || bs.borderColor || bs.borderWidth) ? { padding: 10 } : {}),
+  } : {}
+
+  const handleCls = isSel ? 'flex' : 'hidden group-hover/mv:flex'
   return (
-    <div className={cn('relative', editable && 'group/mv', className)}
-      style={{ ...style, transform: `translate(${cur.x}px, ${cur.y}px) scale(${sc})`, transformOrigin: 'top left' }}>
+    <div ref={rootRef}
+      onClick={(e) => { if (editable) { e.stopPropagation(); setSelectedKey(k) } }}
+      className={cn('relative', editable && 'group/mv', isSel && 'outline outline-2 outline-sky-500/80', className)}
+      style={{
+        ...style, ...bsCss,
+        transform: `translate(${cur.x}px, ${cur.y}px) scale(${scX}, ${scY})`,
+        transformOrigin: 'top left',
+        zIndex: 10 + (deck.z?.[k] ?? 0),
+      }}>
       {editable && (
-        <div className={cn('absolute z-30 hidden items-center gap-1 group-hover/mv:flex',
+        <div className={cn('absolute z-30 items-center gap-1', handleCls,
           corner === 'tl' ? '-left-4 -top-4' : '-right-4 -top-4')}>
           <button type="button" title="Glisser pour déplacer ce bloc"
             onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
             className="flex h-8 w-8 cursor-move touch-none items-center justify-center rounded-lg bg-slate-900/85 text-white shadow-lg">
             <Move className="h-4 w-4" />
+          </button>
+          <button type="button" title="Avancer (premier plan)" onClick={() => bumpZ(k, 1)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-700/90 text-white shadow-lg">
+            <BringToFront className="h-4 w-4" />
+          </button>
+          <button type="button" title="Reculer (arrière-plan)" onClick={() => bumpZ(k, -1)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-700/90 text-white shadow-lg">
+            <SendToBack className="h-4 w-4" />
           </button>
           {deletable && (
             <button type="button" title="Supprimer ce bloc (restaurable via « Blocs masqués »)"
@@ -241,9 +315,18 @@ function Movable({ k, children, className, style, corner = 'tl', deletable = tru
         </div>
       )}
       {editable && (
-        <span title="Glisser pour redimensionner"
-          onPointerDown={onSizeDown} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
-          className="absolute -bottom-2.5 -right-2.5 z-30 hidden h-5 w-5 cursor-nwse-resize touch-none rounded-md border-2 border-white bg-sky-500 shadow group-hover/mv:block" />
+        <>
+          {/* ⤡ uniforme (coin) · ↔ horizontal (droite) · ↕ vertical (bas) */}
+          <span title="Redimensionner (uniforme)"
+            onPointerDown={startSize('u')} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
+            className={cn('absolute -bottom-2.5 -right-2.5 z-30 h-5 w-5 cursor-nwse-resize touch-none rounded-md border-2 border-white bg-sky-500 shadow', isSel ? 'block' : 'hidden group-hover/mv:block')} />
+          <span title="Étirer horizontalement"
+            onPointerDown={startSize('x')} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
+            className={cn('absolute -right-2.5 top-1/2 z-30 h-5 w-3.5 -translate-y-1/2 cursor-ew-resize touch-none rounded-md border-2 border-white bg-emerald-500 shadow', isSel ? 'block' : 'hidden group-hover/mv:block')} />
+          <span title="Étirer verticalement"
+            onPointerDown={startSize('y')} onPointerMove={onSizeMove} onPointerUp={onSizeUp} onPointerCancel={onSizeUp}
+            className={cn('absolute -bottom-2.5 left-1/2 z-30 h-3.5 w-5 -translate-x-1/2 cursor-ns-resize touch-none rounded-md border-2 border-white bg-emerald-500 shadow', isSel ? 'block' : 'hidden group-hover/mv:block')} />
+        </>
       )}
       {children}
     </div>
@@ -279,20 +362,27 @@ function ShapeView({ kind, color }: { kind: CBKind; color: string }) {
 const cbBase = (i: number) => ({ left: 420 + (i % 5) * 26, top: 270 + (i % 5) * 26 })
 
 function CustomBlocksLayer({ slideKey }: { slideKey: string }) {
-  const { editable, deck, T, removeBlock, setBlockColor } = useContext(StudioCtx)
+  const { editable, deck, T, removeBlock, duplicateCustom, setBlockColor, selectedKey } = useContext(StudioCtx)
   const blocks = deck.custom?.[slideKey] ?? []
   if (blocks.length === 0) return null
   return (
     <>
       {blocks.map((b, i) => {
         const isShape = !['heading', 'text', 'pill', 'image'].includes(b.kind)
+        const selCls = selectedKey === `cb.${b.id}.mv` ? 'flex' : 'hidden group-hover/mv:flex'
         return (
           <Movable key={b.id} k={`cb.${b.id}.mv`} className="absolute z-20" style={cbBase(i)} deletable={false}>
             {editable && (
-              <button type="button" title="Supprimer ce bloc" onClick={() => removeBlock(slideKey, b.id)}
-                className="absolute -right-3.5 -top-3.5 z-30 hidden h-7 w-7 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg group-hover/mv:flex">
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <span className={cn('absolute -right-3.5 -top-3.5 z-30 items-center gap-1', selCls)}>
+                <button type="button" title="Dupliquer ce bloc" onClick={() => duplicateCustom(slideKey, b.id)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-700 text-white shadow-lg">
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+                <button type="button" title="Supprimer ce bloc" onClick={() => removeBlock(slideKey, b.id)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </span>
             )}
             {b.kind === 'heading' && (
               <Ed k={`cb.${b.id}`} def={CB_DEF.heading} block className="font-extrabold" style={{ fontSize: 40, lineHeight: 1.15, color: T.accent }} />
@@ -373,8 +463,12 @@ export default function PresentationStudioPage() {
   const [cur, setCur] = useState(0)
   const [exporting, setExporting] = useState(false)
   const [activeKey, setActiveKey] = useState<string | null>(null)
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  /** What the image picker fills: a new block, or the SELECTED block's background. */
+  const [pickerFor, setPickerFor] = useState<'insert' | 'block-bg'>('insert')
   const [wizard, setWizard] = useState<null | { mode: 'create' | 'edit'; step?: number }>(null)
+  const [presentHint, setPresentHint] = useState(false)
 
   // Data
   useEffect(() => {
@@ -453,8 +547,40 @@ export default function PresentationStudioPage() {
     setBlockColor: (slideKey: string, id: string, color: string) => saveDeck({
       ...deck, custom: { ...deck.custom, [slideKey]: (deck.custom[slideKey] ?? []).map((b) => b.id === id ? { ...b, color } : b) },
     }),
+    duplicateCustom: (slideKey: string, id: string) => {
+      const src = (deck.custom[slideKey] ?? []).find((b) => b.id === id)
+      if (!src) return
+      const nb = { ...src, id: rid() }
+      const overrides = { ...deck.overrides }; const pos = { ...deck.pos }; const styles = { ...deck.styles }; const blockStyles = { ...deck.blockStyles }
+      if (deck.overrides[`cb.${id}`] != null) overrides[`cb.${nb.id}`] = deck.overrides[`cb.${id}`]
+      const oldPos = deck.pos[`cb.${id}.mv`]
+      pos[`cb.${nb.id}.mv`] = { ...(oldPos ?? { x: 0, y: 0 }), x: (oldPos?.x ?? 0) + 30, y: (oldPos?.y ?? 0) + 30 }
+      if (deck.styles[`cb.${id}`]) styles[`cb.${nb.id}`] = { ...deck.styles[`cb.${id}`] }
+      if (deck.blockStyles?.[`cb.${id}.mv`]) blockStyles[`cb.${nb.id}.mv`] = { ...deck.blockStyles[`cb.${id}.mv`] }
+      saveDeck({
+        ...deck, overrides, pos, styles, blockStyles,
+        custom: { ...deck.custom, [slideKey]: [...(deck.custom[slideKey] ?? []), nb] },
+      })
+    },
     setActiveKey,
-  }), [mode, deck, T, saveDeck])
+    selectedKey,
+    setSelectedKey,
+    bumpZ: (k: string, dir: 1 | -1) => saveDeck({
+      ...deck, z: { ...deck.z, [k]: Math.max(-8, Math.min(20, (deck.z?.[k] ?? 0) + dir)) },
+    }),
+  }), [mode, deck, T, saveDeck, selectedKey])
+
+  // Per-BLOCK decoration for the selected block (bordure / fond / rayon).
+  const setBlockStyle = (patch: Partial<BlockStyle>) => {
+    if (!selectedKey) return
+    saveDeck({ ...deck, blockStyles: { ...deck.blockStyles, [selectedKey]: { ...deck.blockStyles?.[selectedKey], ...patch } } })
+  }
+  const clearBlockStyle = () => {
+    if (!selectedKey) return
+    const blockStyles = { ...deck.blockStyles }; delete blockStyles[selectedKey]
+    saveDeck({ ...deck, blockStyles })
+  }
+  const selBlockStyle: BlockStyle = (selectedKey && deck.blockStyles?.[selectedKey]) || {}
 
   const setStyle = (patch: Partial<TStyle>) => {
     if (!activeKey) return
@@ -479,6 +605,17 @@ export default function PresentationStudioPage() {
     ...((p?.galleryUrls as string[] | undefined) ?? []),
     ...sessions.flatMap((s) => s.galleryUrls ?? []),
   ])), [p, sessions])
+
+  // Contributeurs groupés par équipe — une diapositive par équipe.
+  const contribGroups = useMemo(() => {
+    const groups: { team: string | null; key: string; label: string; list: Contributor[] }[] = []
+    const noTeam = (deck.contributors ?? []).filter((c) => !c.team)
+    if (noTeam.length) groups.push({ team: null, key: 'contributeurs', label: 'Contributeurs', list: noTeam })
+    for (const tm of Array.from(new Set((deck.contributors ?? []).map((c) => c.team).filter(Boolean))) as string[]) {
+      groups.push({ team: tm, key: `contributeurs-${slug(tm)}`, label: `Équipe ${tm}`, list: deck.contributors.filter((c) => c.team === tm) })
+    }
+    return groups
+  }, [deck.contributors])
 
   // ── Slides — Medianet deck layouts on the fixed canvas ─────────────────────
   const allSlides = useMemo(() => {
@@ -507,7 +644,7 @@ export default function PresentationStudioPage() {
       </Movable>
     )
     const Page = ({ k, children }: { k: string; children: React.ReactNode }) => (
-      <div className="relative h-full w-full overflow-hidden" style={{ background: deck.bg?.[k] ?? T.page }}>
+      <div data-slide-root className="relative h-full w-full overflow-hidden" style={{ background: deck.bg?.[k] ?? T.page }}>
         {children}
       </div>
     )
@@ -725,33 +862,41 @@ export default function PresentationStudioPage() {
       </Page>
     ) })
 
-    // 10 · CONTRIBUTEURS (jurys, mentors, rôles libres — via l'assistant)
-    if (deck.contributors?.length) out.push({ key: 'contributeurs', label: 'Contributeurs', el: (
-      <Page k="contributeurs">
-        <Band />
-        <div style={{ padding: '52px 90px 0' }}>
-          <BigTitle k="contrib.title" def="Ils font le programme" />
-          <Movable k="contrib.grid.mv" style={{ marginTop: 42 }}>
-            <div className="grid grid-cols-3" style={{ gap: 20 }}>
-              {deck.contributors.slice(0, 9).map((c, i) => (
-                <Movable key={`${c.name}-${i}`} k={`contrib.${i}.mv`} corner="tr">
-                  <div className="flex items-center rounded-2xl" style={{ gap: 14, background: T.card, padding: '16px 20px' }}>
-                    <span className="flex shrink-0 items-center justify-center rounded-full font-extrabold"
-                      style={{ width: 46, height: 46, background: DOTS[i % DOTS.length], color: '#fff', fontSize: 18 }}>
-                      {(c.name || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate" style={{ fontSize: 18, fontWeight: 700, color: T.fg }}>{c.name}</p>
-                      <p className="truncate" style={{ fontSize: 13, fontWeight: 600, color: T.accent }}>{c.role}</p>
+    // 10 · CONTRIBUTEURS — une diapositive par équipe (+ une pour les sans-équipe)
+    for (const g of contribGroups) {
+      out.push({ key: g.key, label: g.label, el: (
+        <Page k={g.key}>
+          <Band />
+          <div style={{ padding: '52px 90px 0' }}>
+            <BigTitle k={`${g.key}.title`} def={g.team ? `Équipe ${g.team}` : 'Ils font le programme'} />
+            <Movable k={`${g.key}.grid.mv`} style={{ marginTop: 42 }}>
+              <div className="grid grid-cols-3" style={{ gap: 20 }}>
+                {g.list.slice(0, 9).map((c, i) => (
+                  <Movable key={`${c.name}-${i}`} k={`${g.key}.${i}.mv`} corner="tr">
+                    <div className="flex items-center rounded-2xl" style={{ gap: 14, background: T.card, padding: '16px 20px' }}>
+                      {c.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={c.photoUrl} alt={c.name} className="shrink-0 rounded-full object-cover"
+                          style={{ width: 46, height: 46 }} />
+                      ) : (
+                        <span className="flex shrink-0 items-center justify-center rounded-full font-extrabold"
+                          style={{ width: 46, height: 46, background: DOTS[i % DOTS.length], color: '#fff', fontSize: 18 }}>
+                          {(c.name || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate" style={{ fontSize: 18, fontWeight: 700, color: T.fg }}>{c.name}</p>
+                        <p className="truncate" style={{ fontSize: 13, fontWeight: 600, color: T.accent }}>{c.role}</p>
+                      </div>
                     </div>
-                  </div>
-                </Movable>
-              ))}
-            </div>
-          </Movable>
-        </div>
-      </Page>
-    ) })
+                  </Movable>
+                ))}
+              </div>
+            </Movable>
+          </div>
+        </Page>
+      ) })
+    }
 
     // Extra blank slides (added by the user / the wizard)
     for (const xs of deck.extraSlides ?? []) {
@@ -783,7 +928,14 @@ export default function PresentationStudioPage() {
       </Page>
     ) })
 
-    // Custom blocks above each slide + automatic page number.
+    // Ordre des diapositives choisi par l'utilisateur (clés inconnues → ordre naturel).
+    if (deck.order?.length) {
+      const natural = new Map(out.map((s, i) => [s.key, i]))
+      const idx = (k: string) => { const i = deck.order.indexOf(k); return i !== -1 ? i : 400 + (natural.get(k) ?? 0) }
+      out.sort((a, b) => idx(a.key) - idx(b.key))
+    }
+
+    // Custom blocks above each slide + numéro de page (déplaçable, masquable).
     const visible = out.filter((s) => !deck.hidden.includes(s.key))
     return out.map((s) => {
       const visIdx = visible.findIndex((v) => v.key === s.key)
@@ -794,15 +946,15 @@ export default function PresentationStudioPage() {
             {s.el}
             <CustomBlocksLayer slideKey={s.key} />
             {visIdx > 0 && (
-              <span className="absolute" style={{ right: 28, bottom: 16, fontSize: 13, fontWeight: 600, color: T.muted }}>
-                {visIdx + 1}
-              </span>
+              <Movable k="pagenum.mv" corner="tr" className="absolute" style={{ right: 28, bottom: 16 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: T.muted }}>{visIdx + 1}</span>
+              </Movable>
             )}
           </>
         ),
       }
     })
-  }, [p, ordered, stats, T, dark, galleryPool, deck])
+  }, [p, ordered, stats, T, dark, galleryPool, deck, contribGroups])
 
   const slides = useMemo(() => allSlides.filter((s) => !deck.hidden.includes(s.key)), [allSlides, deck.hidden])
   const safeCur = Math.min(cur, Math.max(0, slides.length - 1))
@@ -844,6 +996,14 @@ export default function PresentationStudioPage() {
       bg: deck.bg?.[srcKey] ? { ...deck.bg, [dstKey]: deck.bg[srcKey] } : deck.bg,
     })
     toast.success('Diapositive dupliquée (blocs ajoutés) — en fin de présentation')
+  }
+  /** Déplacer une diapositive vers le haut / le bas (ordre libre, comme Canva). */
+  const moveSlide = (key: string, dir: -1 | 1) => {
+    const keys = allSlides.map((s) => s.key)   // already in current display order
+    const i = keys.indexOf(key); const j = i + dir
+    if (i < 0 || j < 0 || j >= keys.length) return
+    ;[keys[i], keys[j]] = [keys[j], keys[i]]
+    saveDeck({ ...deck, order: keys })
   }
 
   // ── Présentations (plusieurs par programme) ────────────────────────────────
@@ -888,17 +1048,26 @@ export default function PresentationStudioPage() {
       else if (e.key === 'Escape') exitPresent()
     }
     window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
+    // Discreet hint instead of a permanent navigation panel.
+    setPresentHint(true)
+    const tm = setTimeout(() => setPresentHint(false), 4000)
+    return () => { window.removeEventListener('keydown', h); clearTimeout(tm) }
   }, [mode, next, prev, exitPresent])
 
   // ── Add-a-block ────────────────────────────────────────────────────────────
   const addBlock = (kind: CBKind, url?: string) => {
     const slide = slides[safeCur]
     if (!slide) return
-    if (kind === 'image' && !url) { setPickerOpen(true); return }
+    if (kind === 'image' && !url) { setPickerFor('insert'); setPickerOpen(true); return }
     const id = rid()
     const list = [...(deck.custom[slide.key] ?? []), { id, kind, url }]
     saveDeck({ ...deck, custom: { ...deck.custom, [slide.key]: list } })
+  }
+  /** Image chosen in the picker → new block OR background of the selected block. */
+  const pickImage = (u: string) => {
+    if (pickerFor === 'block-bg' && selectedKey) setBlockStyle({ bgImage: u })
+    else addBlock('image', u)
+    setPickerFor('insert'); setPickerOpen(false)
   }
 
   // ── Canva: one-click API flow when configured, manual import otherwise ─────
@@ -946,6 +1115,8 @@ export default function PresentationStudioPage() {
     const PptxGenJS = (await import('pptxgenjs')).default
     const pres: any = new PptxGenJS()
     pres.layout = 'LAYOUT_16x9'
+    // Match the on-screen font (system-ui ≈ Segoe UI) so Canva/PowerPoint look the same.
+    pres.theme = { headFontFace: 'Segoe UI', bodyFontFace: 'Segoe UI' }
     {
       const W = 10, H = 5.63
       const name: string = p.title ?? p.name ?? 'Programme'
@@ -969,8 +1140,14 @@ export default function PresentationStudioPage() {
         if (sc !== 1 && typeof base.fontSize === 'number') base.fontSize = Math.max(6, Math.round((base.fontSize as number) * sc))
         return base
       }
-      const dots = (s: any, x: number, y: number, r = 0.11) =>
+      const dots = (s: any, x: number, y: number, r = 0.11) => {
         DOTS.forEach((c, i) => s.addShape(pres.ShapeType.ellipse, { x: x + i * (r * 2 + 0.06), y, w: r * 2, h: r * 2, fill: { color: c.replace('#', '') }, line: { type: 'none' } }))
+        // « Medianet incubator » wordmark next to the dots (was missing in exports).
+        s.addText([
+          { text: 'Medianet', options: { breakLine: true } },
+          { text: 'incubator', options: { bold: true } },
+        ], { x: x + 4 * (r * 2 + 0.06) + 0.05, y: y - 0.08, w: 1.4, h: r * 2 + 0.16, fontSize: 10, color: T.pptxFg, lineSpacing: 11 })
+      }
       const band = (s: any) => {
         s.addShape(pres.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.66, fill: { color: T.band.replace('#', '') }, line: { type: 'none' } })
         if (!hid('band.logo.mv')) dots(s, 0.35, 0.2)
@@ -1015,7 +1192,7 @@ export default function PresentationStudioPage() {
           band(s); title(s, `Programme ${t('programme.title', name)}`, 'programme.title')
           if (!hid('programme.body.mv')) {
             const o = off('programme.body.mv')
-            s.addShape(pres.ShapeType.roundRect, { x: 0.6 + o.dx, y: 1.7 + o.dy, w: 8.8, h: 3.3, rectRadius: 0.12, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
+            s.addShape(pres.ShapeType.roundRect, { x: 0.6 + o.dx, y: 1.7 + o.dy, w: 8.8, h: 3.3, rectRadius: 0.19, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
             s.addText(t('programme.body', p.description ?? ''), sty('programme.body', { x: 0.9 + o.dx, y: 1.9 + o.dy, w: 8.2, h: 2.9, align: 'center', fontSize: 15, color: T.pptxFg, valign: 'middle' }))
           }
         } else if (sl.key === 'secteurs') {
@@ -1025,7 +1202,7 @@ export default function PresentationStudioPage() {
             const col = i % 4, row = Math.floor(i / 4)
             const o = off(`secteurs.${i}.mv`)
             const x = 0.6 + col * 2.3 + o.dx, y = 1.9 + row * 1.0 + o.dy
-            s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.1, h: 0.8, rectRadius: 0.12, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
+            s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.1, h: 0.8, rectRadius: 0.125, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
             s.addText(sec, { x, y, w: 2.1, h: 0.8, align: 'center', valign: 'middle', fontSize: 13, bold: true, color: T.pptxFg })
           })
         } else if (sl.key === 'parcours') {
@@ -1042,7 +1219,7 @@ export default function PresentationStudioPage() {
             const col = i % 2, row = Math.floor(i / 2)
             const o = off(`chiffres.${i}.mv`)
             const x = 0.7 + col * 4.5 + o.dx, y = 1.75 + row * 1.75 + o.dy
-            s.addShape(pres.ShapeType.roundRect, { x, y, w: 4.1, h: 1.55, rectRadius: 0.14, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
+            s.addShape(pres.ShapeType.roundRect, { x, y, w: 4.1, h: 1.55, rectRadius: 0.19, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
             s.addText(String(st2.n), { x, y: y + 0.1, w: 4.1, h: 0.85, align: 'center', fontSize: 40, bold: true, color: T.pptxAccent })
             s.addText(st2.l.toUpperCase(), { x, y: y + 0.97, w: 4.1, h: 0.4, align: 'center', fontSize: 10, bold: true, color: T.pptxFg })
           })
@@ -1081,17 +1258,27 @@ export default function PresentationStudioPage() {
             const o = off(`images.${i}.mv`)
             s.addImage({ data, x: 0.6 + col * 3.05 + o.dx, y: 1.75 + row * 1.85 + o.dy, w: 2.85, h: 1.7 })
           }
-        } else if (sl.key === 'contributeurs') {
-          band(s); title(s, t('contrib.title', 'Ils font le programme'), 'contrib.title')
-          if (!hid('contrib.grid.mv')) deck.contributors.slice(0, 9).forEach((c, i) => {
-            if (hid(`contrib.${i}.mv`)) return
-            const col = i % 3, row = Math.floor(i / 3)
-            const o = off(`contrib.${i}.mv`)
-            const x = 0.55 + col * 3.1 + o.dx, y = 1.75 + row * 1.15 + o.dy
-            s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.9, h: 0.95, rectRadius: 0.12, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
-            s.addText(c.name, { x: x + 0.15, y: y + 0.1, w: 2.6, h: 0.4, fontSize: 13, bold: true, color: T.pptxFg })
-            s.addText(c.role, { x: x + 0.15, y: y + 0.5, w: 2.6, h: 0.35, fontSize: 11, bold: true, color: T.pptxAccent })
-          })
+        } else if (sl.key.startsWith('contributeurs')) {
+          const g = contribGroups.find((x) => x.key === sl.key)
+          band(s); title(s, t(`${sl.key}.title`, g?.team ? `Équipe ${g.team}` : 'Ils font le programme'), `${sl.key}.title`)
+          if (g && !hid(`${sl.key}.grid.mv`)) {
+            const list = g.list.slice(0, 9)
+            for (let i = 0; i < list.length; i++) {
+              if (hid(`${sl.key}.${i}.mv`)) continue
+              const c = list[i]
+              const col = i % 3, row = Math.floor(i / 3)
+              const o = off(`${sl.key}.${i}.mv`)
+              const x = 0.55 + col * 3.1 + o.dx, y = 1.75 + row * 1.15 + o.dy
+              s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.9, h: 0.95, rectRadius: 0.125, fill: { color: T.card.replace('#', '') }, line: { type: 'none' } })
+              let tx = x + 0.15
+              if (c.photoUrl) {
+                const data = await fetchData(c.photoUrl)
+                if (data) { s.addImage({ data, x: x + 0.12, y: y + 0.14, w: 0.66, h: 0.66, rounding: true }); tx = x + 0.9 }
+              }
+              s.addText(c.name, { x: tx, y: y + 0.1, w: 2.9 - (tx - x) - 0.1, h: 0.4, fontSize: 13, bold: true, color: T.pptxFg })
+              s.addText(c.role, { x: tx, y: y + 0.5, w: 2.9 - (tx - x) - 0.1, h: 0.35, fontSize: 11, bold: true, color: T.pptxAccent })
+            }
+          }
         } else if (sl.key === 'merci') {
           if (!hid('merci.logo.mv')) dots(s, 0.4, 0.35, 0.13)
           if (!hid('merci.title.mv')) s.addText(t('merci.title', 'Merci !'), sty('merci.title', { x: 0.5, y: 1.9, w: 9, h: 1.2, align: 'center', fontSize: 54, bold: true, color: T.pptxAccent }))
@@ -1118,9 +1305,14 @@ export default function PresentationStudioPage() {
             s.addText(t(`cb.${cb.id}`, CB_DEF.pill), sty(`cb.${cb.id}`, { x: bx, y: by, w: 2.6 * sc, h: 0.55 * sc, align: 'center', fontSize: 13, bold: true, color: 'FFFFFF', charSpacing: 2 }))
           } else if (cb.kind === 'heading' || cb.kind === 'text') {
             const isH = cb.kind === 'heading'
+            const bs2 = deck.blockStyles?.[mvKey]
             s.addText(t(`cb.${cb.id}`, isH ? CB_DEF.heading : CB_DEF.text), sty(`cb.${cb.id}`, {
               x: bx, y: by, w: 4.6, h: isH ? 0.7 : 1.2, fontSize: isH ? 26 : 14,
               bold: isH, color: isH ? T.pptxAccent : T.pptxFg,
+              ...(bs2?.bg ? { fill: { color: bs2.bg.replace('#', '') } } : {}),
+              ...(bs2?.borderColor || bs2?.borderWidth
+                ? { line: { color: (bs2.borderColor ?? '#111827').replace('#', ''), width: Math.max(0.5, (bs2.borderWidth ?? 2) * 0.75) } }
+                : {}),
             }))
           } else {
             // Shapes
@@ -1134,9 +1326,12 @@ export default function PresentationStudioPage() {
           }
         }
 
-        // Automatic page number (skip the cover).
+        // Automatic page number (skip the cover; movable/hideable like on screen).
         slideNo += 1
-        if (slideNo > 1) s.addText(String(slideNo), { x: W - 0.7, y: H - 0.42, w: 0.5, h: 0.3, align: 'right', fontSize: 10, color: T.pptxMuted })
+        if (slideNo > 1 && !hid('pagenum.mv')) {
+          const po2 = off('pagenum.mv')
+          s.addText(String(slideNo), { x: W - 0.7 + po2.dx, y: H - 0.42 + po2.dy, w: 0.5, h: 0.3, align: 'right', fontSize: 10, color: T.pptxMuted })
+        }
       }
 
       const deckName = deckList.find((d) => d.id === deckId)?.name ?? 'presentation'
@@ -1285,6 +1480,58 @@ export default function PresentationStudioPage() {
             )}
           </div>
 
+          {/* Block-style bar — bordure / fond / rayon / plan du bloc sélectionné */}
+          {selectedKey && (
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-border bg-sky-500/5 px-4 py-1.5">
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                <Square className="h-3.5 w-3.5" />Bloc sélectionné
+              </span>
+              <label className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground">
+                Bordure
+                <input type="color" value={selBlockStyle.borderColor ?? '#111827'}
+                  onChange={(e) => setBlockStyle({ borderColor: e.target.value })}
+                  className="h-6 w-8 cursor-pointer rounded border border-border bg-transparent p-0.5" />
+                <input type="number" min={0} max={20} value={selBlockStyle.borderWidth ?? ''} placeholder="0"
+                  onChange={(e) => setBlockStyle({ borderWidth: e.target.value ? Number(e.target.value) : undefined })}
+                  title="Épaisseur (px)" className="h-7 w-14 rounded-lg border border-border bg-background px-2 text-xs text-foreground" />
+              </label>
+              <label className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground">
+                Fond
+                <input type="color" value={selBlockStyle.bg ?? '#ffffff'}
+                  onChange={(e) => setBlockStyle({ bg: e.target.value })}
+                  className="h-6 w-8 cursor-pointer rounded border border-border bg-transparent p-0.5" />
+                {selBlockStyle.bg && (
+                  <button onClick={() => setBlockStyle({ bg: undefined })}
+                    className="rounded px-1 text-[10px] font-semibold text-muted-foreground hover:bg-accent">×</button>
+                )}
+              </label>
+              <button onClick={() => { setPickerFor('block-bg'); setPickerOpen(true) }}
+                className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-accent">
+                <ImagePlus className="h-3 w-3" />Image de fond
+              </button>
+              {selBlockStyle.bgImage && (
+                <button onClick={() => setBlockStyle({ bgImage: undefined })}
+                  className="rounded-lg border border-border px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-accent">
+                  Retirer l&apos;image
+                </button>
+              )}
+              <label className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground">
+                Rayon
+                <input type="number" min={0} max={80} value={selBlockStyle.radius ?? ''} placeholder="auto"
+                  onChange={(e) => setBlockStyle({ radius: e.target.value === '' ? undefined : Number(e.target.value) })}
+                  title="0 = angles droits (comme Canva)" className="h-7 w-14 rounded-lg border border-border bg-background px-2 text-xs text-foreground" />
+              </label>
+              <button onClick={clearBlockStyle}
+                className="rounded-lg border border-border px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-accent">
+                Style auto
+              </button>
+              <button onClick={() => setSelectedKey(null)} title="Désélectionner"
+                className="ml-auto rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Text-format bar — police / taille / couleur / gras / alignement */}
           {activeKey && (
             <div className="flex flex-wrap items-center gap-2.5 border-b border-border bg-muted/30 px-4 py-1.5">
@@ -1356,6 +1603,14 @@ export default function PresentationStudioPage() {
                     <div className="flex items-center justify-between gap-1 border-t border-border bg-card px-2 py-1">
                       <span className="min-w-0 truncate text-[10px] font-semibold text-foreground">{hidden ? '·' : `${visIndex + 1} · `}{s.label}</span>
                       <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100">
+                        <button onClick={() => moveSlide(s.key, -1)} title="Monter la diapositive"
+                          className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button onClick={() => moveSlide(s.key, 1)} title="Descendre la diapositive"
+                          className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
                         <button onClick={() => duplicateSlide(s.key, s.label)} title="Dupliquer (blocs ajoutés)"
                           className="rounded p-0.5 text-muted-foreground hover:text-foreground">
                           <Copy className="h-3 w-3" />
@@ -1381,8 +1636,9 @@ export default function PresentationStudioPage() {
               </button>
             </div>
 
-            {/* Canvas */}
-            <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 overflow-y-auto bg-muted/40 p-6">
+            {/* Canvas — cliquer dans le vide désélectionne */}
+            <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 overflow-y-auto bg-muted/40 p-6"
+              onClick={() => setSelectedKey(null)}>
               <div className="w-full max-w-5xl overflow-hidden rounded-xl border border-border shadow-2xl">
                 {slides[safeCur] && <SlideCanvas>{slides[safeCur].el}</SlideCanvas>}
               </div>
@@ -1419,7 +1675,7 @@ export default function PresentationStudioPage() {
                       </p>
                       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                         {galleryPool.map((u, i) => (
-                          <button key={`${u}-${i}`} type="button" onClick={() => { addBlock('image', u); setPickerOpen(false) }}
+                          <button key={`${u}-${i}`} type="button" onClick={() => pickImage(u)}
                             className="overflow-hidden rounded-xl border border-border transition-transform hover:scale-[1.03] hover:ring-2 hover:ring-brand-500">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={u} alt="" className="h-20 w-full object-cover" />
@@ -1433,7 +1689,7 @@ export default function PresentationStudioPage() {
                       Téléverser depuis mon PC · rechercher · ou coller une URL
                     </p>
                     <ImageUpload value="" folder="presentation" searchContext="feature"
-                      onChange={(u) => { if (u) { addBlock('image', u); setPickerOpen(false) } }} />
+                      onChange={(u) => { if (u) pickImage(u) }} />
                   </div>
                 </div>
               </div>
@@ -1475,25 +1731,18 @@ export default function PresentationStudioPage() {
         </div>
       )}
 
-      {/* ══ PRESENT ══ */}
+      {/* ══ PRESENT — sans panneau : ← → / espace / clic (clic droit = retour) ══ */}
       {mode === 'present' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black print:hidden">
+        <div className="fixed inset-0 z-50 flex cursor-none items-center justify-center bg-black print:hidden"
+          onClick={next} onContextMenu={(e) => { e.preventDefault(); prev() }}>
           <div style={{ width: 'min(100vw, calc(100vh * 16 / 9))' }}>
             {slides[safeCur] && <SlideCanvas>{slides[safeCur].el}</SlideCanvas>}
           </div>
-          <div className="fixed bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-2xl bg-black/60 px-3 py-2 backdrop-blur-md">
-            <button onClick={prev} disabled={safeCur === 0} className="rounded-lg p-2 text-white/85 hover:bg-white/15 disabled:opacity-30" title="Précédent (←)">
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <span className="min-w-[3.5rem] text-center text-sm font-semibold text-white/85 tabular-nums">{safeCur + 1} / {slides.length}</span>
-            <button onClick={next} disabled={safeCur === slides.length - 1} className="rounded-lg p-2 text-white/85 hover:bg-white/15 disabled:opacity-30" title="Suivant (→)">
-              <ArrowRight className="h-5 w-5" />
-            </button>
-            <span className="mx-1 h-5 w-px bg-white/20" />
-            <button onClick={exitPresent} className="rounded-lg p-2 text-white/85 hover:bg-white/15" title="Quitter (Échap)">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+          {presentHint && (
+            <div className="pointer-events-none fixed bottom-8 left-1/2 -translate-x-1/2 rounded-xl bg-black/70 px-4 py-2 text-xs font-medium text-white/85 backdrop-blur-md">
+              → · espace · clic : suivant&nbsp;&nbsp;|&nbsp;&nbsp;← · clic droit : précédent&nbsp;&nbsp;|&nbsp;&nbsp;Échap : quitter
+            </div>
+          )}
         </div>
       )}
 
@@ -1535,7 +1784,16 @@ function DeckWizard({ mode, startStep, programmeId, programme, initial, onCancel
   const [theme, setTheme] = useState(initial.theme)
   const [hidden, setHidden] = useState<string[]>(initial.hidden)
   const [contributors, setContributors] = useState<Contributor[]>(initial.contributors)
-  const [cName, setCName] = useState(''); const [cRole, setCRole] = useState('Jury')
+  const [cName, setCName] = useState(''); const [cRole, setCRole] = useState('Jury'); const [cTeam, setCTeam] = useState('')
+  const teams = Array.from(new Set(contributors.map((c) => c.team).filter(Boolean))) as string[]
+  const uploadPhoto = async (i: number, file: File | undefined) => {
+    if (!file) return
+    try {
+      const url = await filesApi.uploadImage(file, 'contributors')
+      setContributors((l) => l.map((c, j) => j === i ? { ...c, photoUrl: url } : c))
+      toast.success('Photo enregistrée')
+    } catch { toast.error('Téléversement impossible (MinIO démarré ?)') }
+  }
   const [suggested, setSuggested] = useState<Contributor[]>([])
   const [overrides, setOverrides] = useState<Record<string, string>>({})
   const [ideas, setIdeas] = useState<string[]>([])
@@ -1680,28 +1938,52 @@ function DeckWizard({ mode, startStep, programmeId, programme, initial, onCancel
                 </div>
               )}
               <div className="flex flex-wrap items-end gap-2">
-                <label className="flex-1 text-[11px] font-semibold text-muted-foreground">Nom
+                <label className="min-w-[140px] flex-1 text-[11px] font-semibold text-muted-foreground">Nom
                   <input value={cName} onChange={(e) => setCName(e.target.value)} placeholder="Prénom Nom"
                     className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-normal" />
                 </label>
                 <label className="text-[11px] font-semibold text-muted-foreground">Rôle
                   <div className="mt-1 flex gap-1">
                     <input value={cRole} onChange={(e) => setCRole(e.target.value)} list="role-presets"
-                      className="w-36 rounded-lg border border-input bg-background px-3 py-2 text-sm font-normal" />
+                      className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm font-normal" />
                     <datalist id="role-presets">{ROLE_PRESETS.map((r) => <option key={r} value={r} />)}</datalist>
                   </div>
                 </label>
+                <label className="text-[11px] font-semibold text-muted-foreground">Équipe (optionnel)
+                  <div className="mt-1 flex gap-1">
+                    <input value={cTeam} onChange={(e) => setCTeam(e.target.value)} list="team-presets" placeholder="—"
+                      className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm font-normal" />
+                    <datalist id="team-presets">{teams.map((tm) => <option key={tm} value={tm} />)}</datalist>
+                  </div>
+                </label>
                 <Button variant="outline" size="sm" className="gap-1"
-                  onClick={() => { addContributor({ name: cName, role: cRole }); setCName('') }}>
+                  onClick={() => { addContributor({ name: cName, role: cRole, team: cTeam.trim() || undefined }); setCName('') }}>
                   <Plus className="h-3.5 w-3.5" />Ajouter
                 </Button>
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                💡 Chaque <b>équipe</b> obtient sa propre diapositive. La 📷 ajoute ou <b>remplace</b> la photo.
+              </p>
               {contributors.length > 0 ? (
                 <ul className="space-y-1.5">
                   {contributors.map((c, i) => (
                     <li key={i} className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2">
-                      <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {c.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={c.photoUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+                      ) : (
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                          {(c.name || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
+                        </span>
+                      )}
+                      <label title={c.photoUrl ? 'Remplacer la photo' : 'Ajouter une photo'}
+                        className="cursor-pointer rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                        <Camera className="h-3.5 w-3.5" />
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={(e) => { uploadPhoto(i, e.target.files?.[0]); e.currentTarget.value = '' }} />
+                      </label>
                       <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">{c.name}</span>
+                      {c.team && <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold text-violet-600 dark:text-violet-300">{c.team}</span>}
                       <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-bold text-brand-600 dark:text-brand-400">{c.role}</span>
                       <button onClick={() => setContributors((l) => l.filter((_, j) => j !== i))}
                         className="rounded p-0.5 text-muted-foreground hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>
