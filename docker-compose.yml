@@ -248,6 +248,8 @@ services:
       SPRING_DATASOURCE_USERNAME: medianet
       SPRING_DATASOURCE_PASSWORD: medianet2024
       JWT_SECRET: medianet-super-secret-jwt-key-2024-medianet-incubation
+      # Google Sign-In — the PUBLIC OAuth client id (no secret). Empty = feature off.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: medianet
       SPRING_RABBITMQ_PASSWORD: medianet2024
@@ -448,6 +450,10 @@ services:
       EUREKA_URI: http://eureka-server:8761/eureka
       AI_MATCHING_SERVICE_URL: http://ai-matching-service:8085
       AI_SCORING_SERVICE_URL: http://ai-scoring-service:8084
+      # Serves public uploads (/<bucket>/**) so images and pitch videos load
+      # from the same API domain — no extra reverse-proxy rule needed.
+      MINIO_INTERNAL_URL: http://minio:9000
+      MINIO_BUCKET: ${MINIO_BUCKET:-medianet}
     depends_on:
       eureka-server:
         condition: service_healthy
@@ -464,6 +470,7 @@ services:
       context: ./frontend/nextjs-frontoffice
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8080}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     container_name: nextjs-frontoffice
     ports:
       - "3000:3000"

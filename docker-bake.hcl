@@ -21,6 +21,9 @@ variable "PLATFORMS"           { default = "linux/amd64,linux/arm64" }
 # gateway over HTTPS (no mixed content; CORS is open on the services).
 variable "FRONTOFFICE_API_URL" { default = "https://medianetincubatorbackend.duckdns.org" }
 variable "BACKOFFICE_API_URL"  { default = "https://medianetincubatorbackend.duckdns.org" }
+# Public Google OAuth client id, baked into the frontoffice bundle. Empty by
+# default → the "Sign in with Google" button simply doesn't render.
+variable "GOOGLE_CLIENT_ID"    { default = "" }
 
 function "img" {
   params = [name]
@@ -106,7 +109,10 @@ target "nginx" {
 target "frontoffice" {
   inherits = ["_common"]
   context  = "./frontend/nextjs-frontoffice"
-  args     = { NEXT_PUBLIC_API_URL = FRONTOFFICE_API_URL }
+  args     = {
+    NEXT_PUBLIC_API_URL           = FRONTOFFICE_API_URL
+    NEXT_PUBLIC_GOOGLE_CLIENT_ID  = GOOGLE_CLIENT_ID
+  }
   tags     = [img("frontoffice")]
 }
 target "backoffice" {

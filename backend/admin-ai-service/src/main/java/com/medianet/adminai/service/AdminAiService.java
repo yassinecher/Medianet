@@ -353,6 +353,7 @@ public class AdminAiService {
     private final AdminActionRepository    actionRepo;
     private final com.medianet.adminai.repository.AiMemoryRepository memoryRepo;
     private final OpenRouterClient         llm;
+    private final AiSettingsService        aiSettings;
     private final ToolExecutor             toolExecutor;
     private final com.medianet.adminai.client.UpstreamClient upstream;
     private final ObjectMapper             json = new ObjectMapper();
@@ -1639,15 +1640,18 @@ public class AdminAiService {
                 "etaSec", etaFor("llm")));
         long tLlm = System.nanoTime();
         try {
-            Map<String, Object> response = llm.chat(messages, List.of(), systemPrompt, "none");
+            // This report is a LARGE JSON object (dimensions + highlights + sections
+            // + criteria + coaching…). At the default 2048-token cap the reply is
+            // cut off mid-object and never closes, which surfaced to the user as
+            // « réponse du modèle illisible ». Give it real headroom.
+            int analysisTokens = Math.max(aiSettings.resolveMaxTokens(), 4096);
+            Map<String, Object> response = llm.chat(messages, List.of(), systemPrompt, "none", analysisTokens, null);
             recordStage("llm", (System.nanoTime() - tLlm) / 1e9);
             List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
             Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
             String content = String.valueOf(message.get("content"))
                     .replaceAll("(?s)```\\w*", "").replaceAll("```", "").trim();
-            int s = content.indexOf('{'), e = content.lastIndexOf('}');
-            if (s >= 0 && e > s) content = content.substring(s, e + 1);
-            Map<String, Object> parsed = lenientJson.readValue(content, Map.class);
+            Map<String, Object> parsed = parseAnalysisJson(content, submissionId);
             out.putAll(parsed);
             // The overall score is DERIVED from the dimensions, never taken as the
             // model's own gut number. Left free, it anchored on the worst weakness
@@ -1737,6 +1741,78 @@ public class AdminAiService {
                     "detail", detail));
         }
         return out;
+    }
+
+    /**
+     * Parse the model's analysis reply, tolerating the #1 real-world failure: the
+     * reply hit max_tokens and the JSON was never closed. First try the clean
+     * object between the outer braces; if that throws, salvage the complete prefix
+     * (cut at the last finished element, re-balance the open braces/brackets) so a
+     * slightly-too-long analysis still yields a usable result instead of being
+     * thrown away whole. Only the trailing, incomplete fields are lost — every
+     * downstream reader already guards missing keys with instanceof checks.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseAnalysisJson(String content, Long submissionId) throws Exception {
+        int s = content.indexOf('{'), e = content.lastIndexOf('}');
+        String core = (s >= 0 && e > s) ? content.substring(s, e + 1) : content;
+        try {
+            return lenientJson.readValue(core, Map.class);
+        } catch (Exception first) {
+            String repaired = repairTruncatedJson(content);
+            Map<String, Object> parsed = lenientJson.readValue(repaired, Map.class);
+            log.warn("Pitch {}: analysis JSON looked truncated; recovered {} key(s) after repair",
+                    submissionId, parsed.size());
+            return parsed;
+        }
+    }
+
+    /**
+     * Best-effort repair of a JSON object cut off mid-generation. Cuts back to the
+     * last completed element (a closing bracket, or a comma at depth ≥ 1, ignoring
+     * string contents), drops any dangling comma, then appends the closers needed
+     * to balance every still-open object/array.
+     */
+    private String repairTruncatedJson(String raw) {
+        int start = raw.indexOf('{');
+        if (start < 0) return raw;
+        String s = raw.substring(start);
+        // Pass 1 — find the furthest safe cut point.
+        boolean inStr = false, esc = false;
+        int depth = 0, cut = -1;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inStr) {
+                if (esc) esc = false; else if (c == '\\') esc = true; else if (c == '"') inStr = false;
+                continue;
+            }
+            switch (c) {
+                case '"': inStr = true; break;
+                case '{': case '[': depth++; break;
+                case '}': case ']': depth--; if (depth >= 0) cut = i + 1; break;
+                case ',': if (depth >= 1) cut = i; break;
+                default: break;
+            }
+        }
+        if (cut < 0) return s;
+        String body = s.substring(0, cut).replaceAll("[\\s,]+$", "");
+        // Pass 2 — closers still open at the end of `body`.
+        inStr = false; esc = false;
+        java.util.Deque<Character> stack = new java.util.ArrayDeque<>();
+        for (int i = 0; i < body.length(); i++) {
+            char c = body.charAt(i);
+            if (inStr) {
+                if (esc) esc = false; else if (c == '\\') esc = true; else if (c == '"') inStr = false;
+                continue;
+            }
+            if (c == '"') inStr = true;
+            else if (c == '{') stack.push('}');
+            else if (c == '[') stack.push(']');
+            else if (c == '}' || c == ']') { if (!stack.isEmpty()) stack.pop(); }
+        }
+        StringBuilder sb = new StringBuilder(body);
+        while (!stack.isEmpty()) sb.append(stack.pop());
+        return sb.toString();
     }
 
     /**

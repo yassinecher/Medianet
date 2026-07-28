@@ -369,49 +369,68 @@ export default function ProgrammeDetailPage() {
             {phases.length > 0 && (
               <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
                 <SectionTitle>Calendrier du programme</SectionTitle>
-                <div className="relative space-y-0">
-                  {phases.map((ph, i) => (
-                    <div key={ph.id} className="relative flex gap-4">
-                      {/* Timeline spine */}
-                      <div className="flex flex-col items-center">
-                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 font-bold text-sm z-10
-                          ${i === 0 ? 'border-brand-500 bg-brand-500 text-white' : 'border-brand-300 bg-background text-brand-600 dark:text-brand-400'}`}>
-                          {i + 1}
-                        </div>
-                        {i < phases.length - 1 && <div className="w-0.5 flex-1 bg-border mt-1" style={{ minHeight: '1.5rem' }} />}
-                      </div>
-                      {/* Content */}
-                      <div className={`pb-6 flex-1 ${i < phases.length - 1 ? '' : ''}`}>
-                        <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-semibold text-foreground">{ph.title ?? ph.name}</p>
-                            {ph.sessionType && (
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${SESSION_TYPE_TONE[ph.sessionType] ?? 'bg-muted text-muted-foreground'}`}>
-                                {SESSION_TYPE_LABEL[ph.sessionType] ?? ph.sessionType}
-                              </span>
-                            )}
-                            {ph.status && ph.status !== 'UPCOMING' && (
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ph.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
-                                {sessionStatusLabel[ph.status] ?? ph.status}
-                              </span>
-                            )}
+                <div className="relative pl-1">
+                  {phases.map((ph, i) => {
+                    const done = ph.status === 'COMPLETED'
+                    const active = ph.status === 'ACTIVE'
+                    const last = i === phases.length - 1
+                    return (
+                      <div key={ph.id} className="relative flex gap-4 pb-6 last:pb-0">
+                        {/* Timeline spine */}
+                        <div className="relative flex flex-col items-center">
+                          <div className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ring-4 ring-background
+                            ${done
+                              ? 'bg-emerald-500 text-white'
+                              : active
+                                ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30'
+                                : 'border-2 border-brand-200 bg-background text-brand-600 dark:border-brand-800 dark:text-brand-400'}`}>
+                            {active && <span className="absolute inset-0 animate-ping rounded-full bg-brand-500/40" />}
+                            {done ? <CheckCircle2 className="h-4 w-4" /> : <span className="relative">{i + 1}</span>}
                           </div>
-                          {ph.description && <p className="mt-1 text-sm text-muted-foreground">{ph.description}</p>}
-                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            {(ph.startDate || ph.endDate) && (
-                              <span className="flex items-center gap-1.5">
-                                <Calendar className="h-3 w-3" />
-                                {ph.startDate ? formatDate(ph.startDate) : ''}
-                                {ph.startDate && ph.endDate && ' → '}
-                                {ph.endDate ? formatDate(ph.endDate) : ''}
-                              </span>
-                            )}
-                            {ph.location && <span className="flex items-center gap-1.5"><MapPin className="h-3 w-3" />{ph.location}</span>}
+                          {/* Connector — brand-tinted above the active step, muted after */}
+                          {!last && (
+                            <div className={`mt-1 w-0.5 flex-1 rounded-full ${done || active ? 'bg-gradient-to-b from-brand-400 to-border' : 'bg-border'}`} style={{ minHeight: '1.75rem' }} />
+                          )}
+                        </div>
+                        {/* Content */}
+                        <div className="flex-1">
+                          <div className={`group rounded-2xl border bg-card p-4 shadow-sm transition-all hover:shadow-md
+                            ${active ? 'border-brand-400/60 ring-1 ring-brand-500/20' : 'border-border hover:border-brand-300/60'}`}>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-bold text-foreground">{ph.title ?? ph.name}</p>
+                              {ph.sessionType && (
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${SESSION_TYPE_TONE[ph.sessionType] ?? 'bg-muted text-muted-foreground'}`}>
+                                  {SESSION_TYPE_LABEL[ph.sessionType] ?? ph.sessionType}
+                                </span>
+                              )}
+                              {ph.status && ph.status !== 'UPCOMING' && (
+                                <span className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${active ? 'bg-brand-500/10 text-brand-600 dark:text-brand-400' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}`}>
+                                  {active && <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+                                  {sessionStatusLabel[ph.status] ?? ph.status}
+                                </span>
+                              )}
+                            </div>
+                            {ph.description && <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">{ph.description}</p>}
+                            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+                              {(ph.startDate || ph.endDate) && (
+                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted/60 px-2 py-1">
+                                  <Calendar className="h-3.5 w-3.5 text-brand-500" />
+                                  {ph.startDate ? formatDate(ph.startDate) : ''}
+                                  {ph.startDate && ph.endDate && ' → '}
+                                  {ph.endDate ? formatDate(ph.endDate) : ''}
+                                </span>
+                              )}
+                              {ph.location && (
+                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted/60 px-2 py-1">
+                                  <MapPin className="h-3.5 w-3.5 text-brand-500" />{ph.location}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </motion.section>
             )}

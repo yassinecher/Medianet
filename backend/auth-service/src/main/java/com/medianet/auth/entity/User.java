@@ -53,6 +53,13 @@ public class User {
     @Column(nullable = false)
     private boolean active = true;
 
+    /**
+     * How the account authenticates: "GOOGLE" for accounts created or linked via
+     * Google Sign-In, null/"LOCAL" for classic email+password. Nullable on
+     * purpose so Hibernate ddl-auto:update can add it to a populated table.
+     */
+    private String authProvider;
+
     private LocalDateTime createdAt;
 
     // ── Role-specific profiles (optional, only present if role is assigned) ──

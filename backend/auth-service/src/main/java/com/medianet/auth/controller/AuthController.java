@@ -36,6 +36,15 @@ public class AuthController {
         return ResponseEntity.ok(authService.login(request));
     }
 
+    /**
+     * Sign in / sign up with Google. Body: {@code { "idToken": "<GIS credential>" }}.
+     * Public — the Google-signed token is itself the proof of identity.
+     */
+    @PostMapping("/google")
+    public ResponseEntity<AuthResponse> google(@RequestBody GoogleLoginRequest request) {
+        return ResponseEntity.ok(authService.loginWithGoogle(request.token()));
+    }
+
     // ── Org-member token invitations (public — the token is the authorization) ──
 
     @GetMapping("/org-invitations/{token}")

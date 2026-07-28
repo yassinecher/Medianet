@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { BorderBeam } from '@/components/magicui/border-beam'
 import { AuthShell } from '@/components/brand/AuthShell'
+import { GoogleSignInButton, OrDivider } from '@/components/brand/GoogleSignInButton'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -18,25 +19,41 @@ export default function LoginPage() {
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
 
+  // Shared post-auth handling for both email/password and Google: gate the
+  // frontoffice, store the session, redirect.
+  const finishAuth = (data: any) => {
+    // ADMIN-only accounts are pushed to the backoffice; mixed accounts keep
+    // their non-admin roles for the frontoffice.
+    const fo = frontofficeRolesOf({ ...data, role: data.role, roles: data.roles ?? [] } as any)
+    if (fo.length === 0) {
+      toast.error("Ce compte n'a pas accès au Frontoffice. Utilisez le Backoffice Admin.")
+      return false
+    }
+    setAuth(data, data.token)
+    toast.success(`Bienvenue, ${data.firstName} !`)
+    router.push('/dashboard')
+    return true
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
       const { data } = await authApi.login(form.email, form.password)
-      // ADMIN-only accounts are pushed to the backoffice; mixed accounts keep
-      // their non-admin roles for the frontoffice.
-      const fo = frontofficeRolesOf({ ...data, role: data.role, roles: data.roles ?? [] } as any)
-      if (fo.length === 0) {
-        toast.error("Ce compte n'a pas accès au Frontoffice. Utilisez le Backoffice Admin.")
-        setLoading(false)
-        return
-      }
-      setAuth(data, data.token)
-      toast.success(`Bienvenue, ${data.firstName} !`)
-      router.push('/dashboard')
+      if (!finishAuth(data)) setLoading(false)
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'Email ou mot de passe incorrect')
-    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleGoogle = async (idToken: string) => {
+    setLoading(true)
+    try {
+      const { data } = await authApi.google(idToken)
+      if (!finishAuth(data)) setLoading(false)
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? 'Connexion Google échouée')
       setLoading(false)
     }
   }
@@ -77,6 +94,9 @@ export default function LoginPage() {
             {loading ? 'Connexion...' : 'Se connecter'}
           </Button>
         </form>
+
+        <OrDivider />
+        <GoogleSignInButton text="signin_with" onCredential={handleGoogle} disabled={loading} />
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Pas encore de compte ?{' '}

@@ -83,6 +83,17 @@ spring:
           uri: ${AI_MATCHING_SERVICE_URL:http://localhost:8085}
           predicates:
             - Path=/api/ai/match/**
+        # Public MinIO objects — uploaded logos, galleries and pitch videos.
+        # Their public URL is built as <MINIO_PUBLIC_URL>/<bucket>/<key>, so the
+        # path starts with the bucket name. The bucket carries an anonymous
+        # s3:GetObject policy, so nothing is signed: the gateway just forwards
+        # the path through (no StripPrefix — MinIO needs the bucket prefix for
+        # path-style addressing). Keeps every public URL on the ONE API domain
+        # instead of requiring a separate reverse-proxy rule per server.
+        - id: minio-public
+          uri: ${MINIO_INTERNAL_URL:http://localhost:9000}
+          predicates:
+            - Path=/${MINIO_BUCKET:medianet}/**
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
       globalcors:

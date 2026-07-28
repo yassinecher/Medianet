@@ -43,6 +43,7 @@ public class SecurityConfig {
                 // response. The INITIAL connect stays fully authenticated below.
                 .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC, jakarta.servlet.DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/register-from-invitation").permitAll()
+                .requestMatchers("/api/auth/google").permitAll()
                 .requestMatchers("/api/auth/validate").permitAll()
                 .requestMatchers("/api/auth/org-invitations/**").permitAll()
                 // Public « Sociétés incubées » showcase (trimmed org profiles).

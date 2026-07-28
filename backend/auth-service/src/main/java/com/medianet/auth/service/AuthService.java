@@ -32,6 +32,7 @@ public class AuthService {
     private final OrgMemberInvitationRepository orgInvitationRepository;
     private final PasswordEncoder          passwordEncoder;
     private final JwtService               jwtService;
+    private final com.medianet.auth.security.GoogleTokenVerifier googleTokenVerifier;
     private final NotificationClient       notificationClient;
     private final AuthEventService         authEventService;
 
@@ -225,6 +226,67 @@ public class AuthService {
         }
         String token = jwtService.generateToken(user);
         return buildAuthResponse(token, user);
+    }
+
+    /**
+     * Sign in (or sign up) with a Google Identity Services ID token.
+     *
+     * <p>The token is verified server-side against Google's public certs (see
+     * {@link com.medianet.auth.security.GoogleTokenVerifier}). We link by the
+     * Google-verified email: an existing account with that email is signed in;
+     * otherwise a new account is created, mirroring self-registration — role
+     * PORTEUR, an owned organisation, and a random unusable password (so classic
+     * password login is impossible on a Google-only account until they set one).
+     */
+    public AuthResponse loginWithGoogle(String idToken) {
+        com.google.api.client.googleapis.auth.oauth2.GoogleIdToken.Payload payload =
+                googleTokenVerifier.verify(idToken);
+
+        Boolean emailVerified = payload.getEmailVerified();
+        if (emailVerified == null || !emailVerified) {
+            throw new IllegalArgumentException("Cette adresse Google n'est pas vérifiée.");
+        }
+        String email = payload.getEmail();
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Le compte Google ne fournit pas d'adresse e-mail.");
+        }
+        email = email.toLowerCase();
+
+        String firstName = asString(payload.get("given_name"));
+        String lastName  = asString(payload.get("family_name"));
+        if (firstName == null || firstName.isBlank()) firstName = asString(payload.get("name"));
+        if (firstName == null || firstName.isBlank()) firstName = email.substring(0, email.indexOf('@'));
+        if (lastName == null) lastName = "";
+
+        User existing = userRepository.findByEmail(email).orElse(null);
+        if (existing != null) {
+            if (!existing.isActive()) throw new BadCredentialsException("Account is disabled");
+            // Mark the linkage the first time a local account signs in with Google.
+            if (existing.getAuthProvider() == null || existing.getAuthProvider().isBlank()) {
+                existing.setAuthProvider("GOOGLE");
+                userRepository.save(existing);
+            }
+            return buildAuthResponse(jwtService.generateToken(existing), existing);
+        }
+
+        User user = User.builder()
+                .email(email)
+                .firstName(firstName)
+                .lastName(lastName)
+                .password(passwordEncoder.encode(UUID.randomUUID().toString()))
+                .roles(resolveRoles(Set.of("PORTEUR")))
+                .directPermissions(new HashSet<>())
+                .active(true)
+                .authProvider("GOOGLE")
+                .build();
+        userRepository.save(user);
+        ensureProfiles(user, user.getRoles());
+        ensurePorteurOrganization(user);
+        return buildAuthResponse(jwtService.generateToken(user), user);
+    }
+
+    private static String asString(Object o) {
+        return o == null ? null : o.toString();
     }
 
     // ── User reads ────────────────────────────────────────────────────────────

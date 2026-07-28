@@ -78,6 +78,8 @@ export async function streamAuthEvents(
 export const authApi = {
   login: (email: string, password: string) => api.post('/api/auth/login', { email, password }),
   register: (data: unknown) => api.post('/api/auth/register', data),
+  /** Sign in / sign up with a Google Identity Services ID token (the "credential"). */
+  google: (idToken: string) => api.post('/api/auth/google', { idToken }),
   me: () => api.get('/api/auth/me'),
   /** Re-issue the JWT with fresh roles/permissions (same payload as login). */
   refresh: () => api.post('/api/auth/refresh'),

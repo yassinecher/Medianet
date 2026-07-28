@@ -62,6 +62,14 @@
             <version>0.12.5</version>
             <scope>runtime</scope>
         </dependency>
+        <!-- Google Sign-In: verifies the ID token from Google Identity Services
+             against Google's public certs. Only the PUBLIC client id is needed
+             (set as audience) — no client secret, since we never exchange a code. -->
+        <dependency>
+            <groupId>com.google.api-client</groupId>
+            <artifactId>google-api-client</artifactId>
+            <version>2.6.0</version>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

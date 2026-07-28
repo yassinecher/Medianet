@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { BorderBeam } from '@/components/magicui/border-beam'
 import { AuthShell } from '@/components/brand/AuthShell'
+import { GoogleSignInButton, OrDivider } from '@/components/brand/GoogleSignInButton'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -45,6 +46,20 @@ export default function RegisterPage() {
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? "Erreur lors de l'inscription")
     } finally {
+      setLoading(false)
+    }
+  }
+
+  // Google sign-up: one click creates (or signs into) a porteur account.
+  const handleGoogle = async (idToken: string) => {
+    setLoading(true)
+    try {
+      const { data } = await authApi.google(idToken)
+      setAuth(data, data.token)
+      toast.success(`Bienvenue, ${data.firstName} !`)
+      router.push('/dashboard')
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? 'Connexion Google échouée')
       setLoading(false)
     }
   }
@@ -131,6 +146,9 @@ export default function RegisterPage() {
             {loading ? 'Création...' : 'Créer mon compte'}
           </Button>
         </form>
+
+        <OrDivider />
+        <GoogleSignInButton text="signup_with" onCredential={handleGoogle} disabled={loading} />
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Déjà un compte ?{' '}
