@@ -9,4 +9,8 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
     List<Organization> findByCreatedByUserId(Long userId);
     List<Organization> findByType(String type);
     List<Organization> findByInternalTrue();
+    /** Organisations a given mentor is the assigned « vis-à-vis » of. */
+    List<Organization> findByMentorUserId(Long mentorUserId);
+    /** Organisations a given porteur explicitly represents (assigned, not creator). */
+    List<Organization> findByPorteurUserId(Long porteurUserId);
 }

@@ -6,10 +6,12 @@ import { motion } from 'framer-motion'
 import {
   Calendar, MapPin, Users, ArrowLeft, ExternalLink,
   Target, CheckCircle2, Clock, BookOpen, Building2,
-  Sparkles, Trophy, GraduationCap, Lightbulb
+  Sparkles, Trophy, GraduationCap, Lightbulb,
+  Images, Scale, ListChecks, ArrowRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { programmesApi, candidaturesApi } from '@/lib/api'
+import { programmesApi, candidaturesApi, juryApi } from '@/lib/api'
+import { PhotoGallery } from '@/components/media/PhotoGallery'
 import { useUser, useAuthStore, frontofficeRolesOf } from '@/store/auth.store'
 import { Navbar } from '@/components/layout/Navbar'
 import { AppShell } from '@/components/layout/AppShell'
@@ -18,7 +20,7 @@ import { NumberTicker } from '@/components/magicui/number-ticker'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatDate, statusColor } from '@/lib/utils'
+import { formatDate, statusColor, cn } from '@/lib/utils'
 import type { Programme, Phase, Criteria, Partner } from '@/types'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 
@@ -66,6 +68,156 @@ function StatCard({ value, label, icon: Icon, color }: { value: number; label: s
   )
 }
 
+// ── Personalized role panels (porteur progress / jury workspace) ────────────
+function MiniStat({ icon: Icon, label, value, tone }: { icon: React.ElementType; label: string; value: number; tone: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card/60 p-2.5">
+      <Icon className={`mx-auto h-4 w-4 ${tone}`} />
+      <p className="mt-1 text-lg font-black tabular-nums text-foreground">{value}</p>
+      <p className="text-[10px] text-muted-foreground">{label}</p>
+    </div>
+  )
+}
+
+function StepRow({ label, phase, tone }: { label: string; phase: Phase; tone: 'brand' | 'muted' }) {
+  const on = tone === 'brand'
+  return (
+    <div className={`rounded-xl border p-2.5 ${on ? 'border-brand-400/50 bg-brand-500/5' : 'border-border bg-card/60'}`}>
+      <p className={`text-[10px] font-bold uppercase tracking-wide ${on ? 'text-brand-600 dark:text-brand-400' : 'text-muted-foreground'}`}>{label}</p>
+      <p className="truncate text-sm font-semibold text-foreground">{phase.title ?? phase.name}</p>
+      {(phase.startDate || phase.endDate) && (
+        <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+          <Calendar className="h-3 w-3" />
+          {phase.startDate ? formatDate(phase.startDate) : ''}{phase.startDate && phase.endDate && ' → '}{phase.endDate ? formatDate(phase.endDate) : ''}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function PorteurProgressCard({ phases, done, current, next, pct }: {
+  phases: Phase[]; done: number; current?: Phase; next?: Phase; pct: number
+}) {
+  const upcoming = phases.filter((p) => (p.status ?? 'UPCOMING') === 'UPCOMING').length
+  return (
+    <div className="rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500/5 to-purple-500/5 p-5 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground"><Trophy className="h-4 w-4 text-brand-500" />Votre parcours dans le programme</h3>
+        <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-xs font-bold text-brand-700 dark:text-brand-300">{pct}%</span>
+      </div>
+      <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-purple-500 transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <MiniStat icon={CheckCircle2} label="Terminées" value={done} tone="text-emerald-500" />
+        <MiniStat icon={Clock} label="En cours" value={current ? 1 : 0} tone="text-brand-500" />
+        <MiniStat icon={Calendar} label="À venir" value={upcoming} tone="text-muted-foreground" />
+      </div>
+      <div className="mt-4 space-y-2">
+        {current && <StepRow tone="brand" label="Étape en cours" phase={current} />}
+        {next && <StepRow tone="muted" label="Prochaine étape" phase={next} />}
+        {!current && !next && phases.length > 0 && (
+          <p className="rounded-xl border border-emerald-400/40 bg-emerald-500/5 p-2.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">🎉 Toutes les étapes sont terminées. Félicitations !</p>
+        )}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link href="/candidatures"><Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs"><BookOpen className="h-3.5 w-3.5" />Ma candidature</Button></Link>
+        <Link href="/tasks"><Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs"><ListChecks className="h-3.5 w-3.5" />Mes tâches</Button></Link>
+      </div>
+    </div>
+  )
+}
+
+function JuryPanelCard({ items, done, email }: { items: any[]; done: number; email: string }) {
+  const todo = items.length - done
+  return (
+    <div className="rounded-2xl border border-amber-400/40 bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-5 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground"><Scale className="h-4 w-4 text-amber-500" />Votre espace jury</h3>
+        {todo > 0
+          ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-700 dark:text-amber-300">{todo} à évaluer</span>
+          : <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300">Terminé ✓</span>}
+      </div>
+      <p className="mb-3 text-xs text-muted-foreground">{done}/{items.length} candidature(s) évaluée(s) pour ce programme.</p>
+      <div className="space-y-1.5">
+        {items.slice(0, 5).map((c) => {
+          const evaluated = (c.evaluations ?? []).some((e: any) => (e.juryEmail ?? '').toLowerCase() === email.toLowerCase())
+          return (
+            <Link key={c.id} href={`/evaluations/${c.id}`}
+              className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm transition-colors hover:border-amber-300">
+              <span className="min-w-0 flex-1 truncate font-medium text-foreground">{c.projectName || c.companyName || `Candidature #${c.id}`}</span>
+              {evaluated
+                ? <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />Évaluée</span>
+                : <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-amber-600">Évaluer<ArrowRight className="h-3.5 w-3.5" /></span>}
+            </Link>
+          )
+        })}
+      </div>
+      {items.length > 5 && (
+        <Link href="/evaluations" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline dark:text-amber-300">
+          Voir toutes mes évaluations<ArrowRight className="h-3 w-3" />
+        </Link>
+      )}
+    </div>
+  )
+}
+
+// Whole days remaining until a deadline (end-of-day). Null when no/invalid date.
+function daysUntil(dateStr?: string): number | null {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return null
+  return Math.ceil((d.setHours(23, 59, 59, 999) - Date.now()) / 86_400_000)
+}
+
+/** A deadline urgency chip — red under a week, amber under a month, else neutral. */
+function DeadlineBadge({ days, onLight }: { days: number; onLight?: boolean }) {
+  const tone = days <= 7 ? 'red' : days <= 30 ? 'amber' : 'brand'
+  const light = onLight
+    ? 'bg-white/20 text-white backdrop-blur-sm'
+    : tone === 'red' ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+    : tone === 'amber' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+    : 'bg-brand-500/15 text-brand-700 dark:text-brand-300'
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${light}`}>
+      <Clock className="h-3.5 w-3.5" />
+      {days > 0 ? `Clôture dans ${days} jour${days > 1 ? 's' : ''}` : 'Dernier jour !'}
+    </span>
+  )
+}
+
+/** Sticky in-page section navigation with scroll-spy. Hidden when < 2 sections.
+ *  `topClass` positions it under the page chrome (public navbar 4rem / shell topbar 3.5rem). */
+function SectionNav({ items, topClass = 'top-0' }: { items: { id: string; label: string }[]; topClass?: string }) {
+  const [active, setActive] = useState(items[0]?.id)
+  useEffect(() => {
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const vis = entries.filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
+        if (vis) setActive(vis.target.id)
+      },
+      { rootMargin: '-30% 0px -60% 0px' },
+    )
+    items.forEach((i) => { const el = document.getElementById(i.id); if (el) obs.observe(el) })
+    return () => obs.disconnect()
+  }, [items])
+  if (items.length < 2) return null
+  return (
+    <div className={cn('sticky z-30 -mx-4 mb-8 border-b border-border bg-background/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70', topClass)}>
+      <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {items.map((i) => (
+          <a key={i.id} href={`#${i.id}`}
+            className={cn('shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors',
+              active === i.id ? 'bg-brand-500 text-white shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}>
+            {i.label}
+          </a>
+        ))}
+      </nav>
+    </div>
+  )
+}
+
 export default function ProgrammeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const user = useUser()
@@ -87,6 +239,8 @@ export default function ProgrammeDetailPage() {
   const [loading, setLoading] = useState(true)
   /** The porteur's own candidature status on this programme, if any. */
   const [myApplication, setMyApplication] = useState<string | null>(null)
+  /** Candidatures of THIS programme assigned to the logged-in jury. */
+  const [juryItems, setJuryItems] = useState<any[]>([])
 
   useEffect(() => {
     const pid = Number(id)
@@ -107,6 +261,7 @@ export default function ProgrammeDetailPage() {
   }, [id])
 
   const isPorteur = frontofficeRolesOf(user).includes('PORTEUR')
+  const isJury = frontofficeRolesOf(user).includes('JURY')
 
   // Has the logged-in porteur already applied to this programme?
   // (PORTEUR-only endpoint — jury/mentor must not call it.)
@@ -120,6 +275,17 @@ export default function ProgrammeDetailPage() {
       })
       .catch(() => {})
   }, [id, user, isPorteur])
+
+  // Jury: the candidatures of THIS programme assigned to me.
+  useEffect(() => {
+    if (!user || !isJury) { setJuryItems([]); return }
+    juryApi.myAssignments()
+      .then((r) => {
+        const list: any[] = r.data ?? []
+        setJuryItems(list.filter((c) => Number(c.programmeId) === Number(id)))
+      })
+      .catch(() => {})
+  }, [id, user, isJury])
 
   const handleApply = () => {
     if (!user) { router.push('/login'); return }
@@ -181,6 +347,35 @@ export default function ProgrammeDetailPage() {
   // fall back to the raw OPEN status for older payloads.
   const isOpen = programme.acceptingApplications ?? (programme.status === 'OPEN')
   const alreadyApplied = !!myApplication
+  // Only porteurs (or anonymous visitors, who'd be prompted to log in) ever see
+  // the apply CTAs — jury & mentor accounts evaluate/accompany, they don't join.
+  const canApply = !user || isPorteur
+  const showApply = isOpen && canApply
+
+  // ── Porteur journey (what's done / going on / next) ──
+  const phSt = (p: Phase) => (p.status ?? (p.isActive ? 'ACTIVE' : 'UPCOMING'))
+  const doneCount = phases.filter((p) => phSt(p) === 'COMPLETED').length
+  const currentPhase = phases.find((p) => phSt(p) === 'ACTIVE')
+  const nextPhase = phases.find((p) => phSt(p) === 'UPCOMING')
+  const progressPct = phases.length ? Math.round((doneCount / phases.length) * 100) : 0
+  const isEnrolled = isPorteur && myApplication === 'ACCEPTED'
+  // ── Jury workspace stats for this programme ──
+  const juryDone = juryItems.filter((c) =>
+    (c.evaluations ?? []).some((e: any) => (e.juryEmail ?? '').toLowerCase() === (user?.email ?? '').toLowerCase())).length
+  const showJury = isJury && juryItems.length > 0
+
+  // ── Deadline & in-page navigation (built only from sections that exist) ──
+  const deadlineDays = daysUntil(programme.candidatureDeadline ?? programme.applicationDeadline)
+  const toc = ([
+    programme.description && { id: 'apropos', label: 'À propos' },
+    (programme.sectors?.length ?? 0) > 0 && { id: 'pour-qui', label: 'Pour qui ?' },
+    (programme.objectives?.length ?? 0) > 0 && { id: 'objectifs', label: 'Objectifs' },
+    phases.length > 0 && { id: 'parcours', label: 'Le parcours' },
+    (programme.benefits?.length ?? 0) > 0 && { id: 'avantages', label: 'Avantages' },
+    (programme.galleryUrls?.length ?? 0) > 0 && { id: 'galerie', label: 'Galerie' },
+    activeCriteria.length > 0 && { id: 'criteres', label: 'Critères' },
+    partners.length > 0 && { id: 'partenaires', label: 'Partenaires' },
+  ].filter(Boolean)) as { id: string; label: string }[]
   const APPLIED_LABEL: Record<string, string> = {
     PENDING: 'Candidature soumise', UNDER_EVALUATION: 'En évaluation',
     ACCEPTED: 'Candidature acceptée ✓', REJECTED: 'Candidature refusée',
@@ -243,6 +438,7 @@ export default function ProgrammeDetailPage() {
                         {programme.type === 'PUBLIC' ? 'Public' : 'Privé'}
                       </span>
                     )}
+                    {showApply && deadlineDays != null && deadlineDays >= 0 && <DeadlineBadge days={deadlineDays} onLight />}
                   </div>
                   <h1 className="text-3xl sm:text-4xl font-black text-white leading-tight">{programme.title ?? programme.name}</h1>
                   {programme.tagline && (
@@ -251,7 +447,7 @@ export default function ProgrammeDetailPage() {
                 </div>
                 {alreadyApplied ? (
                   <div className="hidden sm:block shrink-0"><AppliedChip light /></div>
-                ) : isOpen && (
+                ) : showApply && (
                   <div className="hidden sm:block shrink-0">
                     <Button size="lg" onClick={handleApply}
                       className="bg-white text-brand-700 hover:bg-white/90 font-bold shadow-xl gap-2">
@@ -269,7 +465,7 @@ export default function ProgrammeDetailPage() {
       {/* Mobile apply CTA */}
       {alreadyApplied ? (
         <div className="sm:hidden px-4 py-3 bg-brand-600 flex justify-center"><AppliedChip light /></div>
-      ) : isOpen && (
+      ) : showApply && (
         <div className="sm:hidden px-4 py-3 bg-brand-600">
           <Button className="w-full bg-white text-brand-700 hover:bg-white/90 font-bold" onClick={handleApply}>
             <Sparkles className="h-4 w-4" />
@@ -304,6 +500,19 @@ export default function ProgrammeDetailPage() {
 
       {/* ── Main content ── */}
       <main className="mx-auto max-w-6xl px-4 py-10">
+
+        {/* Sticky in-page navigation (scroll-spy) — offset under the active chrome */}
+        <SectionNav items={toc} topClass={hydrated && isAuthenticated ? 'top-14' : 'top-16'} />
+
+        {/* Personalized band — porteur progress & jury workspace */}
+        {(isEnrolled || showJury) && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+            className={`mb-8 grid gap-4 ${isEnrolled && showJury ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+            {isEnrolled && <PorteurProgressCard phases={phases} done={doneCount} current={currentPhase} next={nextPhase} pct={progressPct} />}
+            {showJury && <JuryPanelCard items={juryItems} done={juryDone} email={user?.email ?? ''} />}
+          </motion.div>
+        )}
+
         <div className="grid gap-8 lg:grid-cols-3">
 
           {/* Left column — 2/3 */}
@@ -325,7 +534,7 @@ export default function ProgrammeDetailPage() {
 
             {/* Description */}
             {programme.description && (
-              <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+              <motion.section id="apropos" className="scroll-mt-28" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
                 <SectionTitle>À propos du programme</SectionTitle>
                 <p className="text-muted-foreground leading-relaxed text-base whitespace-pre-line">{programme.description}</p>
               </motion.section>
@@ -333,8 +542,8 @@ export default function ProgrammeDetailPage() {
 
             {/* Sectors */}
             {programme.sectors && programme.sectors.length > 0 && (
-              <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-                <SectionTitle>Secteurs ciblés</SectionTitle>
+              <motion.section id="pour-qui" className="scroll-mt-28" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+                <SectionTitle>Pour qui ? — secteurs ciblés</SectionTitle>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {programme.sectors.map((s) => (
                     <div key={s} className="flex items-center gap-2.5 rounded-xl border border-border bg-card p-3.5 shadow-sm">
@@ -350,7 +559,7 @@ export default function ProgrammeDetailPage() {
 
             {/* Objectives */}
             {programme.objectives && programme.objectives.length > 0 && (
-              <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+              <motion.section id="objectifs" className="scroll-mt-28" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                 <SectionTitle>Objectifs du programme</SectionTitle>
                 <ul className="space-y-3">
                   {programme.objectives.map((obj, i) => (
@@ -367,8 +576,8 @@ export default function ProgrammeDetailPage() {
 
             {/* Timeline / Sessions */}
             {phases.length > 0 && (
-              <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-                <SectionTitle>Calendrier du programme</SectionTitle>
+              <motion.section id="parcours" className="scroll-mt-28" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+                <SectionTitle>Le parcours du programme</SectionTitle>
                 <div className="relative pl-1">
                   {phases.map((ph, i) => {
                     const done = ph.status === 'COMPLETED'
@@ -426,6 +635,14 @@ export default function ProgrammeDetailPage() {
                                 </span>
                               )}
                             </div>
+                            {(ph.galleryUrls?.length ?? 0) > 0 && (
+                              <div className="mt-3 border-t border-border/60 pt-3">
+                                <p className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
+                                  <Images className="h-3 w-3 text-brand-500" />Photos de la session
+                                </p>
+                                <PhotoGallery images={ph.galleryUrls} variant="strip" />
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -437,7 +654,7 @@ export default function ProgrammeDetailPage() {
 
             {/* Benefits */}
             {programme.benefits && programme.benefits.length > 0 && (
-              <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+              <motion.section id="avantages" className="scroll-mt-28" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                 <SectionTitle>Ce que vous gagnez</SectionTitle>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {programme.benefits.map((b, i) => (
@@ -450,9 +667,17 @@ export default function ProgrammeDetailPage() {
               </motion.section>
             )}
 
+            {/* Retour en images — programme gallery */}
+            {(programme.galleryUrls?.length ?? 0) > 0 && (
+              <motion.section id="galerie" className="scroll-mt-28" initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }}>
+                <SectionTitle>Retour en images</SectionTitle>
+                <PhotoGallery images={programme.galleryUrls} />
+              </motion.section>
+            )}
+
             {/* Evaluation criteria */}
             {activeCriteria.length > 0 && (
-              <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+              <motion.section id="criteres" className="scroll-mt-28" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
                 <SectionTitle>Critères de sélection</SectionTitle>
                 <div className="space-y-4">
                   {activeCriteria.sort((a, b) => a.criterionOrder - b.criterionOrder).map((c) => (
@@ -469,23 +694,9 @@ export default function ProgrammeDetailPage() {
               </motion.section>
             )}
 
-            {/* Galerie — retour en images */}
-            {((programme as any).galleryUrls?.length ?? 0) > 0 && (
-              <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-                <SectionTitle>Retour en images</SectionTitle>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {((programme as any).galleryUrls as string[]).map((u, i) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={`${u}-${i}`} src={u} alt={`Photo ${i + 1}`}
-                      className="h-40 w-full rounded-xl border border-border object-cover shadow-sm transition-transform hover:scale-[1.02]" />
-                  ))}
-                </div>
-              </motion.section>
-            )}
-
             {/* Partners */}
             {partners.length > 0 && (
-              <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+              <motion.section id="partenaires" className="scroll-mt-28" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
                 <SectionTitle>Nos partenaires</SectionTitle>
                 <div className="flex flex-wrap gap-4">
                   {partners.map((p) => (
@@ -509,6 +720,17 @@ export default function ProgrammeDetailPage() {
           {/* Right column — sticky info card */}
           <div className="lg:col-span-1">
             <div className="lg:sticky lg:top-6 space-y-4">
+              {/* Deadline countdown — urgency at a glance */}
+              {!alreadyApplied && showApply && deadlineDays != null && deadlineDays >= 0 && (
+                <div className="rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500/10 to-purple-500/10 p-4 text-center">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Clôture des candidatures</p>
+                  <p className="mt-1 text-4xl font-black leading-none text-brand-600 dark:text-brand-400 tabular-nums">{deadlineDays}</p>
+                  <p className="text-xs text-muted-foreground">jour{deadlineDays > 1 ? 's' : ''} restant{deadlineDays > 1 ? 's' : ''}</p>
+                  {(programme.candidatureDeadline ?? programme.applicationDeadline) && (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">jusqu&apos;au {formatDate(programme.candidatureDeadline ?? programme.applicationDeadline)}</p>
+                  )}
+                </div>
+              )}
               <MagicCard className="p-6">
                 <h3 className="mb-4 font-bold text-foreground text-lg">Informations clés</h3>
                 <div className="space-y-3.5">
@@ -565,7 +787,7 @@ export default function ProgrammeDetailPage() {
                     </p>
                   </div>
                 )}
-                {!alreadyApplied && isOpen && (
+                {!alreadyApplied && showApply && (
                   <div className="mt-6 space-y-3">
                     <Button className="w-full gap-2 bg-gradient-to-r from-brand-600 to-purple-600 text-white font-bold shadow-lg hover:shadow-brand-500/30 hover:shadow-xl transition-all"
                       size="lg" onClick={handleApply}>
@@ -595,6 +817,35 @@ export default function ProgrammeDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* ── Final call-to-action band ── */}
+        {!alreadyApplied && showApply && (
+          <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }}
+            className="relative mt-14 overflow-hidden rounded-3xl bg-gradient-to-r from-brand-600 via-brand-600 to-purple-600 p-8 text-center text-white shadow-xl sm:p-12">
+            <div className="absolute inset-0 opacity-20"
+              style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '28px 28px' }} />
+            <div className="relative">
+              <h2 className="text-2xl font-black sm:text-3xl">Prêt à faire décoller votre projet ?</h2>
+              <p className="mx-auto mt-2 max-w-xl text-sm text-white/90 sm:text-base">
+                Rejoignez « {programme.title ?? programme.name} » et bénéficiez d&apos;un accompagnement sur mesure pour concrétiser votre startup.
+              </p>
+              {deadlineDays != null && deadlineDays >= 0 && (
+                <div className="mt-4 flex justify-center"><DeadlineBadge days={deadlineDays} onLight /></div>
+              )}
+              <div className="mt-6 flex justify-center">
+                <Button size="lg" onClick={handleApply} className="gap-2 bg-white font-bold text-brand-700 shadow-lg hover:bg-white/90">
+                  {programme.applicationUrl ? <ExternalLink className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+                  Rejoindre le programme
+                </Button>
+              </div>
+              {!user && (
+                <p className="mt-3 text-xs text-white/80">
+                  <Link href="/login" className="underline">Connectez-vous</Link> pour postuler
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
       </main>
     </>
   )

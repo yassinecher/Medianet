@@ -200,6 +200,10 @@ export const organizationsApi = {
   create: (data: unknown) => api.post('/api/organizations', data),
   update: (id: number, data: unknown) => api.put(`/api/organizations/${id}`, data),
   delete: (id: number) => api.delete(`/api/organizations/${id}`),
+  /** Assign the porteur representing the org (userId null → reset to the creator). */
+  assignPorteur: (id: number, userId: number | null) => api.put(`/api/organizations/${id}/porteur`, { userId }),
+  /** Assign the « vis-à-vis » mentor/référent (userId null → clear). */
+  assignMentor: (id: number, userId: number | null) => api.put(`/api/organizations/${id}/mentor`, { userId }),
   // Members
   listMembers:   (id: number) => api.get(`/api/organizations/${id}/members`),
   addMember:     (id: number, data: unknown) => api.post(`/api/organizations/${id}/members`, data),
@@ -207,6 +211,14 @@ export const organizationsApi = {
     api.put(`/api/organizations/${id}/members/${memberId}`, data),
   removeMember:  (id: number, memberId: number) =>
     api.delete(`/api/organizations/${id}/members/${memberId}`),
+}
+
+/** Programme participation roster (org × programme) + per-programme mentor. */
+export const participantsApi = {
+  list:         (programmeId: number) => api.get('/api/participants', { params: { programmeId } }),
+  mine:         () => api.get('/api/participants/mine'),
+  assignMentor: (id: number, mentorUserId: number | null) => api.put(`/api/participants/${id}/mentor`, { mentorUserId }),
+  setStatus:    (id: number, status: string) => api.put(`/api/participants/${id}/status`, { status }),
 }
 
 export const ORGANIZATION_TYPES = [

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { fetchNotifications, relTime, type NotificationItem } from '@/lib/notifications'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
+import { MedianetLogoMain } from '@/components/brand/MedianetLogoMain'
 import { useAuthStore, useUser, useFrontofficeRoles, usePerms, type FrontofficeRole } from '@/store/auth.store'
 import { startAuthEvents } from '@/lib/authEvents'
 import { cn, getInitials } from '@/lib/utils'
@@ -113,10 +114,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           'flex h-16 items-center border-b border-border px-4 transition-colors hover:bg-accent/30',
           collapsed && 'justify-center px-0'
         )}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-purple-600">
-            <span className="text-xs font-bold text-white">M</span>
-          </div>
-          {!collapsed && <span className="ml-2.5 truncate font-bold text-foreground">Medianet</span>}
+          {collapsed ? (
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-purple-600">
+              <span className="text-xs font-bold text-white">M</span>
+            </div>
+          ) : (
+            <MedianetLogoMain size="sm" tagline={false} />
+          )}
         </Link>
 
         {/* Nav */}
@@ -166,10 +170,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <aside className="fixed inset-y-0 left-0 z-50 w-64 border-r border-border bg-card flex flex-col md:hidden animate-in slide-in-from-left duration-200">
             <div className="flex h-16 items-center justify-between border-b border-border px-4">
               <Link href="/dashboard" className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-purple-600">
-                  <span className="text-xs font-bold text-white">M</span>
-                </div>
-                <span className="font-bold text-foreground">Medianet</span>
+                <MedianetLogoMain size="sm" tagline={false} />
               </Link>
               <button type="button" onClick={() => setMobileOpen(false)}
                 className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent">

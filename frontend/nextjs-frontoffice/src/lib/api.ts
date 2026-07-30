@@ -295,7 +295,7 @@ export const tasksApi = {
 /** Organizations — porteurs list and pick their own; the same API also exposes
  *  partner/sponsor organisations the admin has registered. */
 export const organizationsApi = {
-  list:   (params?: { type?: string; internal?: boolean; createdByUserId?: number; memberUserId?: number }) =>
+  list:   (params?: { type?: string; internal?: boolean; createdByUserId?: number; memberUserId?: number; mentorUserId?: number; porteurUserId?: number }) =>
     api.get('/api/organizations', { params }),
   get:    (id: number) => api.get(`/api/organizations/${id}`),
   create: (data: {
@@ -317,6 +317,19 @@ export const organizationsApi = {
     api.put(`/api/organizations/${id}/members/${memberId}`, data),
   removeMember:  (id: number, memberId: number) =>
     api.delete(`/api/organizations/${id}/members/${memberId}`),
+}
+
+/** Mentor coaching: the plan (milestones + notes) and the session-note log. */
+export const coachingApi = {
+  get:        (orgId: number) => api.get(`/api/organizations/${orgId}/coaching`),
+  savePlan:   (orgId: number, data: { milestonesJson?: string; notes?: string }) =>
+    api.put(`/api/organizations/${orgId}/coaching/plan`, data),
+  addNote:    (orgId: number, data: { sessionDate?: string; title?: string; content?: string; nextSteps?: string }) =>
+    api.post(`/api/organizations/${orgId}/coaching/notes`, data),
+  updateNote: (orgId: number, noteId: number, data: { sessionDate?: string; title?: string; content?: string; nextSteps?: string }) =>
+    api.put(`/api/organizations/${orgId}/coaching/notes/${noteId}`, data),
+  deleteNote: (orgId: number, noteId: number) =>
+    api.delete(`/api/organizations/${orgId}/coaching/notes/${noteId}`),
 }
 
 export const ORGANIZATION_TYPES = [

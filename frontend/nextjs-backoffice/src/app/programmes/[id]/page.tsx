@@ -30,6 +30,7 @@ import { ProgrammeDashboard } from './ProgrammeDashboard'
 import { EvaluationDashboard } from './EvaluationDashboard'
 import { CandidaturesPanel } from './CandidaturesPanel'
 import { ParticipantsPanel } from './ParticipantsPanel'
+import { ParticipantsRoster } from './ParticipantsRoster'
 
 const statusLabel: Record<string, string> = {
   DRAFT: 'Brouillon', OPEN: 'Ouvert', IN_PROGRESS: 'En cours',
@@ -980,7 +981,8 @@ export default function ProgrammeDetailPage() {
 
             {/* PARTICIPANTS TAB */}
             {activeTab === 'participants' && programme && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+                <ParticipantsRoster programmeId={programme.id} />
                 <ParticipantsPanel programmeId={programme.id} programmeName={programme.title ?? programme.name ?? 'Programme'}
                   phases={phases as any} />
               </motion.div>

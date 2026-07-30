@@ -14,6 +14,7 @@ import {
   FileText, Trophy, CalendarRange, Calendar, Briefcase, History, ClipboardList, ExternalLink,
 } from 'lucide-react'
 import { organizationsApi, candidaturesApi } from '@/lib/api'
+import { PorteurVisAVis } from './PorteurVisAVis'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
@@ -40,7 +41,8 @@ interface Org {
   id: number; name: string; type?: string; sector?: string; city?: string; country?: string
   address?: string; website?: string; logoUrl?: string; description?: string
   contactEmail?: string; contactPhone?: string; foundedYear?: number; employeeCount?: string
-  createdByUserId?: number; createdAt?: string; members?: Member[]
+  createdByUserId?: number; porteurUserId?: number | null; mentorUserId?: number | null
+  createdAt?: string; members?: Member[]
 }
 
 function Kpi({ icon: Icon, label, value, tone }: { icon: any; label: string; value: string | number; tone: string }) {
@@ -179,6 +181,9 @@ export default function AdminOrganizationDetailPage() {
           <Kpi icon={Trophy} label="Acceptées" value={accepted} tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" />
           <Kpi icon={Users} label="Membres" value={members.length} tone="bg-purple-500/15 text-purple-600 dark:text-purple-400" />
         </div>
+
+        {/* Porteur ↔ vis-à-vis (mentor / référent) */}
+        <PorteurVisAVis org={org} onChanged={load} />
 
         <div className="grid gap-5 lg:grid-cols-2">
           {/* Programme stats */}

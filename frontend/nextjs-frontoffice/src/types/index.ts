@@ -64,6 +64,8 @@ export interface Programme {
   // Structured lists
   objectives?: string[]
   benefits?: string[]
+  /** « Retour en images » — programme photo gallery. */
+  galleryUrls?: string[]
 }
 
 export interface Phase {
@@ -83,6 +85,8 @@ export interface Phase {
   /** Lifecycle status of the session (UPCOMING | ACTIVE | COMPLETED). */
   status?: string
   visibility?: string
+  /** Photos attached to this session (galerie par session). */
+  galleryUrls?: string[]
 }
 
 export interface Criteria {

@@ -74,8 +74,10 @@ public class OrganizationController {
             @RequestParam(required = false) String type,
             @RequestParam(required = false) Boolean internal,
             @RequestParam(required = false) Long createdByUserId,
-            @RequestParam(required = false) Long memberUserId) {
-        return ResponseEntity.ok(service.list(type, internal, createdByUserId, memberUserId));
+            @RequestParam(required = false) Long memberUserId,
+            @RequestParam(required = false) Long mentorUserId,
+            @RequestParam(required = false) Long porteurUserId) {
+        return ResponseEntity.ok(service.list(type, internal, createdByUserId, memberUserId, mentorUserId, porteurUserId));
     }
 
     @GetMapping("/{id}")
@@ -91,6 +93,13 @@ public class OrganizationController {
         if (auth == null) return false;
         return auth.getAuthorities().stream().map(a -> a.getAuthority())
                 .anyMatch(a -> a.equals("ROLE_ADMIN") || a.equals("ROLE_JURY"));
+    }
+
+    /** ADMIN only — used to gate write operations (coaching) that jury must not do. */
+    private boolean isAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream().map(a -> a.getAuthority()).anyMatch(a -> a.equals("ROLE_ADMIN"));
     }
 
     @PostMapping
@@ -111,6 +120,62 @@ public class OrganizationController {
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('organizations:update')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Porteur / vis-à-vis (mentor) assignment (admin) ──────────────────────
+
+    /** Assign the porteur representing the org. {@code userId} null → reset to creator. */
+    @PutMapping("/{id}/porteur")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('organizations:update')")
+    public ResponseEntity<OrganizationDto> assignPorteur(
+            @PathVariable Long id, @RequestBody java.util.Map<String, Long> body) {
+        return ResponseEntity.ok(service.assignPorteur(id, body.get("userId")));
+    }
+
+    /** Assign the « vis-à-vis » mentor/référent. {@code userId} null → clear it. */
+    @PutMapping("/{id}/mentor")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('organizations:update')")
+    public ResponseEntity<OrganizationDto> assignMentor(
+            @PathVariable Long id, @RequestBody java.util.Map<String, Long> body) {
+        return ResponseEntity.ok(service.assignMentor(id, body.get("userId")));
+    }
+
+    // ── Coaching (mentor accompaniment) ──────────────────────────────────────
+
+    @GetMapping("/{id}/coaching")
+    public ResponseEntity<CoachingDto> getCoaching(
+            @PathVariable Long id, @RequestAttribute(value = "userId", required = false) Long userId) {
+        return ResponseEntity.ok(service.getCoaching(id, userId, isPrivileged(), isAdmin()));
+    }
+
+    @PutMapping("/{id}/coaching/plan")
+    public ResponseEntity<CoachingPlanDto> upsertCoachingPlan(
+            @PathVariable Long id, @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestBody UpdateCoachingPlanRequest req) {
+        return ResponseEntity.ok(service.upsertCoachingPlan(id, userId, isAdmin(), req));
+    }
+
+    @PostMapping("/{id}/coaching/notes")
+    public ResponseEntity<CoachingNoteDto> addCoachingNote(
+            @PathVariable Long id, @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestBody CoachingNoteRequest req) {
+        return ResponseEntity.status(201).body(service.addCoachingNote(id, userId, isAdmin(), req));
+    }
+
+    @PutMapping("/{id}/coaching/notes/{noteId}")
+    public ResponseEntity<CoachingNoteDto> updateCoachingNote(
+            @PathVariable Long id, @PathVariable Long noteId,
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestBody CoachingNoteRequest req) {
+        return ResponseEntity.ok(service.updateCoachingNote(id, noteId, userId, isAdmin(), req));
+    }
+
+    @DeleteMapping("/{id}/coaching/notes/{noteId}")
+    public ResponseEntity<Void> deleteCoachingNote(
+            @PathVariable Long id, @PathVariable Long noteId,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        service.deleteCoachingNote(id, noteId, userId, isAdmin());
         return ResponseEntity.noContent().build();
     }
 

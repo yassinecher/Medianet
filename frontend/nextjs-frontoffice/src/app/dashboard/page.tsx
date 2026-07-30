@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import {
   FileText, CheckSquare, FolderKanban, Clock, ArrowRight, Calendar,
   Briefcase, Sparkles, GraduationCap, TrendingUp, Award, Users,
-  AlertCircle, Plus, Search, Star, MapPin,
+  AlertCircle, Plus, Search, Star, MapPin, Building2,
 } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { MagicCard } from '@/components/magicui/magic-card'
@@ -13,7 +13,8 @@ import { NumberTicker } from '@/components/magicui/number-ticker'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
-import { candidaturesApi, tasksApi, programmesApi, juryApi } from '@/lib/api'
+import { MedianetLogoMain } from '@/components/brand/MedianetLogoMain'
+import { candidaturesApi, tasksApi, programmesApi, juryApi, organizationsApi } from '@/lib/api'
 import { useUser, useActiveRole, useIsJury, frontofficeRolesOf } from '@/store/auth.store'
 import { formatRelativeDate, statusColor, scoreColor, formatDate } from '@/lib/utils'
 import type { Candidature, Task, Programme } from '@/types'
@@ -54,6 +55,151 @@ const ROLE_HERO: Record<string, { icon: any; gradient: string; tagline: string }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+// ── Jury workspace — « à évaluer » grouped by programme + my ratings ────────
+function JuryWorkspace({ items, myEvalOf }: { items: any[]; myEvalOf: (c: any) => any }) {
+  const pending = items.filter((c) => !myEvalOf(c))
+  const evaluated = items.filter((c) => myEvalOf(c))
+  const groups = new Map<string, any[]>()
+  pending.forEach((c) => {
+    const k = c.programmeName ?? 'Autres candidatures'
+    const a = groups.get(k) ?? []; a.push(c); groups.set(k, a)
+  })
+  return (
+    <>
+      {/* À évaluer */}
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 font-bold text-foreground">
+            <AlertCircle className="h-4 w-4 text-amber-500" />À évaluer
+            {pending.length > 0 && (
+              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">{pending.length}</span>
+            )}
+          </h2>
+          {items.length > 0 && (
+            <Link href="/evaluations" className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">Tout voir</Link>
+          )}
+        </div>
+        {items.length === 0 ? (
+          <MagicCard className="p-8 text-center">
+            <GraduationCap className="mx-auto h-9 w-9 text-muted-foreground opacity-30" />
+            <p className="mt-2 text-sm font-semibold text-foreground">Aucune candidature assignée</p>
+            <p className="text-xs text-muted-foreground">L’administrateur vous assignera des candidatures à évaluer.</p>
+          </MagicCard>
+        ) : pending.length === 0 ? (
+          <MagicCard className="p-8 text-center">
+            <Award className="mx-auto h-9 w-9 text-emerald-500" />
+            <p className="mt-2 text-sm font-semibold text-foreground">Tout est évalué 🎉</p>
+            <p className="text-xs text-muted-foreground">Aucune candidature en attente de votre évaluation.</p>
+          </MagicCard>
+        ) : (
+          <div className="space-y-4">
+            {Array.from(groups.entries()).map(([prog, list]) => (
+              <div key={prog}>
+                <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">{prog}</p>
+                <div className="space-y-2">
+                  {list.map((c) => (
+                    <Link key={c.id} href={`/evaluations/${c.id}`}>
+                      <MagicCard className="flex items-center gap-3 p-3 transition-transform hover:scale-[1.01]">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
+                          <GraduationCap className="h-4 w-4 text-amber-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-foreground">{c.projectName || c.companyName || `Candidature #${c.id}`}</p>
+                          {(c.porteurName || c.porteurEmail) && <p className="truncate text-[11px] text-muted-foreground">{c.porteurName || c.porteurEmail}</p>}
+                        </div>
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-[11px] font-bold text-white">
+                          Évaluer<ArrowRight className="h-3 w-3" />
+                        </span>
+                      </MagicCard>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Mes évaluations récentes */}
+      {evaluated.length > 0 && (
+        <section>
+          <h2 className="mb-3 flex items-center gap-2 font-bold text-foreground">
+            <Star className="h-4 w-4 text-brand-500" />Mes évaluations récentes
+          </h2>
+          <div className="space-y-2">
+            {evaluated.slice(0, 6).map((c) => {
+              const score = Number(myEvalOf(c)?.weightedScore ?? 0)
+              return (
+                <Link key={c.id} href={`/evaluations/${c.id}`}>
+                  <MagicCard className="flex items-center gap-3 p-3 transition-transform hover:scale-[1.01]">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-foreground">{c.projectName || c.companyName || `Candidature #${c.id}`}</p>
+                      {c.programmeName && <p className="truncate text-[11px] text-muted-foreground">{c.programmeName}</p>}
+                    </div>
+                    <span className={`shrink-0 text-sm font-bold ${scoreColor(score)}`}>{score.toFixed(1)}<span className="text-[10px] text-muted-foreground">/10</span></span>
+                  </MagicCard>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
+      )}
+    </>
+  )
+}
+
+// ── Mentor workspace — the startups I'm the assigned « vis-à-vis » of ───────
+function MentorWorkspace({ orgs }: { orgs: any[] }) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 font-bold text-foreground">
+          <Users className="h-4 w-4 text-emerald-500" />Mes startups accompagnées
+          {orgs.length > 0 && (
+            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">{orgs.length}</span>
+          )}
+        </h2>
+        {orgs.length > 0 && (
+          <Link href="/organizations" className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">Tout voir</Link>
+        )}
+      </div>
+      {orgs.length === 0 ? (
+        <MagicCard className="p-8 text-center">
+          <Users className="mx-auto h-9 w-9 text-muted-foreground opacity-30" />
+          <p className="mt-2 text-sm font-semibold text-foreground">Aucune startup assignée</p>
+          <p className="text-xs text-muted-foreground">L’administrateur vous désignera comme référent (vis-à-vis) des startups à accompagner.</p>
+        </MagicCard>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {orgs.map((o) => (
+            <Link key={o.id} href={`/organizations/${o.id}`}>
+              <MagicCard className="flex h-full items-start gap-3 p-4 transition-transform hover:scale-[1.02]">
+                {o.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={o.logoUrl} alt="" className="h-11 w-11 rounded-lg bg-white object-contain" />
+                ) : (
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 to-brand-500/20">
+                    <Building2 className="h-5 w-5 text-emerald-500" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-1 text-sm font-semibold text-foreground">{o.name}</p>
+                  {[o.sector, o.city].filter(Boolean).length > 0 && (
+                    <p className="line-clamp-1 text-xs text-muted-foreground">{[o.sector, o.city].filter(Boolean).join(' · ')}</p>
+                  )}
+                  <div className="mt-2 flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    Accompagner<ArrowRight className="h-3 w-3" />
+                  </div>
+                </div>
+              </MagicCard>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function DashboardPage() {
   const user = useUser()
   const activeRole = useActiveRole() ?? 'PORTEUR'
@@ -63,11 +209,13 @@ export default function DashboardPage() {
   const [programmes, setProgrammes] = useState<Programme[]>([])
   const [myProgrammes, setMyProgrammes] = useState<Programme[]>([])
   const [juryItems, setJuryItems] = useState<any[]>([])
+  const [mentorOrgs, setMentorOrgs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   // « Mes candidatures » is a PORTEUR endpoint — never call it for jury/mentor
   // accounts (the 403 would surface a global "permission requise : PORTEUR" toast).
   const isPorteur = frontofficeRolesOf(user).includes('PORTEUR')
+  const isMentor = frontofficeRolesOf(user).includes('MENTOR')
 
   useEffect(() => {
     Promise.allSettled([
@@ -76,8 +224,10 @@ export default function DashboardPage() {
       // publicOnly: don't surface draft/archived programmes in recommendations.
       programmesApi.list({ status: 'OPEN', publicOnly: true }).then((r) => setProgrammes(r.data?.content ?? r.data ?? [])).catch(() => {}),
       isJury ? juryApi.myAssignments().then((r) => setJuryItems(r.data ?? [])).catch(() => {}) : Promise.resolve(),
+      // Mentor: the startups I'm the assigned « vis-à-vis » of.
+      (isMentor && user?.id) ? organizationsApi.list({ mentorUserId: user.id }).then((r) => setMentorOrgs(r.data ?? [])).catch(() => {}) : Promise.resolve(),
     ]).finally(() => setLoading(false))
-  }, [isJury, isPorteur])
+  }, [isJury, isPorteur, isMentor, user?.id])
 
   // "Mes programmes en cours" — the incubation space: programmes the porteur was
   // ACCEPTED into. Fetch each so we can show a rich card.
@@ -133,7 +283,7 @@ export default function DashboardPage() {
     { label: 'Programmes ouverts', value: programmes.length, sub: 'à découvrir',
       icon: FolderKanban, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10' },
   ] : activeRole === 'MENTOR' ? [
-    { label: 'Porteurs assignés', value: 0, sub: 'en cours d\'accompagnement',
+    { label: 'Startups accompagnées', value: mentorOrgs.length, sub: 'dont je suis le référent',
       icon: Users, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10' },
     { label: 'Sessions à venir', value: pendingTasks.length, sub: 'cette semaine',
       icon: Calendar, color: 'text-brand-600 dark:text-brand-400', bg: 'bg-brand-500/10' },
@@ -161,6 +311,10 @@ export default function DashboardPage() {
           <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${hero.gradient} p-6 sm:p-8 text-white shadow-xl`}>
             <div className="absolute inset-0 opacity-20"
               style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '32px 32px' }} />
+            {/* Medianet brand mark — on a white chip so the wordmark reads on any gradient */}
+            <div className="absolute right-4 top-4 hidden rounded-xl bg-white px-3 py-2 shadow-md sm:block">
+              <MedianetLogoMain size="sm" tagline={false} href="/" />
+            </div>
             <div className="relative flex items-start gap-4">
               <div className="hidden sm:flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
                 <HeroIcon className="h-7 w-7" />
@@ -198,6 +352,16 @@ export default function DashboardPage() {
                         <GraduationCap className="h-3.5 w-3.5" />Mes évaluations
                         {juryPending > 0 && (
                           <span className="ml-0.5 rounded-full bg-amber-600 px-1.5 text-[10px] font-bold text-white">{juryPending}</span>
+                        )}
+                      </Button>
+                    </Link>
+                  )}
+                  {isMentor && (
+                    <Link href="/organizations">
+                      <Button className="bg-white text-emerald-700 hover:bg-white/90 gap-1.5 font-bold">
+                        <Users className="h-3.5 w-3.5" />Mes startups
+                        {mentorOrgs.length > 0 && (
+                          <span className="ml-0.5 rounded-full bg-emerald-600 px-1.5 text-[10px] font-bold text-white">{mentorOrgs.length}</span>
                         )}
                       </Button>
                     </Link>
@@ -270,6 +434,12 @@ export default function DashboardPage() {
 
           {/* LEFT (2/3): Recent candidatures + tasks */}
           <div className="lg:col-span-2 space-y-6">
+
+            {/* Jury workspace — candidatures to evaluate + my ratings */}
+            {isJury && <JuryWorkspace items={juryItems} myEvalOf={myEvalOf} />}
+
+            {/* Mentor workspace — startups I accompany */}
+            {isMentor && <MentorWorkspace orgs={mentorOrgs} />}
 
             {/* Mes programmes en cours — incubation space (accepted candidatures) */}
             {activeRole === 'PORTEUR' && myProgrammes.length > 0 && (
@@ -485,6 +655,7 @@ export default function DashboardPage() {
                   { label: 'Programmes ouverts', href: '/programmes', icon: FolderKanban, badge: programmes.length },
                   ...(activeRole === 'PORTEUR' ? [{ label: 'Mes candidatures', href: '/candidatures', icon: FileText, badge: candidatures.length }] : []),
                   ...(isJury ? [{ label: 'Mes évaluations', href: '/evaluations', icon: GraduationCap, badge: juryPending }] : []),
+                  ...(isMentor ? [{ label: 'Mes startups', href: '/organizations', icon: Users, badge: mentorOrgs.length }] : []),
                   { label: 'Mes tâches', href: '/tasks', icon: CheckSquare, badge: pendingTasks.length },
                 ].map((q) => {
                   const Icon = q.icon

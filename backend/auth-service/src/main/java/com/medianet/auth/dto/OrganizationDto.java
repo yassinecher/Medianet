@@ -26,6 +26,10 @@ public class OrganizationDto {
     /** Shown on the public « Sociétés incubées » page (admin-set). */
     private Boolean       showcased;
     private Long          createdByUserId;
+    /** Assigned porteur (defaults to the creator when null). */
+    private Long          porteurUserId;
+    /** « Vis-à-vis » — the assigned mentor / référent. */
+    private Long          mentorUserId;
     private Long          linkedCompanyId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

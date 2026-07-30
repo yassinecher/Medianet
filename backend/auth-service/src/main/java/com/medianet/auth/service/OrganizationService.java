@@ -21,6 +21,8 @@ public class OrganizationService {
     private final OrgMemberInvitationRepository invitationRepository;
     private final UserRepository               userRepository;
     private final NotificationClient           notificationClient;
+    private final com.medianet.auth.repository.CoachingPlanRepository coachingPlanRepository;
+    private final com.medianet.auth.repository.CoachingNoteRepository coachingNoteRepository;
 
     @Value("${frontoffice.url:http://localhost:3000}")
     private String frontofficeUrl;
@@ -28,9 +30,16 @@ public class OrganizationService {
     // ── Organisations ────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public List<OrganizationDto> list(String type, Boolean internal, Long createdByUserId, Long memberUserId) {
+    public List<OrganizationDto> list(String type, Boolean internal, Long createdByUserId,
+                                      Long memberUserId, Long mentorUserId, Long porteurUserId) {
         List<Organization> rows;
-        if (memberUserId != null) {
+        if (mentorUserId != null) {
+            // Organisations this MENTOR is the assigned « vis-à-vis » of.
+            rows = orgRepository.findByMentorUserId(mentorUserId);
+        } else if (porteurUserId != null) {
+            // Organisations this PORTEUR was explicitly assigned to represent.
+            rows = orgRepository.findByPorteurUserId(porteurUserId);
+        } else if (memberUserId != null) {
             // Organisations where this user is a TEAM MEMBER (read-only view).
             rows = memberRepository.findByUserId(memberUserId).stream()
                     .map(OrganizationMember::getOrganization)
@@ -76,6 +85,8 @@ public class OrganizationService {
         if (privileged) return; // ADMIN / JURY — trusted reviewers
         boolean related = viewerUserId != null && (
                 viewerUserId.equals(o.getCreatedByUserId()) ||
+                viewerUserId.equals(o.getPorteurUserId()) ||   // assigned porteur
+                viewerUserId.equals(o.getMentorUserId()) ||    // assigned « vis-à-vis » mentor
                 (o.getMembers() != null && o.getMembers().stream()
                         .anyMatch(m -> viewerUserId.equals(m.getUserId()))));
         if (!related) {
@@ -128,6 +139,141 @@ public class OrganizationService {
 
     public void delete(Long id) {
         orgRepository.delete(findOrThrow(id));
+    }
+
+    // ── Porteur / vis-à-vis (mentor) assignment ──────────────────────────────
+
+    /** Assign the porteur representing the org. {@code userId == null} resets to
+     *  the default (the creator). The target must hold the PORTEUR role. */
+    public OrganizationDto assignPorteur(Long id, Long userId) {
+        Organization o = findOrThrow(id);
+        if (userId == null) {
+            o.setPorteurUserId(null); // → effective porteur falls back to the creator
+        } else {
+            User u = userRepository.findById(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable : " + userId));
+            if (!u.hasRole("PORTEUR")) {
+                throw new IllegalArgumentException("Cet utilisateur n'est pas un porteur.");
+            }
+            o.setPorteurUserId(userId);
+        }
+        return toDto(orgRepository.save(o));
+    }
+
+    /** Assign the « vis-à-vis » mentor/référent. {@code userId == null} clears it.
+     *  The target must hold the MENTOR role. */
+    public OrganizationDto assignMentor(Long id, Long userId) {
+        Organization o = findOrThrow(id);
+        if (userId == null) {
+            o.setMentorUserId(null);
+        } else {
+            User u = userRepository.findById(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable : " + userId));
+            if (!u.hasRole("MENTOR")) {
+                throw new IllegalArgumentException("Cet utilisateur n'est pas un mentor.");
+            }
+            o.setMentorUserId(userId);
+        }
+        return toDto(orgRepository.save(o));
+    }
+
+    // ── Coaching plan & session notes (mentor accompaniment) ─────────────────
+
+    /** Full coaching view (plan + notes). Any related viewer may read. */
+    @Transactional(readOnly = true)
+    public CoachingDto getCoaching(Long orgId, Long viewerUserId, boolean viewPrivileged, boolean admin) {
+        Organization o = findOrThrow(orgId);
+        assertCanView(o, viewerUserId, viewPrivileged);
+        CoachingPlan plan = coachingPlanRepository.findByOrganizationId(orgId).orElse(null);
+        List<CoachingNote> notes = coachingNoteRepository.findByOrganizationIdOrderBySessionDateDescIdDesc(orgId);
+        return CoachingDto.builder()
+                .plan(plan == null ? null : toCoachingPlanDto(plan))
+                .notes(notes.stream().map(this::toCoachingNoteDto).collect(Collectors.toList()))
+                .canEdit(canCoach(o, viewerUserId, admin))
+                .build();
+    }
+
+    /** Create/update the plan. Only the assigned mentor or an admin may write. */
+    public CoachingPlanDto upsertCoachingPlan(Long orgId, Long viewerUserId, boolean admin, UpdateCoachingPlanRequest req) {
+        Organization o = findOrThrow(orgId);
+        assertCanCoach(o, viewerUserId, admin);
+        CoachingPlan plan = coachingPlanRepository.findByOrganizationId(orgId)
+                .orElseGet(() -> CoachingPlan.builder().organizationId(orgId).mentorUserId(o.getMentorUserId()).build());
+        if (req.getMilestonesJson() != null) plan.setMilestonesJson(req.getMilestonesJson());
+        if (req.getNotes() != null) plan.setNotes(req.getNotes());
+        if (plan.getMentorUserId() == null) plan.setMentorUserId(o.getMentorUserId());
+        return toCoachingPlanDto(coachingPlanRepository.save(plan));
+    }
+
+    public CoachingNoteDto addCoachingNote(Long orgId, Long viewerUserId, boolean admin, CoachingNoteRequest req) {
+        Organization o = findOrThrow(orgId);
+        assertCanCoach(o, viewerUserId, admin);
+        User author = viewerUserId != null ? userRepository.findById(viewerUserId).orElse(null) : null;
+        CoachingNote n = CoachingNote.builder()
+                .organizationId(orgId)
+                .authorUserId(viewerUserId)
+                .authorName(author != null ? (safe(author.getFirstName()) + " " + safe(author.getLastName())).trim() : null)
+                .sessionDate(req.getSessionDate() != null ? req.getSessionDate() : java.time.LocalDate.now())
+                .title(req.getTitle())
+                .content(req.getContent())
+                .nextSteps(req.getNextSteps())
+                .build();
+        return toCoachingNoteDto(coachingNoteRepository.save(n));
+    }
+
+    public CoachingNoteDto updateCoachingNote(Long orgId, Long noteId, Long viewerUserId, boolean admin, CoachingNoteRequest req) {
+        Organization o = findOrThrow(orgId);
+        assertCanCoach(o, viewerUserId, admin);
+        CoachingNote n = coachingNoteRepository.findById(noteId)
+                .filter(x -> orgId.equals(x.getOrganizationId()))
+                .orElseThrow(() -> new IllegalArgumentException("Note introuvable"));
+        if (req.getSessionDate() != null) n.setSessionDate(req.getSessionDate());
+        if (req.getTitle() != null)       n.setTitle(req.getTitle());
+        if (req.getContent() != null)     n.setContent(req.getContent());
+        if (req.getNextSteps() != null)   n.setNextSteps(req.getNextSteps());
+        return toCoachingNoteDto(coachingNoteRepository.save(n));
+    }
+
+    public void deleteCoachingNote(Long orgId, Long noteId, Long viewerUserId, boolean admin) {
+        Organization o = findOrThrow(orgId);
+        assertCanCoach(o, viewerUserId, admin);
+        coachingNoteRepository.findById(noteId)
+                .filter(n -> orgId.equals(n.getOrganizationId()))
+                .ifPresent(coachingNoteRepository::delete);
+    }
+
+    private boolean canCoach(Organization o, Long viewerUserId, boolean admin) {
+        return admin || (viewerUserId != null && viewerUserId.equals(o.getMentorUserId()));
+    }
+
+    private void assertCanCoach(Organization o, Long viewerUserId, boolean admin) {
+        if (!canCoach(o, viewerUserId, admin)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Seul le référent (mentor) de cette organisation peut modifier le suivi de coaching.");
+        }
+    }
+
+    private static String safe(String s) { return s == null ? "" : s; }
+
+    private CoachingPlanDto toCoachingPlanDto(CoachingPlan p) {
+        return CoachingPlanDto.builder()
+                .milestonesJson(p.getMilestonesJson())
+                .notes(p.getNotes())
+                .updatedAt(p.getUpdatedAt())
+                .build();
+    }
+
+    private CoachingNoteDto toCoachingNoteDto(CoachingNote n) {
+        return CoachingNoteDto.builder()
+                .id(n.getId())
+                .authorUserId(n.getAuthorUserId())
+                .authorName(n.getAuthorName())
+                .sessionDate(n.getSessionDate())
+                .title(n.getTitle())
+                .content(n.getContent())
+                .nextSteps(n.getNextSteps())
+                .createdAt(n.getCreatedAt())
+                .build();
     }
 
     // ── Members ──────────────────────────────────────────────────────────────
@@ -267,6 +413,8 @@ public class OrganizationService {
                 .internal(o.getInternal())
                 .showcased(Boolean.TRUE.equals(o.getShowcased()))
                 .createdByUserId(o.getCreatedByUserId())
+                .porteurUserId(o.getPorteurUserId())
+                .mentorUserId(o.getMentorUserId())
                 .linkedCompanyId(o.getLinkedCompanyId())
                 .createdAt(o.getCreatedAt())
                 .updatedAt(o.getUpdatedAt())

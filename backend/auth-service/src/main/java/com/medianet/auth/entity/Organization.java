@@ -75,6 +75,19 @@ public class Organization {
     /** User who registered this organisation (porteur, admin, mentor…). */
     private Long createdByUserId;
 
+    /**
+     * The PORTEUR who represents this organisation. Defaults to the creator when
+     * null (see the effective-porteur logic in the DTO/UI). Admin-assignable.
+     */
+    private Long porteurUserId;
+
+    /**
+     * The « vis-à-vis » — the incubator-side MENTOR / référent assigned to
+     * accompany this organisation. Null = none yet. Admin-assignable, ideally the
+     * best-fit mentor for the org's sector/expertise.
+     */
+    private Long mentorUserId;
+
     /** Optional bridge to the legacy {@link Company} record (during migration). */
     private Long linkedCompanyId;
 

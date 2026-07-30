@@ -10,9 +10,9 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Building2, Plus, Loader2, Globe2, MapPin, Check, X, Users, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { organizationsApi, ORGANIZATION_TYPES, CATALOG_CATEGORIES } from '@/lib/api'
+import { organizationsApi, juryApi, ORGANIZATION_TYPES, CATALOG_CATEGORIES } from '@/lib/api'
 import { useCatalog } from '@/hooks/useCatalog'
-import { useUser, useAuthStore } from '@/store/auth.store'
+import { useUser, useAuthStore, frontofficeRolesOf } from '@/store/auth.store'
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,7 +31,7 @@ interface Org {
   contactEmail?: string
   contactPhone?: string
   members?: { id: number }[]
-  _role?: 'owner' | 'member'
+  _role?: 'owner' | 'member' | 'mentor' | 'jury' | 'admin'
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -49,6 +49,25 @@ export default function OrganizationsPage() {
   const router = useRouter()
   const user = useUser()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  // Which organisations this module shows depends on the role:
+  //   porteur → the ones they own (+ team memberships)   [can create]
+  //   mentor  → the startups they're the « vis-à-vis » of
+  //   jury    → the organisations behind candidatures assigned to them
+  //   admin   → all organisations (admin-only accounts on the front-office)
+  const foRoles = frontofficeRolesOf(user)
+  const isPorteur = foRoles.includes('PORTEUR')
+  const isMentor = foRoles.includes('MENTOR')
+  const isJury = foRoles.includes('JURY')
+  const isAdmin = ((user?.roles ?? []) as string[]).includes('ADMIN')
+  const showAll = isAdmin && !isPorteur && !isMentor && !isJury
+  // Title + subtitle follow the dominant role (porteur first).
+  const view = isPorteur ? 'porteur' : isMentor ? 'mentor' : showAll ? 'admin' : isJury ? 'jury' : 'porteur'
+  const HEAD = {
+    porteur: { h: 'Mes organisations', sub: 'vos startups et structures.' },
+    mentor: { h: 'Startups que j’accompagne', sub: 'les organisations dont vous êtes le référent.' },
+    admin: { h: 'Organisations', sub: 'toutes les organisations de la plateforme.' },
+    jury: { h: 'Organisations à évaluer', sub: 'les structures liées à vos candidatures assignées.' },
+  }[view]
   const [hydrated, setHydrated] = useState(false)
   useEffect(() => { setHydrated(true) }, [])
 
@@ -75,21 +94,45 @@ export default function OrganizationsPage() {
     if (!user.id) { setLoading(false); return }
     let cancelled = false
     setLoading(true)
-    // Owned organisations + ones I'm a member of (read-only). Tag each row's role.
-    Promise.all([
-      organizationsApi.list({ createdByUserId: user.id }).then((r) => r.data ?? []).catch(() => []),
-      organizationsApi.list({ memberUserId: user.id }).then((r) => r.data ?? []).catch(() => []),
-    ]).then(([owned, memberOf]) => {
+    const uid = user.id
+    // Fetch every source relevant to the caller's roles; tag each row with the
+    // relationship so the card can badge it, then merge by priority.
+    type Src = { tag: NonNullable<Org['_role']>; list: Org[] }
+    const grab = (p: Promise<any>): Promise<Org[]> => p.then((r) => (r.data ?? []) as Org[]).catch(() => [])
+    const sources: Promise<Src>[] = []
+    if (isPorteur) {
+      sources.push(grab(organizationsApi.list({ createdByUserId: uid })).then((list) => ({ tag: 'owner', list })))
+      sources.push(grab(organizationsApi.list({ memberUserId: uid })).then((list) => ({ tag: 'member', list })))
+    }
+    if (isMentor) sources.push(grab(organizationsApi.list({ mentorUserId: uid })).then((list) => ({ tag: 'mentor', list })))
+    if (showAll) sources.push(grab(organizationsApi.list()).then((list) => ({ tag: 'admin', list })))
+    if (isJury) {
+      // Jury: the organisations behind the candidatures assigned to me.
+      sources.push(
+        juryApi.myAssignments()
+          .then(async (r) => {
+            const ids = Array.from(new Set(((r.data ?? []) as any[]).map((c) => c.organizationId).filter(Boolean))) as number[]
+            const orgs = await Promise.all(ids.map((oid) => organizationsApi.get(oid).then((rr) => rr.data as Org).catch(() => null)))
+            return { tag: 'jury' as const, list: orgs.filter(Boolean) as Org[] }
+          })
+          .catch(() => ({ tag: 'jury' as const, list: [] as Org[] })),
+      )
+    }
+
+    Promise.all(sources).then((results) => {
       if (cancelled) return
-      const ownedIds = new Set(owned.map((o: Org) => o.id))
-      const tagged: Org[] = [
-        ...owned.map((o: Org) => ({ ...o, _role: 'owner' as const })),
-        ...memberOf.filter((o: Org) => !ownedIds.has(o.id)).map((o: Org) => ({ ...o, _role: 'member' as const })),
-      ]
-      setOrgs(tagged)
+      const priority: Record<string, number> = { owner: 5, mentor: 4, admin: 3, jury: 2, member: 1 }
+      const map = new Map<number, Org>()
+      for (const { tag, list } of results) {
+        for (const o of list) {
+          const cur = map.get(o.id)
+          if (!cur || priority[tag] > priority[cur._role ?? 'member']) map.set(o.id, { ...o, _role: tag })
+        }
+      }
+      setOrgs(Array.from(map.values()))
     }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [hydrated, user?.id])
+  }, [hydrated, user?.id, isPorteur, isMentor, isJury, showAll])
 
   const startCreate = () => { setDraft(EMPTY); setEditing('new') }
   const cancel = () => { setEditing(null); setDraft(EMPTY) }
@@ -175,11 +218,11 @@ export default function OrganizationsPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Building2 className="h-6 w-6 text-brand-500" />Mes organisations
+              <Building2 className="h-6 w-6 text-brand-500" />{HEAD.h}
             </h1>
-            <p className="text-sm text-muted-foreground">{orgs.length} organisation(s) — vos startups et structures.</p>
+            <p className="text-sm text-muted-foreground">{orgs.length} organisation(s) — {HEAD.sub}</p>
           </div>
-          {editing !== 'new' && (
+          {editing !== 'new' && isPorteur && (
             <Button variant="brand" onClick={startCreate} className="gap-1.5">
               <Plus className="h-4 w-4" />Nouvelle organisation
             </Button>
@@ -199,10 +242,14 @@ export default function OrganizationsPage() {
         ) : orgs.length === 0 && editing !== 'new' ? (
           <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-4 py-16 text-center">
             <Building2 className="mx-auto h-10 w-10 text-muted-foreground opacity-30 mb-3" />
-            <p className="text-sm text-muted-foreground mb-4">Vous n&apos;avez pas encore d&apos;organisation.</p>
-            <Button variant="brand" onClick={startCreate} className="gap-1.5">
-              <Plus className="h-4 w-4" />Créer ma première organisation
-            </Button>
+            <p className="text-sm text-muted-foreground mb-4">
+              {isPorteur ? 'Vous n’avez pas encore d’organisation.' : 'Aucune organisation à afficher.'}
+            </p>
+            {isPorteur && (
+              <Button variant="brand" onClick={startCreate} className="gap-1.5">
+                <Plus className="h-4 w-4" />Créer ma première organisation
+              </Button>
+            )}
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -227,6 +274,21 @@ export default function OrganizationsPage() {
                       {o._role === 'member' && (
                         <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
                           Membre · lecture seule
+                        </span>
+                      )}
+                      {o._role === 'mentor' && (
+                        <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-300">
+                          Référent (vis-à-vis)
+                        </span>
+                      )}
+                      {o._role === 'jury' && (
+                        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                          À évaluer · lecture seule
+                        </span>
+                      )}
+                      {o._role === 'admin' && (
+                        <span className="rounded-full bg-brand-500/15 px-2 py-0.5 text-[10px] font-semibold text-brand-700 dark:text-brand-300">
+                          Admin
                         </span>
                       )}
                     </div>
