@@ -7,8 +7,9 @@
  * replacement for the old org-global mentor.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
-  Rocket, Handshake, Crown, Award, Search, X, Loader2, Repeat, Trash2, Mail, UserRound,
+  Rocket, Handshake, Crown, Award, Search, X, Loader2, Repeat, Trash2, Mail, UserRound, AlertTriangle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { participantsApi, usersApi } from '@/lib/api'
@@ -75,6 +76,20 @@ export function ParticipantsRoster({ programmeId }: { programmeId: number }) {
         </h2>
       </div>
 
+      {/* Incubation health: a startup with no référent (mentor) is critical. */}
+      {!loading && rows.some((r) => !r.mentorUserId) && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-700 dark:text-rose-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {rows.filter((r) => !r.mentorUserId).length} startup(s) sans référent — à assigner en priorité (critique).
+        </div>
+      )}
+      {!loading && rows.length > 0 && (
+        <p className="mb-3 text-[11px] text-muted-foreground">
+          <b className="text-foreground">{rows.filter((r) => r.mentorUserId).length}/{rows.length}</b> accompagnée(s) ·
+          <span className={rows.some((r) => !r.mentorUserId) ? 'ml-1 font-semibold text-rose-600' : 'ml-1'}>{rows.filter((r) => !r.mentorUserId).length} sans référent</span>
+        </p>
+      )}
+
       {loading ? (
         <div className="flex h-24 items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : rows.length === 0 ? (
@@ -87,7 +102,7 @@ export function ParticipantsRoster({ programmeId }: { programmeId: number }) {
             const mentor = r.mentorUserId ? mentorById.get(r.mentorUserId) : null
             const st = STATUS[r.status ?? 'ACTIVE'] ?? STATUS.ACTIVE
             return (
-              <div key={r.id} className="rounded-xl border border-border bg-background/50 p-3">
+              <div key={r.id} className={`rounded-xl border p-3 ${r.mentorUserId ? 'border-border bg-background/50' : 'border-rose-400/50 bg-rose-500/5'}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   {/* Startup + porteur */}
                   <div className="min-w-0 flex-1">
@@ -113,7 +128,9 @@ export function ParticipantsRoster({ programmeId }: { programmeId: number }) {
                         <Handshake className="h-3.5 w-3.5" />{fullName(mentor)}
                       </span>
                     ) : (
-                      <span className="text-[11px] italic text-muted-foreground">Aucun référent</span>
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-bold text-rose-700 dark:text-rose-300">
+                        <AlertTriangle className="h-3.5 w-3.5" />Sans référent
+                      </span>
                     )}
                     {mentor && (
                       <button onClick={() => assign(r.id, null)} className="text-muted-foreground hover:text-rose-500" title="Retirer"><Trash2 className="h-3.5 w-3.5" /></button>
@@ -147,6 +164,8 @@ function MentorPicker({ org, mentors, currentId, onClose, onPick }: {
   onClose: () => void; onPick: (mentorId: number) => void
 }) {
   const [q, setQ] = useState('')
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
   const kw = useMemo(() => new Set(toks(org.organizationName)), [org.organizationName])
 
   const scored = useMemo(() => {
@@ -162,8 +181,9 @@ function MentorPicker({ org, mentors, currentId, onClose, onPick }: {
   const bestId = scored[0]?.s > 0 ? scored[0].u.id : null
   const filtered = scored.filter(({ u }) => !q || fullName(u).toLowerCase().includes(q.toLowerCase()) || (u.email ?? '').toLowerCase().includes(q.toLowerCase()))
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+  if (!mounted) return null
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative z-10 flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -203,6 +223,7 @@ function MentorPicker({ org, mentors, currentId, onClose, onPick }: {
           })}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

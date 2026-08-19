@@ -72,7 +72,15 @@ export const useAuthStore = create<AuthStore>()(
       partialize: (s) => ({ user: s.user, token: s.token, activeRole: s.activeRole }),
       onRehydrateStorage: () => (s) => {
         if (!s) return
-        s.isAuthenticated = !!s.token
+        // The cookie is the single source of truth for "is there a live session".
+        // If it's gone (expired, cleared on a 401, or removed by the browser), the
+        // persisted user/token are stale — drop them so guards stay consistent and
+        // the app never behaves as authenticated without a token.
+        if (!Cookies.get('token')) {
+          s.user = null; s.token = null; s.isAuthenticated = false; s.activeRole = null
+          return
+        }
+        s.isAuthenticated = true
         // Backfill id on sessions persisted before the userId→id normalization.
         if (s.user && s.user.id == null && (s.user as any).userId != null) {
           s.user = { ...s.user, id: (s.user as any).userId }

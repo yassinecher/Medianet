@@ -20,7 +20,7 @@ import type { User } from '@/types'
 import {
   Home, FileText, CheckSquare, FolderKanban, LogOut, ChevronLeft, ChevronRight,
   Briefcase, Sparkles, GraduationCap, Menu, X, ChevronDown, Bell, User as UserIcon,
-  Building2, Presentation, Mail, Loader2,
+  Building2, Presentation, Mail, Loader2, CalendarDays, Handshake,
 } from 'lucide-react'
 import { fetchNotifications, relTime, type NotificationItem } from '@/lib/notifications'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
@@ -48,6 +48,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   // The dashboard is role-dependent: it only exists for front-office roles.
   { label: 'Tableau de bord',  href: '/dashboard',     icon: Home,          roles: ['PORTEUR', 'MENTOR', 'JURY'] },
+  { label: 'Calendrier',       href: '/calendar',      icon: CalendarDays,  roles: ['PORTEUR', 'MENTOR', 'JURY'] },
   { label: 'Notifications',    href: '/notifications', icon: Bell,          roles: ['PORTEUR', 'MENTOR', 'JURY'] },
   { label: 'Programmes',       href: '/programmes',    icon: FolderKanban,  perm: 'programmes:read' },
   // "Mes candidatures" is the porteur experience — a jury/mentor holding
@@ -56,6 +57,7 @@ const NAV: NavItem[] = [
   { label: 'Mes présentations', href: '/presentations', icon: Presentation,  roles: ['PORTEUR'] },
   { label: 'Mes évaluations',  href: '/evaluations',   icon: GraduationCap, roles: ['JURY'], perm: 'candidatures:evaluate' },
   { label: 'Mes organisations', href: '/organizations', icon: Building2,    perm: 'organizations:read' },
+  { label: 'Accompagnement',   href: '/coaching',      icon: Handshake,     roles: ['MENTOR', 'PORTEUR'] },
   { label: 'Mes tâches',       href: '/tasks',         icon: CheckSquare,   perm: 'tasks:read' },
 ]
 

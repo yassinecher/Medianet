@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
@@ -18,6 +18,16 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  // When the axios interceptor bounces an expired session here, explain why and
+  // clean the URL so a refresh doesn't repeat the notice.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('expired') === '1') {
+      toast('Votre session a expiré, reconnectez-vous.', { id: 'session-expired', icon: '🔒' })
+      window.history.replaceState({}, '', '/login')
+    }
+  }, [])
 
   // Shared post-auth handling for both email/password and Google: gate the
   // frontoffice, store the session, redirect.

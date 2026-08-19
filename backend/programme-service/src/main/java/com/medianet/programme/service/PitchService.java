@@ -6,8 +6,10 @@ import com.medianet.programme.entity.PitchStatus;
 import com.medianet.programme.entity.PitchSubmission;
 import com.medianet.programme.entity.PitchKind;
 import com.medianet.programme.entity.ProgrammePhase;
+import com.medianet.programme.entity.ProgrammeParticipant;
 import com.medianet.programme.repository.PitchSubmissionRepository;
 import com.medianet.programme.repository.ProgrammePhaseRepository;
+import com.medianet.programme.repository.ProgrammeParticipantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +30,7 @@ public class PitchService {
 
     private final PitchSubmissionRepository pitchRepository;
     private final ProgrammePhaseRepository  phaseRepository;
+    private final ProgrammeParticipantRepository participantRepository;
 
     /** Default number of TRAINING videos a porteur may analyse per session when
      *  the admin hasn't set a session-specific cap. */
@@ -184,7 +187,38 @@ public class PitchService {
 
     @Transactional(readOnly = true)
     public PitchSubmissionDto getOne(Long submissionId, Long callerId, boolean isAdmin) {
-        return toDto(requireOwnedOrAdmin(submissionId, callerId, isAdmin));
+        PitchSubmission sub = pitchRepository.findById(submissionId)
+                .orElseThrow(() -> new IllegalArgumentException("Soumission introuvable : " + submissionId));
+        // Read is allowed for the owner, an admin/reviewer, OR the startup's mentor.
+        if (!isAdmin && !Objects.equals(sub.getPorteurId(), callerId) && !mentorCanView(sub, callerId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Vous ne pouvez accéder qu'à vos propres présentations.");
+        }
+        return toDto(sub);
+    }
+
+    /** A mentor (or admin) views the pitch/training submissions of a startup they accompany. */
+    @Transactional(readOnly = true)
+    public List<PitchSubmissionDto> getForMentee(Long participantId, Long callerId, boolean isAdmin) {
+        ProgrammeParticipant p = participantRepository.findById(participantId)
+                .orElseThrow(() -> new IllegalArgumentException("Participation introuvable : " + participantId));
+        if (!isAdmin && !Objects.equals(p.getMentorUserId(), callerId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Réservé au mentor de cette startup.");
+        }
+        return pitchRepository.findByProgrammeIdOrderByUpdatedAtDesc(p.getProgrammeId()).stream()
+                .filter(s -> Objects.equals(s.getPorteurId(), p.getPorteurUserId())
+                        || (s.getOrganizationId() != null && Objects.equals(s.getOrganizationId(), p.getOrganizationId())))
+                .map(this::toDto).collect(Collectors.toList());
+    }
+
+    /** True when the caller is the assigned mentor of the submission's startup. */
+    private boolean mentorCanView(PitchSubmission sub, Long callerId) {
+        if (callerId == null) return false;
+        return participantRepository.findByMentorUserId(callerId).stream().anyMatch(p ->
+                Objects.equals(p.getProgrammeId(), sub.getProgrammeId())
+                && (Objects.equals(p.getOrganizationId(), sub.getOrganizationId())
+                    || Objects.equals(p.getPorteurUserId(), sub.getPorteurId())));
     }
 
     // ── Admin ────────────────────────────────────────────────────────────────

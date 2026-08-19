@@ -367,9 +367,25 @@ function BuilderInner(props: BuilderProps = {}) {
   /** Session presets — DB-backed, single source of truth (see usePresets). */
   const presets = usePresets(props.existingProgrammeId)
 
-  const onNodesChange = useCallback((c: NodeChange[]) => setNodes((nds) => applyNodeChanges(c, nds) as BuilderNode[]), [])
-  const onEdgesChange = useCallback((c: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(c, eds)), [])
-  const onConnect = useCallback((c: Connection) => setEdges((eds) => addEdge({ ...c, animated: true, style: { strokeWidth: 2 } }, eds)), [])
+  // Unsaved-changes tracking: a ref guards the beforeunload/Ctrl+S handlers
+  // without re-rendering on every drag tick; `dirty` state only flips once (for
+  // the indicator), so dragging a node stays smooth.
+  const dirtyRef = useRef(false)
+  const [dirty, setDirty] = useState(false)
+  const markDirty = useCallback(() => { if (!dirtyRef.current) { dirtyRef.current = true; setDirty(true) } }, [])
+  const clearDirty = useCallback(() => { dirtyRef.current = false; setDirty(false) }, [])
+
+  const onNodesChange = useCallback((c: NodeChange[]) => {
+    // Node measurement ('dimensions') / selection fire on mount — ignore those;
+    // only real edits (move / add / remove) count as unsaved changes.
+    if (c.some((ch) => ch.type === 'position' || ch.type === 'add' || ch.type === 'remove')) markDirty()
+    setNodes((nds) => applyNodeChanges(c, nds) as BuilderNode[])
+  }, [markDirty])
+  const onEdgesChange = useCallback((c: EdgeChange[]) => {
+    if (c.some((ch) => ch.type === 'add' || ch.type === 'remove')) markDirty()
+    setEdges((eds) => applyEdgeChanges(c, eds))
+  }, [markDirty])
+  const onConnect = useCallback((c: Connection) => { markDirty(); setEdges((eds) => addEdge({ ...c, animated: true, style: { strokeWidth: 2 } }, eds)) }, [markDirty])
 
   // Expose a global so the Timeline node + criterion inspector can switch the
   // selected node from inside their own React subtree (they can't call setSelectedId directly).
@@ -489,6 +505,7 @@ function BuilderInner(props: BuilderProps = {}) {
       if (data.durationKind === 'day') data.endDate = data.startDate
     }
     const newNode = { id, type: kind, position: nextPos(kind, drop), data } as BuilderNode
+    markDirty()
     setNodes((nds) => [...nds, newNode])
     setSelectedId(id)
 
@@ -533,6 +550,7 @@ function BuilderInner(props: BuilderProps = {}) {
       byKind('session').forEach((s, i) => positions.set(s.id, { x: 100 + i * 210, y: 820 }))
       return nds.map((n) => ({ ...n, position: positions.get(n.id) ?? n.position })) as BuilderNode[]
     })
+    markDirty()
     setTimeout(() => { try { rf.fitView({ padding: 0.15, duration: 600 }) } catch {} }, 100)
     toast.success('Disposition appliquée ✓')
   }
@@ -557,13 +575,14 @@ function BuilderInner(props: BuilderProps = {}) {
       toast.error('Ce nœud ne peut pas être supprimé.')
       return
     }
+    markDirty()
     setNodes((nds) => nds.filter((n) => n.id !== selectedId))
     setEdges((eds) => eds.filter((e) => e.source !== selectedId && e.target !== selectedId))
     setSelectedId(null)
   }
 
-  const updateData = (id: string, patch: any) => setNodes((nds) =>
-    nds.map((n) => n.id === id ? ({ ...n, data: { ...n.data, ...patch } } as BuilderNode) : n))
+  const updateData = (id: string, patch: any) => { markDirty(); setNodes((nds) =>
+    nds.map((n) => n.id === id ? ({ ...n, data: { ...n.data, ...patch } } as BuilderNode) : n)) }
 
   const selectedNode = useMemo(() => nodes.find((n) => n.id === selectedId) ?? null, [nodes, selectedId])
   const criteria = nodes.filter((n): n is Node<CriterionData, 'criterion'> => n.data.kind === 'criterion')
@@ -578,6 +597,7 @@ function BuilderInner(props: BuilderProps = {}) {
   // ── Save ─────────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
+    if (saving) return
     const prog = nodes.find((n): n is Node<ProgrammeData, 'programme'> => n.data.kind === 'programme')
 
     const desc = nodes.find((n): n is Node<DescriptionData, 'description'> => n.data.kind === 'description')
@@ -677,12 +697,37 @@ function BuilderInner(props: BuilderProps = {}) {
       // so we skip the legacy node-collection loop here. Any leftover
       // session nodes on the canvas (from older sessions) are ignored.
 
+      clearDirty()
       toast.success(props.existingProgrammeId ? 'Programme mis à jour ✓' : 'Programme créé ✓')
       router.push(`/programmes/${programmeId}`)
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? e?.message ?? 'Erreur')
     } finally { setSaving(false) }
   }
+
+  // Keep a ref to the latest handleSave so the once-bound keyboard handler
+  // always calls the current closure (nodes/edges snapshot).
+  const handleSaveRef = useRef(handleSave)
+  handleSaveRef.current = handleSave
+
+  // Ctrl/Cmd+S saves; a beforeunload guard warns about unsaved changes.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault()
+        handleSaveRef.current()
+      }
+    }
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current) { e.preventDefault(); e.returnValue = '' }
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('beforeunload', onBeforeUnload)
+    }
+  }, [])
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -817,10 +862,14 @@ function BuilderInner(props: BuilderProps = {}) {
               <p className="text-xs font-bold text-foreground inline-flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3 text-brand-500" />
                 Constructeur visuel
+                {dirty && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-300" title="Modifications non enregistrées (Ctrl+S)">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />non enregistré
+                  </span>
+                )}
               </p>
               <p className="text-[10px] text-muted-foreground">
-                {nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {criteria.length} critère{criteria.length > 1 ? 's' : ''} · {sessions.length} session{sessions.length > 1 ? 's' : ''}
-              </p>
+                {nodes.length} nœud{nodes.length > 1 ? 's' : ''} · {criteria.length} critère{criteria.length > 1 ? 's' : ''} · {sessions.length} session{sessions.length > 1 ? 's' : ''} · <kbd className="rounded border border-border px-1">Ctrl+S</kbd></p>
             </div>
           </Panel>
 

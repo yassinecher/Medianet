@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { MedianetLogoMain } from '@/components/brand/MedianetLogoMain'
-import { candidaturesApi, tasksApi, programmesApi, juryApi, organizationsApi } from '@/lib/api'
+import { candidaturesApi, tasksApi, programmesApi, juryApi, participantsApi } from '@/lib/api'
 import { useUser, useActiveRole, useIsJury, frontofficeRolesOf } from '@/store/auth.store'
 import { formatRelativeDate, statusColor, scoreColor, formatDate } from '@/lib/utils'
 import type { Candidature, Task, Programme } from '@/types'
@@ -172,20 +172,17 @@ function MentorWorkspace({ orgs }: { orgs: any[] }) {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {orgs.map((o) => (
-            <Link key={o.id} href={`/organizations/${o.id}`}>
+            <Link key={o.id} href={`/organizations/${o.organizationId}`}>
               <MagicCard className="flex h-full items-start gap-3 p-4 transition-transform hover:scale-[1.02]">
-                {o.logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={o.logoUrl} alt="" className="h-11 w-11 rounded-lg bg-white object-contain" />
-                ) : (
-                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 to-brand-500/20">
-                    <Building2 className="h-5 w-5 text-emerald-500" />
-                  </div>
-                )}
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 to-brand-500/20">
+                  <Building2 className="h-5 w-5 text-emerald-500" />
+                </div>
                 <div className="min-w-0 flex-1">
-                  <p className="line-clamp-1 text-sm font-semibold text-foreground">{o.name}</p>
-                  {[o.sector, o.city].filter(Boolean).length > 0 && (
-                    <p className="line-clamp-1 text-xs text-muted-foreground">{[o.sector, o.city].filter(Boolean).join(' · ')}</p>
+                  <p className="line-clamp-1 text-sm font-semibold text-foreground">{o.organizationName || `Organisation #${o.organizationId}`}</p>
+                  {o.programmeName && (
+                    <p className="line-clamp-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      <FolderKanban className="h-3 w-3" />{o.programmeName}
+                    </p>
                   )}
                   <div className="mt-2 flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                     Accompagner<ArrowRight className="h-3 w-3" />
@@ -224,8 +221,8 @@ export default function DashboardPage() {
       // publicOnly: don't surface draft/archived programmes in recommendations.
       programmesApi.list({ status: 'OPEN', publicOnly: true }).then((r) => setProgrammes(r.data?.content ?? r.data ?? [])).catch(() => {}),
       isJury ? juryApi.myAssignments().then((r) => setJuryItems(r.data ?? [])).catch(() => {}) : Promise.resolve(),
-      // Mentor: the startups I'm the assigned « vis-à-vis » of.
-      (isMentor && user?.id) ? organizationsApi.list({ mentorUserId: user.id }).then((r) => setMentorOrgs(r.data ?? [])).catch(() => {}) : Promise.resolve(),
+      // Mentor: the participations I'm the assigned « vis-à-vis » of (per programme).
+      (isMentor && user?.id) ? participantsApi.mine().then((r) => setMentorOrgs(r.data ?? [])).catch(() => {}) : Promise.resolve(),
     ]).finally(() => setLoading(false))
   }, [isJury, isPorteur, isMentor, user?.id])
 

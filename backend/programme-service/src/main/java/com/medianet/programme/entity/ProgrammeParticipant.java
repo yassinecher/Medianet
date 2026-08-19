@@ -44,6 +44,8 @@ public class ProgrammeParticipant {
 
     /** The assigned mentor / « vis-à-vis » for THIS programme. Null = none yet. */
     private Long mentorUserId;
+    /** Denormalised mentor name, set at assign-time so rosters read without a lookup. */
+    private String mentorName;
 
     /** ACTIVE · ALUMNI · WITHDRAWN. */
     @Column(length = 16)

@@ -10,5 +10,6 @@ public interface ProgrammeParticipantRepository extends JpaRepository<ProgrammeP
     List<ProgrammeParticipant> findByProgrammeId(Long programmeId);
     Optional<ProgrammeParticipant> findByProgrammeIdAndOrganizationId(Long programmeId, Long organizationId);
     List<ProgrammeParticipant> findByMentorUserId(Long mentorUserId);
+    List<ProgrammeParticipant> findByPorteurUserId(Long porteurUserId);
     List<ProgrammeParticipant> findByOrganizationId(Long organizationId);
 }

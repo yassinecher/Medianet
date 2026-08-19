@@ -19,7 +19,7 @@ type Milestone = { label: string; done: boolean; dueDate?: string }
 type Note = { id: number; authorName?: string; sessionDate?: string; title?: string; content?: string; nextSteps?: string }
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
-export function CoachingPanel({ orgId }: { orgId: number }) {
+export function CoachingPanel({ participantId }: { participantId: number }) {
   const [loading, setLoading] = useState(true)
   const [canEdit, setCanEdit] = useState(false)
   const [milestones, setMilestones] = useState<Milestone[]>([])
@@ -34,7 +34,7 @@ export function CoachingPanel({ orgId }: { orgId: number }) {
 
   const load = useCallback(() => {
     setLoading(true)
-    coachingApi.get(orgId).then((r) => {
+    coachingApi.get(participantId).then((r) => {
       const d = r.data ?? {}
       setCanEdit(!!d.canEdit)
       setNotes(d.notes ?? [])
@@ -44,12 +44,12 @@ export function CoachingPanel({ orgId }: { orgId: number }) {
       try { ms = d.plan?.milestonesJson ? JSON.parse(d.plan.milestonesJson) : [] } catch { ms = [] }
       setMilestones(Array.isArray(ms) ? ms : [])
     }).catch(() => {}).finally(() => setLoading(false))
-  }, [orgId])
+  }, [participantId])
   useEffect(() => { load() }, [load])
 
   const savePlan = async (ms: Milestone[], pnotes: string) => {
     setSavingPlan(true)
-    try { await coachingApi.savePlan(orgId, { milestonesJson: JSON.stringify(ms), notes: pnotes }); setHasPlan(true) }
+    try { await coachingApi.savePlan(participantId, { milestonesJson: JSON.stringify(ms), notes: pnotes }); setHasPlan(true) }
     catch (e: any) { toast.error(e.response?.data?.message ?? 'Échec de l’enregistrement') }
     finally { setSavingPlan(false) }
   }
@@ -62,7 +62,7 @@ export function CoachingPanel({ orgId }: { orgId: number }) {
     if (!nf.title.trim() && !nf.content.trim()) { toast.error('Ajoutez un titre ou un contenu.'); return }
     setSavingNote(true)
     try {
-      const r = await coachingApi.addNote(orgId, nf)
+      const r = await coachingApi.addNote(participantId, nf)
       setNotes((arr) => [r.data, ...arr])
       setNf({ sessionDate: todayISO(), title: '', content: '', nextSteps: '' })
       setShowNoteForm(false)
@@ -71,7 +71,7 @@ export function CoachingPanel({ orgId }: { orgId: number }) {
     finally { setSavingNote(false) }
   }
   const removeNote = async (id: number) => {
-    try { await coachingApi.deleteNote(orgId, id); setNotes((arr) => arr.filter((n) => n.id !== id)) }
+    try { await coachingApi.deleteNote(participantId, id); setNotes((arr) => arr.filter((n) => n.id !== id)) }
     catch (e: any) { toast.error(e.response?.data?.message ?? 'Échec') }
   }
 

@@ -8,12 +8,14 @@ import java.time.LocalDateTime;
 public class ProgrammeParticipantDto {
     private Long id;
     private Long programmeId;
+    private String programmeName;
     private Long organizationId;
     private String organizationName;
     private Long porteurUserId;
     private String porteurName;
     private String porteurEmail;
     private Long mentorUserId;
+    private String mentorName;
     private String status;
     private LocalDateTime joinedAt;
 }

@@ -9,9 +9,10 @@
  *                (sector / expertise overlap) and flags the top match.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   UserRound, Handshake, Mail, Phone, Globe2, Linkedin, Star, Search, X, Loader2,
-  ArrowLeftRight, Award, Trash2, Repeat, Crown,
+  Award, Repeat, Crown,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { organizationsApi, usersApi } from '@/lib/api'
@@ -43,89 +44,51 @@ export function PorteurVisAVis({ org, onChanged }: { org: OrgLite; onChanged: ()
   const isCreatorPorteur = !org.porteurUserId && !!org.createdByUserId
 
   const [porteur, setPorteur] = useState<UserDto | null>(null)
-  const [mentor, setMentor] = useState<UserDto | null>(null)
   const [loading, setLoading] = useState(true)
-  const [picker, setPicker] = useState<null | 'porteur' | 'mentor'>(null)
+  const [picker, setPicker] = useState<null | 'porteur'>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [p, m] = await Promise.allSettled([
-      effectivePorteurId ? usersApi.get(effectivePorteurId) : Promise.reject(),
-      org.mentorUserId ? usersApi.get(org.mentorUserId) : Promise.reject(),
-    ])
-    setPorteur(p.status === 'fulfilled' ? p.value.data : null)
-    setMentor(m.status === 'fulfilled' ? m.value.data : null)
+    try {
+      const p = effectivePorteurId ? await usersApi.get(effectivePorteurId) : null
+      setPorteur(p ? p.data : null)
+    } catch { setPorteur(null) }
     setLoading(false)
-  }, [effectivePorteurId, org.mentorUserId])
+  }, [effectivePorteurId])
 
   useEffect(() => { load() }, [load])
-
-  const orgKeywords = useMemo(
-    () => new Set([...toks(org.sector), ...toks(org.name), ...toks(org.description)]),
-    [org.sector, org.name, org.description],
-  )
 
   return (
     <MagicCard className="p-4">
       <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-foreground">
-        <ArrowLeftRight className="h-4 w-4 text-brand-500" />Porteur &amp; vis-à-vis
+        <UserRound className="h-4 w-4 text-brand-500" />Porteur de l’organisation
       </h2>
 
       {loading ? (
         <div className="flex h-28 items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : (
-        <div className="grid items-stretch gap-3 md:grid-cols-[1fr_auto_1fr]">
-          {/* Porteur */}
-          <PersonCard
-            tone="brand"
-            roleLabel="Porteur"
-            icon={UserRound}
-            badge={isCreatorPorteur ? 'Créateur' : undefined}
-            person={porteur}
-            profile={porteur?.porteurProfile}
-            emptyText="Aucun porteur"
-            actions={
-              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={() => setPicker('porteur')}>
-                <Repeat className="h-3 w-3" />{porteur ? 'Changer' : 'Assigner'}
-              </Button>
-            }
-          />
-
-          {/* Face-to-face connector */}
-          <div className="hidden flex-col items-center justify-center md:flex">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
-              <ArrowLeftRight className="h-4 w-4" />
-            </span>
-          </div>
-
-          {/* Vis-à-vis (mentor) */}
-          <PersonCard
-            tone="purple"
-            roleLabel="Vis-à-vis · Référent"
-            icon={Handshake}
-            person={mentor}
-            profile={mentor?.mentorProfile}
-            isMentor
-            emptyText="Aucun référent assigné"
-            actions={
-              <div className="flex gap-1.5">
-                {mentor && (
-                  <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-rose-600 hover:text-rose-700"
-                    onClick={async () => {
-                      try { await organizationsApi.assignMentor(org.id, null); toast.success('Référent retiré'); onChanged() }
-                      catch (e: any) { toast.error(e.response?.data?.message ?? 'Échec') }
-                    }}>
-                    <Trash2 className="h-3 w-3" />Retirer
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={() => setPicker('mentor')}>
-                  <Repeat className="h-3 w-3" />{mentor ? 'Changer' : 'Assigner'}
-                </Button>
-              </div>
-            }
-          />
-        </div>
+        <PersonCard
+          tone="brand"
+          roleLabel="Porteur"
+          icon={UserRound}
+          badge={isCreatorPorteur ? 'Créateur' : undefined}
+          person={porteur}
+          profile={porteur?.porteurProfile}
+          emptyText="Aucun porteur"
+          actions={
+            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={() => setPicker('porteur')}>
+              <Repeat className="h-3 w-3" />{porteur ? 'Changer' : 'Assigner'}
+            </Button>
+          }
+        />
       )}
+
+      {/* Mentors are assigned PER PROGRAMME now (a startup can be in several). */}
+      <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+        <Handshake className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-500" />
+        Les <b className="mx-1 font-semibold text-foreground">référents (mentors)</b> sont désormais assignés
+        <b className="mx-1 font-semibold text-foreground">par programme</b> — onglet « Participants » du programme.
+      </p>
 
       {picker === 'porteur' && (
         <PickerModal
@@ -142,17 +105,6 @@ export function PorteurVisAVis({ org, onChanged }: { org: OrgLite; onChanged: ()
               : undefined
           }
           onPick={async (u) => { await organizationsApi.assignPorteur(org.id, u.id) }}
-          afterChange={() => { setPicker(null); onChanged() }}
-        />
-      )}
-      {picker === 'mentor' && (
-        <PickerModal
-          title="Assigner le vis-à-vis (mentor)"
-          role="MENTOR"
-          currentId={org.mentorUserId ?? null}
-          orgKeywords={orgKeywords}
-          onClose={() => setPicker(null)}
-          onPick={async (u) => { await organizationsApi.assignMentor(org.id, u.id) }}
           afterChange={() => { setPicker(null); onChanged() }}
         />
       )}
@@ -232,6 +184,8 @@ function PickerModal({
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<number | 'extra' | null>(null)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     usersApi.byRole(role)
@@ -269,8 +223,9 @@ function PickerModal({
     catch (e: any) { toast.error(e.response?.data?.message ?? 'Échec de l’assignation'); setSaving(null) }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+  if (!mounted) return null
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative z-10 flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -347,6 +302,7 @@ function PickerModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

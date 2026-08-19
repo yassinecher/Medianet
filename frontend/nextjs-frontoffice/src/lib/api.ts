@@ -1,6 +1,7 @@
 import axios from 'axios'
 import Cookies from 'js-cookie'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '@/store/auth.store'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
 
@@ -12,13 +13,26 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+/** Guards against redirect storms when several requests 401 at once. */
+let sessionEnding = false
+
 api.interceptors.response.use(
   (res) => res,
   (error) => {
     if (typeof window !== 'undefined') {
       if (error.response?.status === 401) {
-        Cookies.remove('token')
-        window.location.href = '/login'
+        // The session is dead. Clear BOTH the cookie and the persisted store —
+        // clearing only the cookie leaves the store "authenticated" with a stale
+        // token, which makes the app loop between guarded pages and /login.
+        try { useAuthStore.getState().logout() } catch { Cookies.remove('token') }
+        const path = window.location.pathname
+        const onAuthPage = path === '/login' || path === '/register'
+        // Never bounce from the login page itself (that's the reload loop). Send
+        // everyone else to login once, flagging the expiry for a friendly notice.
+        if (!onAuthPage && !sessionEnding) {
+          sessionEnding = true
+          window.location.href = '/login?expired=1'
+        }
       }
       if (error.response?.status === 403) {
         // Backend 403s name the missing permission — show it (deduped) and
@@ -169,6 +183,8 @@ export interface PitchSubmission {
 export const pitchApi = {
   mine: () => api.get<PitchSubmission[]>('/api/pitch/submissions/mine'),
   get: (id: number) => api.get<PitchSubmission>(`/api/pitch/submissions/${id}`),
+  /** The pitch/training submissions of a startup I mentor (read-only). */
+  mentee: (participantId: number) => api.get<PitchSubmission[]>(`/api/pitch/mentee/${participantId}`),
   upsert: (data: Partial<PitchSubmission>) => api.post<PitchSubmission>('/api/pitch/submissions', data),
   /** Archive / unarchive a submission (keeps it, moves it out of the active view). */
   archive: (id: number, archived: boolean) => api.patch<PitchSubmission>(`/api/pitch/submissions/${id}/archive`, { archived }),
@@ -319,17 +335,65 @@ export const organizationsApi = {
     api.delete(`/api/organizations/${id}/members/${memberId}`),
 }
 
-/** Mentor coaching: the plan (milestones + notes) and the session-note log. */
+/** Programme participation (org × programme) — the parent of mentor + coaching. */
+export const participantsApi = {
+  /** The programmes this organisation participates in (each carries its mentor). */
+  byOrg: (organizationId: number) => api.get('/api/participants', { params: { organizationId } }),
+  /** The startups the calling mentor accompanies, across all programmes. */
+  mine:  () => api.get('/api/participants/mine'),
+  /** All my coaching engagements — as mentor OR as porteur (for the coaching module). */
+  engagements: () => api.get('/api/participants/engagements'),
+  /** One participation (coaching workspace header). */
+  get:   (participantId: number) => api.get(`/api/participants/${participantId}`),
+}
+
+/** Coaching — the plan (milestones + notes) + session-note log, PER PARTICIPATION. */
 export const coachingApi = {
-  get:        (orgId: number) => api.get(`/api/organizations/${orgId}/coaching`),
-  savePlan:   (orgId: number, data: { milestonesJson?: string; notes?: string }) =>
-    api.put(`/api/organizations/${orgId}/coaching/plan`, data),
-  addNote:    (orgId: number, data: { sessionDate?: string; title?: string; content?: string; nextSteps?: string }) =>
-    api.post(`/api/organizations/${orgId}/coaching/notes`, data),
-  updateNote: (orgId: number, noteId: number, data: { sessionDate?: string; title?: string; content?: string; nextSteps?: string }) =>
-    api.put(`/api/organizations/${orgId}/coaching/notes/${noteId}`, data),
-  deleteNote: (orgId: number, noteId: number) =>
-    api.delete(`/api/organizations/${orgId}/coaching/notes/${noteId}`),
+  get:        (participantId: number) => api.get(`/api/participants/${participantId}/coaching`),
+  savePlan:   (participantId: number, data: { milestonesJson?: string; notes?: string }) =>
+    api.put(`/api/participants/${participantId}/coaching/plan`, data),
+  addNote:    (participantId: number, data: { sessionDate?: string; title?: string; content?: string; nextSteps?: string }) =>
+    api.post(`/api/participants/${participantId}/coaching/notes`, data),
+  updateNote: (participantId: number, noteId: number, data: { sessionDate?: string; title?: string; content?: string; nextSteps?: string }) =>
+    api.put(`/api/participants/${participantId}/coaching/notes/${noteId}`, data),
+  deleteNote: (participantId: number, noteId: number) =>
+    api.delete(`/api/participants/${participantId}/coaching/notes/${noteId}`),
+}
+
+/** Meeting requests between a mentor and a porteur (scoped to a participation). */
+export const meetingsApi = {
+  list:    (participantId: number) => api.get(`/api/participants/${participantId}/meetings`),
+  request: (participantId: number, data: { proposedDate?: string; proposedTime?: string; location?: string; note?: string }) =>
+    api.post(`/api/participants/${participantId}/meetings`, data),
+  respond: (meetingId: number, status: string) => api.put(`/api/participants/meetings/${meetingId}/respond`, { status }),
+  /** All meetings across the caller's participations — for the calendar. */
+  mine:    () => api.get('/api/participants/meetings/mine'),
+}
+
+/** Workshops / ateliers targeting the caller's startup(s) — for the calendar. */
+export const workshopsApi = {
+  /** Workshops concerning me (mentor or porteur of a target startup). */
+  mine: () => api.get('/api/workshops/mine'),
+}
+
+/** Mentor availability slots — the mentor publishes, the porteur books. */
+export const availabilityApi = {
+  /** My own published slots (as a mentor). */
+  mine:   () => api.get('/api/availability/mine'),
+  create: (data: { slotDate: string; startTime?: string; endTime?: string; note?: string }) =>
+    api.post('/api/availability/mine', data),
+  delete: (id: number) => api.delete(`/api/availability/${id}`),
+  /** Open future slots of a participation's mentor (for the porteur to book). */
+  forParticipant: (participantId: number) => api.get(`/api/availability/participant/${participantId}`),
+  /** Book an open slot for a participation → creates an accepted meeting. */
+  book: (id: number, participantId: number) => api.post(`/api/availability/${id}/book`, { participantId }),
+}
+
+/** Reviews / feedback on a participation (mentor · porteur · member · admin). */
+export const reviewsApi = {
+  list: (participantId: number) => api.get(`/api/participants/${participantId}/reviews`),
+  add:  (participantId: number, data: { targetType?: string; rating?: number; comment?: string }) =>
+    api.post(`/api/participants/${participantId}/reviews`, data),
 }
 
 export const ORGANIZATION_TYPES = [

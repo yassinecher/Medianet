@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { pitchApi, streamPitchAnalysis, type PitchSubmission } from '@/lib/api'
+import { useUser } from '@/store/auth.store'
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -28,6 +29,7 @@ type Tab = 'insights' | 'criteria' | 'coaching'
 export default function PitchWorkspacePage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const user = useUser()
   const [sub, setSub] = useState<PitchSubmission | null>(null)
   const [loading, setLoading] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
@@ -50,6 +52,9 @@ export default function PitchWorkspacePage() {
   const analysis: PitchAnalysis | null = useMemo(() => {
     try { return sub?.aiAnalysisJson ? JSON.parse(sub.aiAnalysisJson) : null } catch { return null }
   }, [sub])
+
+  // Only the owning porteur may re-run / archive; mentors & admins view read-only.
+  const isOwner = !!user && !!sub && (sub as any).porteurId === user.id
 
   const segments: Segment[] = useMemo(() => {
     try { return sub?.segmentsJson ? JSON.parse(sub.segmentsJson) : [] } catch { return [] }
@@ -181,14 +186,22 @@ export default function PitchWorkspacePage() {
               <span className="text-[9px] opacity-80">/ 10</span>
             </div>
           )}
-          <Button onClick={toggleArchive} variant="outline" className="gap-1.5"
-            title={sub.archived ? 'Sortir des archives' : 'Archiver (conserver hors de la vue active)'}>
-            <Archive className="h-3.5 w-3.5" />{sub.archived ? 'Désarchiver' : 'Archiver'}
-          </Button>
-          <Button onClick={analyze} disabled={running || !sub.videoUrl} variant="brand" className="gap-1.5">
-            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {analysis ? 'Relancer l’analyse' : 'Analyser'}
-          </Button>
+          {isOwner ? (
+            <>
+              <Button onClick={toggleArchive} variant="outline" className="gap-1.5"
+                title={sub.archived ? 'Sortir des archives' : 'Archiver (conserver hors de la vue active)'}>
+                <Archive className="h-3.5 w-3.5" />{sub.archived ? 'Désarchiver' : 'Archiver'}
+              </Button>
+              <Button onClick={analyze} disabled={running || !sub.videoUrl} variant="brand" className="gap-1.5">
+                {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {analysis ? 'Relancer l’analyse' : 'Analyser'}
+              </Button>
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground">
+              <Eye className="h-3.5 w-3.5" />Lecture seule (mentor)
+            </span>
+          )}
         </motion.div>
 
         {!sub.videoUrl && (

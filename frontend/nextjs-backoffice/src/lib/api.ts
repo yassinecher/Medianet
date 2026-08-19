@@ -221,6 +221,27 @@ export const participantsApi = {
   setStatus:    (id: number, status: string) => api.put(`/api/participants/${id}/status`, { status }),
 }
 
+/** Workshops / ateliers for specific incubated startups (with their mentor) in a programme. */
+export type WorkshopPayload = {
+  phaseId?: number | null
+  title: string
+  description?: string
+  format?: string
+  status?: string
+  workshopDate?: string
+  startTime?: string
+  endTime?: string
+  location?: string
+  facilitator?: string
+  targetParticipantIds: number[]
+}
+export const workshopsApi = {
+  list:   (programmeId: number) => api.get('/api/workshops', { params: { programmeId } }),
+  create: (programmeId: number, data: WorkshopPayload) => api.post('/api/workshops', data, { params: { programmeId } }),
+  update: (id: number, data: WorkshopPayload) => api.put(`/api/workshops/${id}`, data),
+  delete: (id: number) => api.delete(`/api/workshops/${id}`),
+}
+
 export const ORGANIZATION_TYPES = [
   'STARTUP', 'INCUBATOR', 'UNIVERSITY', 'ASSOCIATION',
   'SPONSOR', 'CORPORATE', 'GOVERNMENT', 'OTHER',

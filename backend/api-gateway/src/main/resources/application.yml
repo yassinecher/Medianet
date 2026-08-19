@@ -39,6 +39,14 @@ spring:
           uri: lb://programme-service
           predicates:
             - Path=/api/participants/**
+        - id: programme-service-workshops
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/workshops/**
+        - id: programme-service-availability
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/availability/**
         - id: programme-service-pitch
           uri: lb://programme-service
           predicates:

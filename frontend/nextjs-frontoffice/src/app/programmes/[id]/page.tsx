@@ -10,7 +10,7 @@ import {
   Images, Scale, ListChecks, ArrowRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { programmesApi, candidaturesApi, juryApi } from '@/lib/api'
+import { programmesApi, candidaturesApi, juryApi, participantsApi } from '@/lib/api'
 import { PhotoGallery } from '@/components/media/PhotoGallery'
 import { useUser, useAuthStore, frontofficeRolesOf } from '@/store/auth.store'
 import { Navbar } from '@/components/layout/Navbar'
@@ -162,6 +162,28 @@ function JuryPanelCard({ items, done, email }: { items: any[]; done: number; ema
   )
 }
 
+function MentorPanelCard({ mentees }: { mentees: any[] }) {
+  return (
+    <div className="rounded-2xl border border-emerald-400/40 bg-gradient-to-br from-emerald-500/5 to-teal-500/5 p-5 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground"><Sparkles className="h-4 w-4 text-emerald-500" />Vos startups accompagnées</h3>
+        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300">{mentees.length}</span>
+      </div>
+      <p className="mb-3 text-xs text-muted-foreground">Les startups dont vous êtes le référent dans ce programme.</p>
+      <div className="space-y-1.5">
+        {mentees.slice(0, 6).map((p) => (
+          <Link key={p.id} href={`/organizations/${p.organizationId}`}
+            className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm transition-colors hover:border-emerald-300">
+            <Building2 className="h-4 w-4 shrink-0 text-emerald-500" />
+            <span className="min-w-0 flex-1 truncate font-medium text-foreground">{p.organizationName || `Organisation #${p.organizationId}`}</span>
+            <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-emerald-600">Suivi &amp; coaching<ArrowRight className="h-3.5 w-3.5" /></span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Whole days remaining until a deadline (end-of-day). Null when no/invalid date.
 function daysUntil(dateStr?: string): number | null {
   if (!dateStr) return null
@@ -241,6 +263,8 @@ export default function ProgrammeDetailPage() {
   const [myApplication, setMyApplication] = useState<string | null>(null)
   /** Candidatures of THIS programme assigned to the logged-in jury. */
   const [juryItems, setJuryItems] = useState<any[]>([])
+  /** Participations of THIS programme where the logged-in mentor is the référent. */
+  const [mentorItems, setMentorItems] = useState<any[]>([])
 
   useEffect(() => {
     const pid = Number(id)
@@ -262,6 +286,7 @@ export default function ProgrammeDetailPage() {
 
   const isPorteur = frontofficeRolesOf(user).includes('PORTEUR')
   const isJury = frontofficeRolesOf(user).includes('JURY')
+  const isMentor = frontofficeRolesOf(user).includes('MENTOR')
 
   // Has the logged-in porteur already applied to this programme?
   // (PORTEUR-only endpoint — jury/mentor must not call it.)
@@ -286,6 +311,17 @@ export default function ProgrammeDetailPage() {
       })
       .catch(() => {})
   }, [id, user, isJury])
+
+  // Mentor: the startups I'm the référent of, in THIS programme.
+  useEffect(() => {
+    if (!user || !isMentor) { setMentorItems([]); return }
+    participantsApi.mine()
+      .then((r) => {
+        const list: any[] = r.data ?? []
+        setMentorItems(list.filter((p) => Number(p.programmeId) === Number(id)))
+      })
+      .catch(() => {})
+  }, [id, user, isMentor])
 
   const handleApply = () => {
     if (!user) { router.push('/login'); return }
@@ -363,6 +399,7 @@ export default function ProgrammeDetailPage() {
   const juryDone = juryItems.filter((c) =>
     (c.evaluations ?? []).some((e: any) => (e.juryEmail ?? '').toLowerCase() === (user?.email ?? '').toLowerCase())).length
   const showJury = isJury && juryItems.length > 0
+  const showMentor = isMentor && mentorItems.length > 0
 
   // ── Deadline & in-page navigation (built only from sections that exist) ──
   const deadlineDays = daysUntil(programme.candidatureDeadline ?? programme.applicationDeadline)
@@ -504,12 +541,13 @@ export default function ProgrammeDetailPage() {
         {/* Sticky in-page navigation (scroll-spy) — offset under the active chrome */}
         <SectionNav items={toc} topClass={hydrated && isAuthenticated ? 'top-14' : 'top-16'} />
 
-        {/* Personalized band — porteur progress & jury workspace */}
-        {(isEnrolled || showJury) && (
+        {/* Personalized band — porteur progress, jury workspace, mentor startups */}
+        {(isEnrolled || showJury || showMentor) && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-            className={`mb-8 grid gap-4 ${isEnrolled && showJury ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+            className={`mb-8 grid gap-4 ${[isEnrolled, showJury, showMentor].filter(Boolean).length > 1 ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
             {isEnrolled && <PorteurProgressCard phases={phases} done={doneCount} current={currentPhase} next={nextPhase} pct={progressPct} />}
             {showJury && <JuryPanelCard items={juryItems} done={juryDone} email={user?.email ?? ''} />}
+            {showMentor && <MentorPanelCard mentees={mentorItems} />}
           </motion.div>
         )}
 

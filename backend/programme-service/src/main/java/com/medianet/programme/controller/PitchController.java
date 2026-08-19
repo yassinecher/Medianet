@@ -75,6 +75,13 @@ public class PitchController {
         return ResponseEntity.ok(pitchService.setStatus(id, userId, isAdminOrReviewer(), status));
     }
 
+    /** The pitch/training submissions of a startup the caller mentors (or admin). */
+    @GetMapping("/mentee/{participantId}")
+    public ResponseEntity<List<PitchSubmissionDto>> mentee(
+            @PathVariable Long participantId, @RequestAttribute("userId") Long userId) {
+        return ResponseEntity.ok(pitchService.getForMentee(participantId, userId, isAdminOrReviewer()));
+    }
+
     /** Presentation sessions of a programme + the caller's submission per session. */
     @GetMapping("/presentations/{programmeId}")
     public ResponseEntity<List<Map<String, Object>>> presentations(

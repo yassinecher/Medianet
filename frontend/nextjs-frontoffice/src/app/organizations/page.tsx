@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Building2, Plus, Loader2, Globe2, MapPin, Check, X, Users, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { organizationsApi, juryApi, ORGANIZATION_TYPES, CATALOG_CATEGORIES } from '@/lib/api'
+import { organizationsApi, juryApi, participantsApi, ORGANIZATION_TYPES, CATALOG_CATEGORIES } from '@/lib/api'
 import { useCatalog } from '@/hooks/useCatalog'
 import { useUser, useAuthStore, frontofficeRolesOf } from '@/store/auth.store'
 import { AppShell } from '@/components/layout/AppShell'
@@ -104,7 +104,11 @@ export default function OrganizationsPage() {
       sources.push(grab(organizationsApi.list({ createdByUserId: uid })).then((list) => ({ tag: 'owner', list })))
       sources.push(grab(organizationsApi.list({ memberUserId: uid })).then((list) => ({ tag: 'member', list })))
     }
-    if (isMentor) sources.push(grab(organizationsApi.list({ mentorUserId: uid })).then((list) => ({ tag: 'mentor', list })))
+    if (isMentor) sources.push(
+      participantsApi.mine()
+        .then((r) => ({ tag: 'mentor' as const, list: ((r.data ?? []) as any[]).map((p) => ({ id: p.organizationId, name: p.organizationName || 'Organisation', _role: 'mentor' as const })) as Org[] }))
+        .catch(() => ({ tag: 'mentor' as const, list: [] as Org[] })),
+    )
     if (showAll) sources.push(grab(organizationsApi.list()).then((list) => ({ tag: 'admin', list })))
     if (isJury) {
       // Jury: the organisations behind the candidatures assigned to me.

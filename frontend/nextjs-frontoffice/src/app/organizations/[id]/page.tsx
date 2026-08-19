@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { organizationsApi, ORGANIZATION_TYPES, CATALOG_CATEGORIES } from '@/lib/api'
-import { CoachingPanel } from './CoachingPanel'
+import { OrgProgrammes } from './OrgProgrammes'
 import { useCatalog } from '@/hooks/useCatalog'
 import { useUser, useAuthStore } from '@/store/auth.store'
 import { AppShell } from '@/components/layout/AppShell'
@@ -448,8 +448,8 @@ export default function OrganizationProfilePage() {
           )}
         </div>
 
-        {/* ── Coaching (mentor accompaniment) ── */}
-        <CoachingPanel orgId={id} />
+        {/* ── Programmes & accompagnement (per-programme mentor + coaching) ── */}
+        <OrgProgrammes orgId={id} />
       </div>
     </AppShell>
   )

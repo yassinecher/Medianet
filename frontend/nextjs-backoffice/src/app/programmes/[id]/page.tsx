@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Wand2, Calendar, Tag,
-  LayoutDashboard, Info, CalendarClock, Users, Mail, Presentation, ClipboardList, Inbox } from 'lucide-react'
+  LayoutDashboard, Info, CalendarClock, Users, Mail, Presentation, ClipboardList, Inbox, GraduationCap, Megaphone } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { programmesApi, partnersApi, sessionsApi, CATALOG_CATEGORIES } from '@/lib/api'
 import { useCatalog } from '@/hooks/useCatalog'
@@ -31,6 +31,8 @@ import { EvaluationDashboard } from './EvaluationDashboard'
 import { CandidaturesPanel } from './CandidaturesPanel'
 import { ParticipantsPanel } from './ParticipantsPanel'
 import { ParticipantsRoster } from './ParticipantsRoster'
+import { WorkshopsPanel } from './WorkshopsPanel'
+import { MailingPanel } from './MailingPanel'
 
 const statusLabel: Record<string, string> = {
   DRAFT: 'Brouillon', OPEN: 'Ouvert', IN_PROGRESS: 'En cours',
@@ -70,7 +72,7 @@ interface Criterion {
 
 type Tab =
   | 'dashboard' | 'info' | 'phases' | 'criteria' | 'candidatures' | 'evaluations'
-  | 'participants' | 'partners' | 'invitations' | 'presentations' | 'tasks' | 'reports'
+  | 'participants' | 'partners' | 'invitations' | 'presentations' | 'tasks' | 'reports' | 'workshops' | 'communication'
 
 /** Leaf-tab label + icon (a leaf is the actual panel rendered below the nav). */
 const TAB_META: Record<Tab, { label: string; Icon: typeof BarChart3 }> = {
@@ -83,6 +85,8 @@ const TAB_META: Record<Tab, { label: string; Icon: typeof BarChart3 }> = {
   tasks:         { label: 'Tâches',           Icon: ClipboardList },
   presentations: { label: 'Présentations',    Icon: Presentation },
   participants:  { label: 'Participants',     Icon: Users },
+  workshops:     { label: 'Ateliers',          Icon: GraduationCap },
+  communication: { label: 'Communication',     Icon: Megaphone },
   invitations:   { label: 'Invitations',      Icon: Mail },
   partners:      { label: 'Partenaires',      Icon: Building2 },
   reports:       { label: 'Rapports',         Icon: BarChart3 },
@@ -94,8 +98,8 @@ const TAB_META: Record<Tab, { label: string; Icon: typeof BarChart3 }> = {
 const TAB_GROUPS: { key: string; label: string; Icon: typeof BarChart3; tabs: Tab[]; perm?: string }[] = [
   { key: 'overview',     label: 'Vue d’ensemble', Icon: LayoutDashboard, tabs: ['dashboard', 'info'] },
   { key: 'applications', label: 'Candidatures',   Icon: Inbox,           tabs: ['candidatures', 'criteria', 'evaluations'] },
-  { key: 'journey',      label: 'Parcours',       Icon: CalendarClock,   tabs: ['phases', 'tasks', 'presentations'] },
-  { key: 'people',       label: 'Personnes',      Icon: Users,           tabs: ['participants', 'invitations', 'partners'] },
+  { key: 'journey',      label: 'Parcours',       Icon: CalendarClock,   tabs: ['phases', 'workshops', 'tasks', 'presentations'] },
+  { key: 'people',       label: 'Personnes',      Icon: Users,           tabs: ['participants', 'communication', 'invitations', 'partners'] },
   { key: 'reports',      label: 'Rapports',       Icon: BarChart3,       tabs: ['reports'], perm: 'reports:read' },
 ]
 const ALL_TABS: Tab[] = TAB_GROUPS.flatMap((g) => g.tabs)
@@ -985,6 +989,20 @@ export default function ProgrammeDetailPage() {
                 <ParticipantsRoster programmeId={programme.id} />
                 <ParticipantsPanel programmeId={programme.id} programmeName={programme.title ?? programme.name ?? 'Programme'}
                   phases={phases as any} />
+              </motion.div>
+            )}
+
+            {/* WORKSHOPS TAB */}
+            {activeTab === 'workshops' && programme && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+                <WorkshopsPanel programmeId={programme.id} />
+              </motion.div>
+            )}
+
+            {/* COMMUNICATION TAB */}
+            {activeTab === 'communication' && programme && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+                <MailingPanel programmeId={programme.id} programmeName={programme.title ?? programme.name ?? 'Programme'} />
               </motion.div>
             )}
 
