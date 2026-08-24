@@ -19,11 +19,18 @@ export interface NotificationItem {
   at: string
   /** Actionable / not yet resolved — drives the unread badge. */
   unread: boolean
+  /** Needs urgent attention (overdue/near-due task, RSVP awaiting response). */
+  critical: boolean
   /** Where clicking the notification navigates. */
   href?: string
   /** For a pending RSVP invitation. */
   invitationToken?: string
   status?: string
+}
+
+/** Today + n days, as an ISO date (yyyy-mm-dd). */
+const inDays = (n: number): string => {
+  const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10)
 }
 
 const INVITE_TITLE: Record<string, string> = {
@@ -53,6 +60,8 @@ function fromInvitation(i: any): NotificationItem {
     body: i.subject || (i.message ? String(i.message).replace(/\s+/g, ' ').slice(0, 120) : `De ${i.sentByAdminName || 'l’équipe'}`),
     at: iso(i.createdAt || i.sentAt),
     unread: pending,
+    // A pending invitation awaiting an RSVP is time-sensitive → critical.
+    critical: pending && !!i.requiresRsvp,
     href: i.programmeId ? `/programmes/${i.programmeId}` : undefined,
     invitationToken: pending && i.requiresRsvp ? i.token : undefined,
     status: i.status,
@@ -63,6 +72,8 @@ const TASK_DONE = new Set(['COMPLETED', 'CANCELLED'])
 
 function fromTask(t: any): NotificationItem {
   const where = t.phaseName || t.programmeName
+  const done = TASK_DONE.has(t.status ?? 'PENDING')
+  const due = t.dueDate ? String(t.dueDate).slice(0, 10) : undefined
   return {
     id: `task-${t.id}`,
     kind: 'task',
@@ -70,7 +81,9 @@ function fromTask(t: any): NotificationItem {
     body: [where && `« ${where} »`, t.dueDate && `échéance ${String(t.dueDate).slice(0, 10)}`].filter(Boolean).join(' · ')
       || (t.description ? String(t.description).slice(0, 120) : 'Nouvelle tâche'),
     at: iso(t.updatedAt || t.createdAt),
-    unread: !TASK_DONE.has(t.status ?? 'PENDING'),
+    unread: !done,
+    // Overdue or due within 2 days (and still open) → critical.
+    critical: !done && !!due && due <= inDays(2),
     href: '/tasks',
     status: t.status,
   }

@@ -20,9 +20,10 @@ import type { User } from '@/types'
 import {
   Home, FileText, CheckSquare, FolderKanban, LogOut, ChevronLeft, ChevronRight,
   Briefcase, Sparkles, GraduationCap, Menu, X, ChevronDown, Bell, User as UserIcon,
-  Building2, Presentation, Mail, Loader2, CalendarDays, Handshake,
+  Building2, Presentation, Mail, Loader2, CalendarDays, Handshake, AlertTriangle,
 } from 'lucide-react'
 import { fetchNotifications, relTime, type NotificationItem } from '@/lib/notifications'
+import { getState, decorate, notifSort, unseenCount, NOTIF_EVENT } from '@/lib/notificationState'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { MedianetLogoMain } from '@/components/brand/MedianetLogoMain'
 import { useAuthStore, useUser, useFrontofficeRoles, usePerms, type FrontofficeRole } from '@/store/auth.store'
@@ -244,6 +245,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function NotificationsButton() {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationItem[]>([])
+  const [st, setSt] = useState(getState())
   const [loading, setLoading] = useState(true)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -253,12 +255,22 @@ function NotificationsButton() {
   useEffect(() => { load() }, [])
   useEffect(() => { if (open) load() }, [open])
 
+  // Keep the badge in sync with reads/deletes/archives done on the page.
+  useEffect(() => {
+    const sync = () => setSt(getState())
+    sync()
+    window.addEventListener(NOTIF_EVENT, sync)
+    return () => window.removeEventListener(NOTIF_EVENT, sync)
+  }, [])
+
   useEffect(() => {
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
   }, [])
 
-  const unread = items.filter((n) => n.unread).length
+  // Apply per-user state: drop deleted/archived, flag seen, float critical up.
+  const active = decorate(items, st).filter((n) => !n.archived).sort(notifSort)
+  const unread = unseenCount(active)
   const KindIcon = (k: NotificationItem['kind']) => (k === 'task' ? CheckSquare : Mail)
 
   return (
@@ -284,19 +296,22 @@ function NotificationsButton() {
           </div>
           {loading ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /></div>
-          ) : items.length === 0 ? (
+          ) : active.length === 0 ? (
             <div className="p-6 text-center">
               <Bell className="mx-auto h-8 w-8 text-muted-foreground opacity-30 mb-2" />
               <p className="text-xs text-muted-foreground">Aucune notification.</p>
             </div>
           ) : (
             <ul className="max-h-80 overflow-y-auto divide-y divide-border">
-              {items.slice(0, 6).map((n) => {
-                const Icon = KindIcon(n.kind)
+              {active.slice(0, 6).map((n) => {
+                const critical = n.critical && !n.seen
+                const Icon = critical ? AlertTriangle : KindIcon(n.kind)
                 const inner = (
                   <div className="flex gap-2.5">
                     <span className={cn('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
-                      n.kind === 'task' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-brand-500/10 text-brand-600 dark:text-brand-400')}>
+                      critical ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                        : n.kind === 'task' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-brand-500/10 text-brand-600 dark:text-brand-400')}>
                       <Icon className="h-3.5 w-3.5" />
                     </span>
                     <div className="min-w-0 flex-1">
@@ -304,11 +319,11 @@ function NotificationsButton() {
                       <p className="line-clamp-2 text-xs text-muted-foreground">{n.body}</p>
                       <p className="mt-0.5 text-[10px] text-muted-foreground">{relTime(n.at)}</p>
                     </div>
-                    {n.unread && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" />}
+                    {!n.seen && <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', critical ? 'bg-rose-500' : 'bg-brand-500')} />}
                   </div>
                 )
                 return (
-                  <li key={n.id} className={cn('px-3 py-2 hover:bg-accent/30', n.unread && 'bg-brand-500/5')}>
+                  <li key={n.id} className={cn('px-3 py-2 hover:bg-accent/30', critical ? 'bg-rose-500/5' : !n.seen && 'bg-brand-500/5')}>
                     {n.href
                       ? <Link href={n.href} onClick={() => setOpen(false)} className="block">{inner}</Link>
                       : inner}
