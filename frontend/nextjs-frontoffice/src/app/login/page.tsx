@@ -42,6 +42,12 @@ export default function LoginPage() {
     setAuth(data, data.token)
     toast.success(`Bienvenue, ${data.firstName} !`)
     router.push('/dashboard')
+    // Safety net: the App Router client transition occasionally stalls, leaving
+    // the login button spinning after the success toast. If we're still on /login
+    // shortly after, force a hard navigation so login never gets stuck.
+    window.setTimeout(() => {
+      if (window.location.pathname.startsWith('/login')) window.location.assign('/dashboard')
+    }, 1200)
     return true
   }
 

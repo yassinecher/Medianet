@@ -35,6 +35,11 @@ export default function AdminLoginPage() {
       setAuth(data, data.token)
       toast.success('Bienvenue dans la console admin')
       router.push('/dashboard')
+      // Safety net: if the client transition stalls, force a hard navigation so
+      // login never gets stuck after the success toast.
+      window.setTimeout(() => {
+        if (window.location.pathname.startsWith('/login')) window.location.assign('/dashboard')
+      }, 1200)
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'Identifiants incorrects')
     } finally {

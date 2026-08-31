@@ -46,6 +46,21 @@ public class FileUploadController {
     }
 
     /**
+     * Upload a task deliverable document (PDF, deck, image, archive…) — ANY
+     * authenticated user, so porteurs can submit their task "rendus". Non-image
+     * files allowed. Returns { url, filename }.
+     */
+    @PostMapping(value = "/upload-doc", consumes = "multipart/form-data")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Map<String, String>> uploadDoc(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(defaultValue = "task-docs") String folder) {
+        String url = storage.upload(folder, file, /* onlyImages */ false);
+        return ResponseEntity.ok(Map.of("url", url,
+                "filename", file.getOriginalFilename() != null ? file.getOriginalFilename() : "document"));
+    }
+
+    /**
      * Upload a pitch video — any authenticated user (porteurs upload their own
      * presentation). Video content types, up to 250 MB. Returns { url, filename }.
      */

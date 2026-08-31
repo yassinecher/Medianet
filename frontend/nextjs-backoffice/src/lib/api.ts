@@ -575,6 +575,17 @@ export const tasksApi = {
   review: (id: number, data: { approve: boolean; reviewNote?: string }) => api.patch(`/api/tasks/${id}/review`, data),
   /** ADMIN — delete */
   delete: (id: number) => api.delete(`/api/tasks/${id}`),
+  /** Full task detail (steps, documents, activity log, collaborators). */
+  detail: (id: number) => api.get(`/api/tasks/${id}`),
+  addAttachment: (id: number, data: { kind?: string; url: string; name?: string; sizeBytes?: number; contentType?: string }) =>
+    api.post(`/api/tasks/${id}/attachments`, data),
+  removeAttachment: (id: number, code: string) => api.delete(`/api/tasks/${id}/attachments/${code}`),
+  addStep: (id: number, title: string) => api.post(`/api/tasks/${id}/steps`, { title }),
+  updateStep: (id: number, code: string, data: { done?: boolean; title?: string }) => api.patch(`/api/tasks/${id}/steps/${code}`, data),
+  removeStep: (id: number, code: string) => api.delete(`/api/tasks/${id}/steps/${code}`),
+  addCollaborator: (id: number, data: { userId: number; name?: string; role?: string }) => api.post(`/api/tasks/${id}/collaborators`, data),
+  removeCollaborator: (id: number, userId: number) => api.delete(`/api/tasks/${id}/collaborators/${userId}`),
+  addComment: (id: number, note: string) => api.post(`/api/tasks/${id}/comments`, { note }),
 }
 
 export const notificationsApi = {

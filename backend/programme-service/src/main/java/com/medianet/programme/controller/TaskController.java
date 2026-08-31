@@ -210,9 +210,109 @@ public class TaskController {
     @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
     public ResponseEntity<TaskDto> reviewTask(
             @PathVariable Long taskId,
-            @RequestBody ReviewTaskRequest req) {
-        return ResponseEntity.ok(taskService.reviewTask(taskId, req));
+            @RequestBody ReviewTaskRequest req,
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestAttribute(value = "userFirstName", required = false) String firstName) {
+        return ResponseEntity.ok(taskService.reviewTask(taskId, req, userId, firstName != null ? firstName : "Reviewer"));
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Rich task actions — detail, documents, checklist, actors, comments
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** Full task detail incl. attachments/steps/collaborators/activity log. */
+    @GetMapping("/api/tasks/{taskId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TaskDto> getTaskDetail(
+            @PathVariable Long taskId,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute(value = "userRole", required = false) String userRole) {
+        return ResponseEntity.ok(taskService.getTaskDetail(taskId, userId, isPrivileged(userRole)));
+    }
+
+    /** Attach a document / link (the deliverable rendu, or an admin resource). */
+    @PostMapping("/api/tasks/{taskId}/attachments")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TaskDto> addAttachment(
+            @PathVariable Long taskId,
+            @RequestBody TaskActionRequests.AttachmentRequest req,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute(value = "userFirstName", required = false) String firstName,
+            @RequestAttribute(value = "userRole", required = false) String userRole) {
+        return ResponseEntity.ok(taskService.addAttachment(taskId, userId, who(firstName), isPrivileged(userRole), req));
+    }
+
+    @DeleteMapping("/api/tasks/{taskId}/attachments/{code}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TaskDto> removeAttachment(
+            @PathVariable Long taskId, @PathVariable String code,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute(value = "userRole", required = false) String userRole) {
+        return ResponseEntity.ok(taskService.removeAttachment(taskId, code, userId, isPrivileged(userRole)));
+    }
+
+    @PostMapping("/api/tasks/{taskId}/steps")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TaskDto> addStep(
+            @PathVariable Long taskId,
+            @RequestBody TaskActionRequests.StepRequest req,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute(value = "userFirstName", required = false) String firstName,
+            @RequestAttribute(value = "userRole", required = false) String userRole) {
+        return ResponseEntity.ok(taskService.addStep(taskId, userId, who(firstName), isPrivileged(userRole), req));
+    }
+
+    @PatchMapping("/api/tasks/{taskId}/steps/{code}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TaskDto> updateStep(
+            @PathVariable Long taskId, @PathVariable String code,
+            @RequestBody TaskActionRequests.StepUpdateRequest req,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute(value = "userFirstName", required = false) String firstName,
+            @RequestAttribute(value = "userRole", required = false) String userRole) {
+        return ResponseEntity.ok(taskService.updateStep(taskId, code, userId, who(firstName), isPrivileged(userRole), req));
+    }
+
+    @DeleteMapping("/api/tasks/{taskId}/steps/{code}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TaskDto> removeStep(
+            @PathVariable Long taskId, @PathVariable String code,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute(value = "userRole", required = false) String userRole) {
+        return ResponseEntity.ok(taskService.removeStep(taskId, code, userId, isPrivileged(userRole)));
+    }
+
+    /** Add / remove an extra actor (ADMIN / MENTOR). */
+    @PostMapping("/api/tasks/{taskId}/collaborators")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
+    public ResponseEntity<TaskDto> addCollaborator(
+            @PathVariable Long taskId, @RequestBody TaskActionRequests.CollaboratorRequest req) {
+        return ResponseEntity.ok(taskService.addCollaborator(taskId, req));
+    }
+
+    @DeleteMapping("/api/tasks/{taskId}/collaborators/{userId}")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('tasks:update') or hasRole('MENTOR')")
+    public ResponseEntity<TaskDto> removeCollaborator(
+            @PathVariable Long taskId, @PathVariable Long userId) {
+        return ResponseEntity.ok(taskService.removeCollaborator(taskId, userId));
+    }
+
+    /** Post a comment into the activity log (assignee / collaborator / admin / mentor). */
+    @PostMapping("/api/tasks/{taskId}/comments")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TaskDto> addComment(
+            @PathVariable Long taskId,
+            @RequestBody TaskActionRequests.CommentRequest req,
+            @RequestAttribute("userId") Long userId,
+            @RequestAttribute(value = "userFirstName", required = false) String firstName,
+            @RequestAttribute(value = "userRole", required = false) String userRole) {
+        return ResponseEntity.ok(taskService.addComment(taskId, userId, who(firstName), isPrivileged(userRole), req));
+    }
+
+    private static boolean isPrivileged(String userRole) {
+        return "ADMIN".equals(userRole) || "MENTOR".equals(userRole);
+    }
+    private static String who(String firstName) { return firstName != null ? firstName : "Utilisateur"; }
 
     /**
      * "My tasks" — porteur/team-member sees all tasks assigned to them

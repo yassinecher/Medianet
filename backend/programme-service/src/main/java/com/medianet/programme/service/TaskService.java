@@ -1,6 +1,11 @@
 package com.medianet.programme.service;
 
 import com.medianet.programme.dto.*;
+import com.medianet.programme.dto.TaskActionRequests.AttachmentRequest;
+import com.medianet.programme.dto.TaskActionRequests.CollaboratorRequest;
+import com.medianet.programme.dto.TaskActionRequests.CommentRequest;
+import com.medianet.programme.dto.TaskActionRequests.StepRequest;
+import com.medianet.programme.dto.TaskActionRequests.StepUpdateRequest;
 import com.medianet.programme.entity.*;
 import com.medianet.programme.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -45,7 +52,9 @@ public class TaskService {
                 .status(TaskStatus.PENDING)
                 .build();
 
-        return toDto(taskRepository.save(task));
+        task.getActivityLog().add(logEntry(assignedByUserId, assignedByName, "CREATED",
+                "Tâche créée" + (task.getAssignedToName() != null ? " · assignée à " + task.getAssignedToName() : "")));
+        return toDto(taskRepository.save(task), true);
     }
 
     // ── Read ──────────────────────────────────────────────────────────────────
@@ -166,7 +175,9 @@ public class TaskService {
         if (ts == TaskStatus.COMPLETED && task.getCompletedAt() == null) {
             task.setCompletedAt(LocalDateTime.now());
         }
-        return toDto(taskRepository.save(task));
+        task.getActivityLog().add(logEntry(requestingUserId, actorNameFor(task, requestingUserId),
+                ts == TaskStatus.IN_PROGRESS ? "STARTED" : "STATUS", "Statut : " + statusLabel(ts)));
+        return toDto(taskRepository.save(task), true);
     }
 
     // ── Deliverable workflow: assignee submits → admin reviews ─────────────────
@@ -183,22 +194,29 @@ public class TaskService {
         task.setSubmittedAt(LocalDateTime.now());
         task.setReviewNote(null);              // clear any previous "changes requested" note
         task.setStatus(TaskStatus.SUBMITTED);
-        return toDto(taskRepository.save(task));
+        long files = task.getAttachments().stream().filter(a -> "SUBMISSION".equals(a.getKind())).count();
+        task.getActivityLog().add(logEntry(requestingUserId, actorNameFor(task, requestingUserId), "SUBMITTED",
+                "Livrable soumis" + (files > 0 ? " · " + files + " document(s)" : "")));
+        return toDto(taskRepository.save(task), true);
     }
 
     /** Admin/mentor reviews a submission: approve → COMPLETED, else back to IN_PROGRESS. */
-    public TaskDto reviewTask(Long taskId, ReviewTaskRequest req) {
+    public TaskDto reviewTask(Long taskId, ReviewTaskRequest req, Long reviewerId, String reviewerName) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
         if (req.isApprove()) {
             task.setStatus(TaskStatus.COMPLETED);
             if (task.getCompletedAt() == null) task.setCompletedAt(LocalDateTime.now());
             task.setReviewNote(req.getReviewNote());
+            task.getActivityLog().add(logEntry(reviewerId, reviewerName, "APPROVED",
+                    "Livrable approuvé" + (isBlank(req.getReviewNote()) ? "" : " · " + req.getReviewNote())));
         } else {
             task.setStatus(TaskStatus.IN_PROGRESS);   // sent back for revision
             task.setReviewNote(req.getReviewNote());
+            task.getActivityLog().add(logEntry(reviewerId, reviewerName, "REVISION_REQUESTED",
+                    isBlank(req.getReviewNote()) ? "Révision demandée" : req.getReviewNote()));
         }
-        return toDto(taskRepository.save(task));
+        return toDto(taskRepository.save(task), true);
     }
 
     // ── Delete ────────────────────────────────────────────────────────────────
@@ -238,7 +256,136 @@ public class TaskService {
         );
     }
 
+    // ── Rich actions: detail, attachments, steps, collaborators, comments ──────
+
+    @Transactional(readOnly = true)
+    public TaskDto getTaskDetail(Long taskId, Long userId, boolean privileged) {
+        Task task = load(taskId);
+        assertCanAct(task, userId, privileged);
+        return toDto(task, true);
+    }
+
+    public TaskDto addAttachment(Long taskId, Long userId, String userName, boolean privileged, AttachmentRequest req) {
+        Task task = load(taskId);
+        assertCanAct(task, userId, privileged);
+        String kind = "RESOURCE".equalsIgnoreCase(req.getKind()) ? "RESOURCE" : "SUBMISSION";
+        task.getAttachments().add(TaskAttachment.builder()
+                .code(uuid()).kind(kind).url(req.getUrl()).name(req.getName())
+                .sizeBytes(req.getSizeBytes()).contentType(req.getContentType())
+                .uploadedByUserId(userId).uploadedByName(userName).createdAt(LocalDateTime.now()).build());
+        task.getActivityLog().add(logEntry(userId, userName, "FILE_ADDED",
+                ("RESOURCE".equals(kind) ? "Ressource ajoutée : " : "Document ajouté : ") + req.getName()));
+        return toDto(taskRepository.save(task), true);
+    }
+
+    public TaskDto removeAttachment(Long taskId, String code, Long userId, boolean privileged) {
+        Task task = load(taskId);
+        assertCanAct(task, userId, privileged);
+        task.getAttachments().removeIf(a -> Objects.equals(a.getCode(), code)
+                && (privileged || Objects.equals(a.getUploadedByUserId(), userId)));
+        return toDto(taskRepository.save(task), true);
+    }
+
+    public TaskDto addStep(Long taskId, Long userId, String userName, boolean privileged, StepRequest req) {
+        Task task = load(taskId);
+        assertCanAct(task, userId, privileged);
+        if (isBlank(req.getTitle())) throw new IllegalArgumentException("Titre de l'étape requis");
+        task.getSteps().add(TaskStep.builder().code(uuid()).title(req.getTitle().trim())
+                .done(false).createdAt(LocalDateTime.now()).build());
+        task.getActivityLog().add(logEntry(userId, userName, "STEP_ADDED", "Étape : " + req.getTitle().trim()));
+        return toDto(taskRepository.save(task), true);
+    }
+
+    public TaskDto updateStep(Long taskId, String code, Long userId, String userName, boolean privileged, StepUpdateRequest req) {
+        Task task = load(taskId);
+        assertCanAct(task, userId, privileged);
+        for (TaskStep s : task.getSteps()) {
+            if (Objects.equals(s.getCode(), code)) {
+                if (req.getTitle() != null && !req.getTitle().isBlank()) s.setTitle(req.getTitle().trim());
+                if (req.getDone() != null) {
+                    s.setDone(req.getDone());
+                    s.setDoneByName(req.getDone() ? userName : null);
+                    s.setDoneAt(req.getDone() ? LocalDateTime.now() : null);
+                    task.getActivityLog().add(logEntry(userId, userName, req.getDone() ? "STEP_DONE" : "STEP_REOPENED",
+                            (req.getDone() ? "Étape terminée : " : "Étape rouverte : ") + s.getTitle()));
+                }
+                break;
+            }
+        }
+        return toDto(taskRepository.save(task), true);
+    }
+
+    public TaskDto removeStep(Long taskId, String code, Long userId, boolean privileged) {
+        Task task = load(taskId);
+        assertCanAct(task, userId, privileged);
+        task.getSteps().removeIf(s -> Objects.equals(s.getCode(), code));
+        return toDto(taskRepository.save(task), true);
+    }
+
+    public TaskDto addCollaborator(Long taskId, CollaboratorRequest req) {
+        Task task = load(taskId);
+        if (req.getUserId() == null) throw new IllegalArgumentException("userId requis");
+        boolean exists = task.getCollaborators().stream().anyMatch(c -> Objects.equals(c.getUserId(), req.getUserId()));
+        if (!exists && !Objects.equals(req.getUserId(), task.getAssignedToUserId())) {
+            task.getCollaborators().add(TaskCollaborator.builder()
+                    .userId(req.getUserId()).name(req.getName()).role(req.getRole()).build());
+            task.getActivityLog().add(logEntry(null, "Admin", "COLLABORATOR", "Acteur ajouté : " + req.getName()));
+        }
+        return toDto(taskRepository.save(task), true);
+    }
+
+    public TaskDto removeCollaborator(Long taskId, Long userId) {
+        Task task = load(taskId);
+        task.getCollaborators().removeIf(c -> Objects.equals(c.getUserId(), userId));
+        return toDto(taskRepository.save(task), true);
+    }
+
+    public TaskDto addComment(Long taskId, Long userId, String userName, boolean privileged, CommentRequest req) {
+        Task task = load(taskId);
+        assertCanAct(task, userId, privileged);
+        if (isBlank(req.getNote())) throw new IllegalArgumentException("Commentaire vide");
+        task.getActivityLog().add(logEntry(userId, userName, "COMMENT", req.getNote().trim()));
+        return toDto(taskRepository.save(task), true);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private Task load(Long taskId) {
+        return taskRepository.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+    }
+
+    private void assertCanAct(Task task, Long userId, boolean privileged) {
+        if (privileged) return;
+        boolean ok = userId != null && (userId.equals(task.getAssignedToUserId())
+                || task.getCollaborators().stream().anyMatch(c -> userId.equals(c.getUserId())));
+        if (!ok) throw new IllegalArgumentException("Accès refusé à cette tâche");
+    }
+
+    private String actorNameFor(Task task, Long userId) {
+        if (userId != null && userId.equals(task.getAssignedToUserId()) && task.getAssignedToName() != null)
+            return task.getAssignedToName();
+        return task.getCollaborators().stream().filter(c -> userId != null && userId.equals(c.getUserId()))
+                .map(TaskCollaborator::getName).findFirst().orElse("Utilisateur");
+    }
+
+    private TaskLogEntry logEntry(Long userId, String name, String action, String note) {
+        return TaskLogEntry.builder().actorUserId(userId).actorName(name == null ? "Utilisateur" : name)
+                .action(action).note(note).at(LocalDateTime.now()).build();
+    }
+
+    private boolean isBlank(String s) { return s == null || s.isBlank(); }
+    private String uuid() { return UUID.randomUUID().toString(); }
+    private String statusLabel(TaskStatus s) {
+        switch (s) {
+            case PENDING: return "À faire";
+            case IN_PROGRESS: return "En cours";
+            case SUBMITTED: return "Soumise";
+            case COMPLETED: return "Terminée";
+            case CANCELLED: return "Annulée";
+            default: return s.name();
+        }
+    }
 
     private Task findTask(Long programmeId, Long taskId) {
         return taskRepository.findById(taskId)
@@ -247,7 +394,27 @@ public class TaskService {
                         "Task " + taskId + " not found in programme " + programmeId));
     }
 
-    private TaskDto toDto(Task t) {
+    private TaskDto toDto(Task t) { return toDto(t, false); }
+
+    private TaskDto toDto(Task t, boolean detail) {
+        List<TaskDto.Attachment> atts = t.getAttachments() == null ? List.of()
+                : t.getAttachments().stream().map(a -> TaskDto.Attachment.builder()
+                    .code(a.getCode()).kind(a.getKind()).url(a.getUrl()).name(a.getName())
+                    .sizeBytes(a.getSizeBytes()).contentType(a.getContentType())
+                    .uploadedByUserId(a.getUploadedByUserId()).uploadedByName(a.getUploadedByName())
+                    .createdAt(a.getCreatedAt()).build()).collect(Collectors.toList());
+        List<TaskDto.Step> steps = t.getSteps() == null ? List.of()
+                : t.getSteps().stream().map(s -> TaskDto.Step.builder()
+                    .code(s.getCode()).title(s.getTitle()).done(s.isDone())
+                    .doneByName(s.getDoneByName()).doneAt(s.getDoneAt()).build()).collect(Collectors.toList());
+        List<TaskDto.Collaborator> collabs = t.getCollaborators() == null ? List.of()
+                : t.getCollaborators().stream().map(c -> TaskDto.Collaborator.builder()
+                    .userId(c.getUserId()).name(c.getName()).role(c.getRole()).build()).collect(Collectors.toList());
+        List<TaskDto.LogEntry> logs = !detail || t.getActivityLog() == null ? null
+                : t.getActivityLog().stream().map(l -> TaskDto.LogEntry.builder()
+                    .actorUserId(l.getActorUserId()).actorName(l.getActorName())
+                    .action(l.getAction()).note(l.getNote()).at(l.getAt()).build()).collect(Collectors.toList());
+
         return TaskDto.builder()
                 .id(t.getId())
                 .programmeId(t.getProgrammeId())
@@ -272,6 +439,10 @@ public class TaskService {
                 .completedAt(t.getCompletedAt())
                 .createdAt(t.getCreatedAt())
                 .updatedAt(t.getUpdatedAt())
+                .attachments(atts)
+                .steps(steps)
+                .collaborators(collabs)
+                .activityLog(logs)
                 .build();
     }
 

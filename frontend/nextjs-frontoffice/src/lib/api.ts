@@ -152,6 +152,21 @@ export const filesApi = {
     )
     return r.data
   },
+  /** Upload a task deliverable document (any authenticated user). Returns { url, filename }. */
+  uploadDoc: async (file: File, folder = 'task-docs', onProgress?: (pct: number) => void) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const r = await api.post<{ url: string; filename: string }>(
+      `/api/files/upload-doc?folder=${encodeURIComponent(folder)}`,
+      fd,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 0,
+        onUploadProgress: (e) => { if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100)) },
+      },
+    )
+    return r.data
+  },
   delete: (url: string) => api.delete(`/api/files?url=${encodeURIComponent(url)}`),
 }
 
@@ -303,9 +318,19 @@ export const juryApi = {
 
 export const tasksApi = {
   myTasks: () => api.get('/api/tasks/my'),
+  /** Full task detail (steps, documents, activity log, collaborators). */
+  detail: (id: number) => api.get(`/api/tasks/${id}`),
   updateStatus: (id: number, data: { status: string }) => api.patch(`/api/tasks/${id}/status`, data),
-  /** Submit the deliverable (rendu) for my task → status SUBMITTED, awaiting review. */
+  /** Submit the deliverable (rendu) → status SUBMITTED, awaiting review. */
   submit: (id: number, data: { submissionText?: string; submissionUrl?: string }) => api.patch(`/api/tasks/${id}/submit`, data),
+  /** Attach a document/link to the task (kind SUBMISSION by default). */
+  addAttachment: (id: number, data: { kind?: string; url: string; name?: string; sizeBytes?: number; contentType?: string }) =>
+    api.post(`/api/tasks/${id}/attachments`, data),
+  removeAttachment: (id: number, code: string) => api.delete(`/api/tasks/${id}/attachments/${code}`),
+  addStep: (id: number, title: string) => api.post(`/api/tasks/${id}/steps`, { title }),
+  updateStep: (id: number, code: string, data: { done?: boolean; title?: string }) => api.patch(`/api/tasks/${id}/steps/${code}`, data),
+  removeStep: (id: number, code: string) => api.delete(`/api/tasks/${id}/steps/${code}`),
+  addComment: (id: number, note: string) => api.post(`/api/tasks/${id}/comments`, { note }),
 }
 
 /** Organizations — porteurs list and pick their own; the same API also exposes

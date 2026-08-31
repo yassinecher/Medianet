@@ -7,10 +7,11 @@
  * existing TaskController (/api/programmes/{id}/tasks + /api/tasks).
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Trash2, CheckCircle2, Clock, Circle, Loader2, ClipboardList, X, Send, RotateCcw, Check, Paperclip, Target } from 'lucide-react'
+import { Plus, Trash2, CheckCircle2, Clock, Circle, Loader2, ClipboardList, X, Send, Target, ChevronDown, ChevronUp } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tasksApi, usersApi } from '@/lib/api'
 import { performDelete } from '@/lib/deleteChoice'
+import { TaskDetailAdmin } from '@/components/tasks/TaskDetailAdmin'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -50,7 +51,7 @@ export function TasksPanel({ programmeId, programmeName }: { programmeId: number
   const [form, setForm] = useState({ title: '', description: '', expectedDeliverable: '', assignedToUserId: '', dueDate: '', priority: 'MEDIUM' as typeof PRIORITIES[number] })
   const u = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const reset = () => setForm({ title: '', description: '', expectedDeliverable: '', assignedToUserId: '', dueDate: '', priority: 'MEDIUM' })
-  const [reviewingId, setReviewingId] = useState<number | null>(null)
+  const [openId, setOpenId] = useState<number | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -91,21 +92,6 @@ export function TasksPanel({ programmeId, programmeName }: { programmeId: number
       const res = await tasksApi.updateStatus(t.id, { status })
       setTasks((prev) => prev.map((x) => x.id === t.id ? res.data : x))
     } catch (err: any) { toast.error(err.response?.data?.message ?? 'Erreur') }
-  }
-  const review = async (t: Task, approve: boolean) => {
-    let reviewNote: string | undefined
-    if (!approve) {
-      const note = window.prompt('Que faut-il corriger ? (renvoyé au porteur)', '')
-      if (note === null) return
-      reviewNote = note.trim() || undefined
-    }
-    setReviewingId(t.id)
-    try {
-      const res = await tasksApi.review(t.id, { approve, reviewNote })
-      setTasks((prev) => prev.map((x) => x.id === t.id ? res.data : x))
-      toast.success(approve ? 'Livrable approuvé — tâche terminée' : 'Renvoyé au porteur pour révision')
-    } catch (err: any) { toast.error(err.response?.data?.message ?? 'Erreur') }
-    finally { setReviewingId(null) }
   }
   const remove = async (id: number, title: string) => {
     const outcome = await performDelete('task', id, () => tasksApi.delete(id), { label: `la tâche « ${title} »` })
@@ -243,36 +229,18 @@ export function TasksPanel({ programmeId, programmeName }: { programmeId: number
                 </div>
               )}
 
-              {/* Changes requested — feedback sent back to the porteur */}
-              {t.status === 'IN_PROGRESS' && t.reviewNote && (
-                <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
-                  <RotateCcw className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span><span className="font-semibold">Révision demandée : </span>{t.reviewNote}</span>
-                </div>
-              )}
+              <div className="mt-2 flex items-center gap-2">
+                <button onClick={() => setOpenId(openId === t.id ? null : t.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold text-foreground hover:bg-accent">
+                  {openId === t.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  {openId === t.id ? 'Fermer' : t.status === 'SUBMITTED' ? 'Voir le rendu & valider' : 'Détail · étapes · rendu'}
+                </button>
+                {t.status === 'SUBMITTED' && <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold text-violet-600"><Send className="h-2.5 w-2.5" />À valider</span>}
+              </div>
 
-              {/* Submitted deliverable + review actions */}
-              {t.status === 'SUBMITTED' && (
-                <div className="mt-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-2.5">
-                  <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-violet-700 dark:text-violet-300">
-                    <Send className="h-3 w-3" />Livrable soumis{t.submittedAt ? ` · ${formatDate(t.submittedAt)}` : ''}
-                  </p>
-                  {t.submissionText && <p className="whitespace-pre-wrap text-xs text-foreground">{t.submissionText}</p>}
-                  {t.submissionUrl && (
-                    <a href={t.submissionUrl} target="_blank" rel="noreferrer"
-                      className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">
-                      <Paperclip className="h-3 w-3" />{t.submissionUrl}
-                    </a>
-                  )}
-                  <div className="mt-2 flex gap-2">
-                    <Button variant="brand" size="sm" className="h-7 gap-1.5 text-xs" disabled={reviewingId === t.id} onClick={() => review(t, true)}>
-                      {reviewingId === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}Approuver
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" disabled={reviewingId === t.id} onClick={() => review(t, false)}>
-                      <RotateCcw className="h-3 w-3" />Demander une révision
-                    </Button>
-                  </div>
-                </div>
+              {openId === t.id && (
+                <TaskDetailAdmin taskId={t.id} users={users}
+                  onStatus={(status) => setTasks((prev) => prev.map((x) => x.id === t.id ? { ...x, status: status as Task['status'] } : x))} />
               )}
             </MagicCard>
           ))}

@@ -8,6 +8,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "tasks")
@@ -80,6 +82,34 @@ public class Task {
     private TaskStatus status = TaskStatus.PENDING;
 
     private LocalDateTime completedAt;
+
+    // ── Rich task model (documents, checklist, activity log, extra actors) ─────
+    /** Documents/links — brief RESOURCEs and SUBMISSION deliverables (the rendus). */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "task_attachments", joinColumns = @JoinColumn(name = "task_id"))
+    @OrderColumn(name = "pos")
+    @Builder.Default
+    private List<TaskAttachment> attachments = new ArrayList<>();
+
+    /** Checklist sub-steps. */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "task_steps", joinColumns = @JoinColumn(name = "task_id"))
+    @OrderColumn(name = "pos")
+    @Builder.Default
+    private List<TaskStep> steps = new ArrayList<>();
+
+    /** Append-only activity log. */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "task_logs", joinColumns = @JoinColumn(name = "task_id"))
+    @OrderColumn(name = "pos")
+    @Builder.Default
+    private List<TaskLogEntry> activityLog = new ArrayList<>();
+
+    /** Extra actors beyond the primary assignee. */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "task_collaborators", joinColumns = @JoinColumn(name = "task_id"))
+    @Builder.Default
+    private List<TaskCollaborator> collaborators = new ArrayList<>();
 
     @CreationTimestamp
     private LocalDateTime createdAt;
