@@ -48,6 +48,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/org-invitations/**").permitAll()
                 // Public « Sociétés incubées » showcase (trimmed org profiles).
                 .requestMatchers("/api/organizations/public").permitAll()
+                .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

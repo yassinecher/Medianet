@@ -256,7 +256,7 @@ export default function TasksPage() {
                       </div>
                       {t.description && <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{t.description}</p>}
                       <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        {t.programmeName && <span>📦 {t.programmeName}</span>}
+                        {t.programmeName && <span>{t.programmeName}</span>}
                         {(t.assignedToName || t.assignee) && (
                           <span>→ {t.assignedToName ?? `${t.assignee?.firstName} ${t.assignee?.lastName}`}</span>
                         )}

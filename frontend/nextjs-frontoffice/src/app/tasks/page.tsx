@@ -54,7 +54,7 @@ export default function TasksPage() {
     try {
       const r = await tasksApi.submit(t.id, { submissionText: subText.trim() || undefined, submissionUrl: subUrl.trim() || undefined })
       setTasks((prev) => prev.map((x) => x.id === t.id ? (r.data ?? { ...x, status: 'SUBMITTED' }) : x))
-      setSubmitFor(null); toast.success('Livrable soumis — en attente de validation 🎉')
+      setSubmitFor(null); toast.success('Livrable soumis — en attente de validation')
     } catch { toast.error('Échec de la soumission') }
     finally { setBusyId(null) }
   }

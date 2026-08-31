@@ -49,7 +49,8 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${FRONTOFFICE_API_URL:-https://app.medianet.dz}
       NODE_ENV: production
-    depends_on: [api-gateway]
+    depends_on:
+      api-gateway: { condition: service_healthy }
     networks: [medianet-network]
 
   nextjs-backoffice:
@@ -61,7 +62,8 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${BACKOFFICE_API_URL:-https://admin.medianet.dz}
       NODE_ENV: production
-    depends_on: [api-gateway]
+    depends_on:
+      api-gateway: { condition: service_healthy }
     networks: [medianet-network]
 
   # ── API gateway + service discovery ────────────────────────────────────────
@@ -73,20 +75,28 @@ services:
       - "8080:8080"          # API → http://SERVER_IP:8080  (frontends call this)
     environment:
       EUREKA_URI: http://eureka-server:8761/eureka
-      AI_MATCHING_SERVICE_URL: http://ai-matching-service:8085
-      AI_SCORING_SERVICE_URL: http://ai-scoring-service:8084
       # Serves public uploads (/<bucket>/**) so images and pitch videos load
       # from the same API domain — no extra reverse-proxy rule needed.
       MINIO_INTERNAL_URL: http://minio:9000
       MINIO_BUCKET: ${MINIO_BUCKET:-medianet}
-    depends_on: [eureka-server]
+      JAVA_TOOL_OPTIONS: ${GATEWAY_JAVA_OPTS:--Xmx320m}
+    depends_on:
+      eureka-server: { condition: service_healthy }
     networks: [medianet-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
   eureka-server:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-eureka-server:${TAG:-latest}
     <<: *pull
     container_name: eureka-server
     expose: ["8761"]
+    environment:
+      JAVA_TOOL_OPTIONS: ${EUREKA_JAVA_OPTS:--Xmx256m}
     networks: [medianet-network]
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8761/actuator/health"]
@@ -110,12 +120,20 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-medianet}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-medianet2024}
+      MANAGEMENT_HEALTH_RABBIT_ENABLED: "false"
       EUREKA_URI: http://eureka-server:8761/eureka
+      JAVA_TOOL_OPTIONS: ${AUTH_JAVA_OPTS:--Xmx320m}
     depends_on:
       postgres-auth: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     networks: [medianet-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8081/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
   candidature-service:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-candidature-service:${TAG:-latest}
@@ -130,14 +148,22 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-medianet}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-medianet2024}
+      MANAGEMENT_HEALTH_RABBIT_ENABLED: "false"
       AUTH_SERVICE_URL: http://auth-service:8081
       PROGRAMME_SERVICE_URL: http://programme-service:8086
       EUREKA_URI: http://eureka-server:8761/eureka
+      JAVA_TOOL_OPTIONS: ${CANDIDATURE_JAVA_OPTS:--Xmx320m}
     depends_on:
       postgres-candidature: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     networks: [medianet-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8083/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
   notification-service:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-notification-service:${TAG:-latest}
@@ -157,10 +183,17 @@ services:
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Medianet Incubateur}
       FRONTEND_URL: ${FRONTEND_URL:-https://app.medianet.dz}
       EUREKA_URI: http://eureka-server:8761/eureka
+      JAVA_TOOL_OPTIONS: ${NOTIFICATION_JAVA_OPTS:--Xmx320m}
     depends_on:
       postgres-notification: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     networks: [medianet-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8087/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
   programme-service:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-programme-service:${TAG:-latest}
@@ -186,46 +219,21 @@ services:
       CANVA_CLIENT_ID: ${CANVA_CLIENT_ID:-}
       CANVA_CLIENT_SECRET: ${CANVA_CLIENT_SECRET:-}
       CANVA_REDIRECT_URI: ${CANVA_REDIRECT_URI:-https://app.medianet.dz/api/canva/callback}
+      JAVA_TOOL_OPTIONS: ${PROGRAMME_JAVA_OPTS:--Xmx512m}
     depends_on:
       postgres-programme: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     networks: [medianet-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8086/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
-  # Ollama-backed scoring — optional (needs the local LLM). Enable with --profile ai-local.
-  ai-scoring-service:
-    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-ai-scoring-service:${TAG:-latest}
-    <<: *pull
-    container_name: ai-scoring-service
-    profiles: ["ai-local"]
-    expose: ["8084"]
-    environment:
-      JWT_SECRET: ${JWT_SECRET}
-      OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
-      CANDIDATURE_SERVICE_URL: http://candidature-service:8083
-      PROGRAMME_SERVICE_URL: http://programme-service:8086
-      EUREKA_URI: http://eureka-server:8761/eureka
-    depends_on:
-      eureka-server: { condition: service_healthy }
-    networks: [medianet-network]
-
-  # Ollama-backed matching — optional (needs the local LLM). Enable with --profile ai-local.
-  ai-matching-service:
-    image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-ai-matching-service:${TAG:-latest}
-    <<: *pull
-    container_name: ai-matching-service
-    profiles: ["ai-local"]
-    expose: ["8085"]
-    environment:
-      JWT_SECRET: ${JWT_SECRET}
-      OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
-      CANDIDATURE_SERVICE_URL: http://candidature-service:8083
-      AUTH_SERVICE_URL: http://auth-service:8081
-      EUREKA_URI: http://eureka-server:8761/eureka
-    depends_on:
-      eureka-server: { condition: service_healthy }
-    networks: [medianet-network]
+  # NOTE: ai-scoring-service (8084) and ai-matching-service (8085) were retired —
+  # superseded by admin-ai-service (/api/admin-ai/**). Removed here and from the
+  # gateway so nothing depends on services that are no longer built or deployed.
 
   admin-ai-service:
     image: ${DOCKER_USERNAME:-yassinecherni9}/medianet-admin-ai-service:${TAG:-latest}
@@ -247,10 +255,17 @@ services:
       CANDIDATURE_SERVICE_URL: http://candidature-service:8083
       NOTIFICATION_SERVICE_URL: http://notification-service:8087
       PITCH_MEDIA_SERVICE_URL: http://pitch-media-service:8087
+      JAVA_TOOL_OPTIONS: ${ADMIN_AI_JAVA_OPTS:--Xmx448m}
     depends_on:
       postgres-admin-ai: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     networks: [medianet-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8088/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
   # Video transcription (Python/ffmpeg/whisper) — OPTIONAL & heavy (~1.5 GB).
   # Off by default to fit small disks. Enable with --profile media once you have room.
@@ -273,10 +288,14 @@ services:
     volumes:
       - whisper_models:/models
     networks: [medianet-network]
+    deploy:
+      resources:
+        limits:
+          memory: 1600m
 
   # ── Infrastructure ─────────────────────────────────────────────────────────
   postgres-auth:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: postgres-auth
     environment:
       POSTGRES_DB: ${POSTGRES_AUTH_DB:-auth_db}
@@ -293,7 +312,7 @@ services:
       start_period: 90s
 
   postgres-candidature:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: postgres-candidature
     environment:
       POSTGRES_DB: ${POSTGRES_CANDIDATURE_DB:-candidature_db}
@@ -310,7 +329,7 @@ services:
       start_period: 90s
 
   postgres-notification:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: postgres-notification
     environment:
       POSTGRES_DB: ${POSTGRES_NOTIFICATION_DB:-notification_db}
@@ -327,7 +346,7 @@ services:
       start_period: 90s
 
   postgres-programme:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: postgres-programme
     environment:
       POSTGRES_DB: ${POSTGRES_PROGRAMME_DB:-programme_db}
@@ -344,7 +363,7 @@ services:
       start_period: 90s
 
   postgres-admin-ai:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: postgres-admin-ai
     environment:
       POSTGRES_DB: ${POSTGRES_ADMIN_AI_DB:-admin_ai_db}
@@ -361,7 +380,7 @@ services:
       start_period: 90s
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-04-22T22-12-26Z}
     container_name: medianet-minio
     ports:
       - "9000:9000"          # S3 API — uploaded images load from http://SERVER_IP:9000
@@ -380,7 +399,7 @@ services:
       retries: 5
 
   minio-setup:
-    image: minio/mc:latest
+    image: minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-04-16T18-13-26Z}
     container_name: medianet-minio-setup
     depends_on:
       minio: { condition: service_healthy }
@@ -395,13 +414,17 @@ services:
     networks: [medianet-network]
     restart: "no"
 
+  # NOTE: currently VESTIGIAL — no code publishes/consumes yet. Kept internal so
+  # auth/candidature start cleanly; remove it + SPRING_RABBITMQ_* + the AMQP
+  # starter if the report doesn't describe async messaging.
   rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:3.13-management
     container_name: medianet-rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-medianet}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-medianet2024}
-    expose: ["5672", "15672"]
+    # Management UI (15672) intentionally NOT exposed — only AMQP (5672) internally.
+    expose: ["5672"]
     networks: [medianet-network]
     restart: unless-stopped
     healthcheck:
@@ -415,7 +438,7 @@ services:
   #   docker compose -f docker-compose.prod.yml --profile ai-local up -d
   # (and remove the deploy.resources GPU block below on a CPU-only host).
   ollama:
-    image: ollama/ollama
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.5.7}
     container_name: ollama
     profiles: ["ai-local"]
     expose: ["11434"]
@@ -429,6 +452,8 @@ services:
     # Remove this deploy block on a CPU-only server.
     deploy:
       resources:
+        limits:
+          memory: 4g
         reservations:
           devices:
             - driver: nvidia

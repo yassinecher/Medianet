@@ -56,7 +56,7 @@ async function refreshAuth(announce: boolean) {
   try {
     const { data } = await authApi.refresh()
     useAuthStore.getState().setAuth(data, data.token)
-    if (announce) toast('Vos rôles et permissions ont été mis à jour', { id: 'perms-updated', icon: '🔑' })
+    if (announce) toast('Vos rôles et permissions ont été mis à jour', { id: 'perms-updated' })
   } catch {
     // 401 (token invalidated / account disabled) is handled by the axios interceptor
   }

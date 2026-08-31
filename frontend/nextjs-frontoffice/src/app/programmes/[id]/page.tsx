@@ -117,7 +117,7 @@ function PorteurProgressCard({ phases, done, current, next, pct }: {
         {current && <StepRow tone="brand" label="Étape en cours" phase={current} />}
         {next && <StepRow tone="muted" label="Prochaine étape" phase={next} />}
         {!current && !next && phases.length > 0 && (
-          <p className="rounded-xl border border-emerald-400/40 bg-emerald-500/5 p-2.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">🎉 Toutes les étapes sont terminées. Félicitations !</p>
+          <p className="rounded-xl border border-emerald-400/40 bg-emerald-500/5 p-2.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">Toutes les étapes sont terminées. Félicitations !</p>
         )}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
@@ -136,7 +136,7 @@ function JuryPanelCard({ items, done, email }: { items: any[]; done: number; ema
         <h3 className="flex items-center gap-2 text-sm font-bold text-foreground"><Scale className="h-4 w-4 text-amber-500" />Votre espace jury</h3>
         {todo > 0
           ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-700 dark:text-amber-300">{todo} à évaluer</span>
-          : <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300">Terminé ✓</span>}
+          : <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300">Terminé</span>}
       </div>
       <p className="mb-3 text-xs text-muted-foreground">{done}/{items.length} candidature(s) évaluée(s) pour ce programme.</p>
       <div className="space-y-1.5">
@@ -415,7 +415,7 @@ export default function ProgrammeDetailPage() {
   ].filter(Boolean)) as { id: string; label: string }[]
   const APPLIED_LABEL: Record<string, string> = {
     PENDING: 'Candidature soumise', UNDER_EVALUATION: 'En évaluation',
-    ACCEPTED: 'Candidature acceptée ✓', REJECTED: 'Candidature refusée',
+    ACCEPTED: 'Candidature acceptée', REJECTED: 'Candidature refusée',
   }
 
   /** Shown in the apply slots when the porteur has already candidated. */

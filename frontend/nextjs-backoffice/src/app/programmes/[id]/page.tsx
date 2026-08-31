@@ -339,18 +339,18 @@ export default function ProgrammeDetailPage() {
   // Simple, session-aligned lifecycle: Ouvrir / Brouillon / Fermer / Archiver.
   // (The date-driven ProgrammeLifecycle still auto-progresses OPEN↔IN_PROGRESS↔CLOSED.)
   const OPEN_ACTIONS = [
-    { label: 'Brouillon', next: 'DRAFT',    variant: 'outline', icon: '✏️' },
-    { label: 'Fermer',    next: 'CLOSED',   variant: 'outline', icon: '🔒' },
-    { label: 'Archiver',  next: 'ARCHIVED', variant: 'outline', icon: '📦' },
+    { label: 'Brouillon', next: 'DRAFT',    variant: 'outline', icon: '' },
+    { label: 'Fermer',    next: 'CLOSED',   variant: 'outline', icon: '' },
+    { label: 'Archiver',  next: 'ARCHIVED', variant: 'outline', icon: '' },
   ]
   const statusActions: Record<string, { label: string; next: string; variant: string; icon: string }[]> = {
-    DRAFT:       [{ label: 'Ouvrir', next: 'OPEN', variant: 'brand', icon: '🚀' }, { label: 'Archiver', next: 'ARCHIVED', variant: 'outline', icon: '📦' }],
+    DRAFT:       [{ label: 'Ouvrir', next: 'OPEN', variant: 'brand', icon: '' }, { label: 'Archiver', next: 'ARCHIVED', variant: 'outline', icon: '' }],
     OPEN:        OPEN_ACTIONS,
     IN_PROGRESS: OPEN_ACTIONS,
     EVALUATION:  OPEN_ACTIONS,
-    CLOSED:      [{ label: 'Ouvrir', next: 'OPEN', variant: 'brand', icon: '🔓' }, { label: 'Archiver', next: 'ARCHIVED', variant: 'outline', icon: '📦' }],
-    CANCELLED:   [{ label: 'Ouvrir', next: 'OPEN', variant: 'outline', icon: '🔄' }, { label: 'Archiver', next: 'ARCHIVED', variant: 'outline', icon: '📦' }],
-    ARCHIVED:    [{ label: 'Désarchiver', next: 'DRAFT', variant: 'outline', icon: '♻️' }],
+    CLOSED:      [{ label: 'Ouvrir', next: 'OPEN', variant: 'brand', icon: '' }, { label: 'Archiver', next: 'ARCHIVED', variant: 'outline', icon: '' }],
+    CANCELLED:   [{ label: 'Ouvrir', next: 'OPEN', variant: 'outline', icon: '' }, { label: 'Archiver', next: 'ARCHIVED', variant: 'outline', icon: '' }],
+    ARCHIVED:    [{ label: 'Désarchiver', next: 'DRAFT', variant: 'outline', icon: '' }],
   }
 
   const handleCreateAndAddPartner = async () => {
@@ -410,7 +410,7 @@ export default function ProgrammeDetailPage() {
                     <Link href={`/programmes/${programme.id}/timeline`}>
                       <Button variant="outline" size="sm" className="gap-1.5 border-amber-500/40 bg-gradient-to-r from-amber-500/5 to-rose-500/5 hover:from-amber-500/10 hover:to-rose-500/10">
                         <BarChart3 className="h-3.5 w-3.5 text-amber-500" />
-                        🗺️ Parcours
+Parcours
                       </Button>
                     </Link>
                     <Link href={`/programmes/${programme.id}/builder`}>
@@ -442,7 +442,6 @@ export default function ProgrammeDetailPage() {
                         ${action.variant === 'brand'
                           ? 'border-brand-500 bg-brand-500 text-white hover:bg-brand-600 shadow-sm'
                           : 'border-border bg-card text-foreground hover:border-brand-400 hover:bg-accent'}`}>
-                      <span>{action.icon}</span>
                       {changingStatus ? '...' : action.label}
                     </button>
                   ))}
@@ -722,7 +721,7 @@ export default function ProgrammeDetailPage() {
                             </p>
                             {form.applicationUrl && !/^https?:\/\//i.test(form.applicationUrl) && (
                               <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                                ⚠ URL invalide — sera ignorée, le formulaire interne sera utilisé.
+URL invalide — sera ignorée, le formulaire interne sera utilisé.
                               </p>
                             )}
                           </div>
@@ -822,7 +821,7 @@ export default function ProgrammeDetailPage() {
                               <Plus className="h-4 w-4" />
                             </Button>
                           </div>
-                          <p className="text-xs text-muted-foreground">Appuyez sur Entrée ou ✚ pour ajouter</p>
+                          <p className="text-xs text-muted-foreground">Appuyez sur Entrée ou pour ajouter</p>
                         </div>
                       </section>
 
@@ -856,7 +855,7 @@ export default function ProgrammeDetailPage() {
                               <Plus className="h-4 w-4" />
                             </Button>
                           </div>
-                          <p className="text-xs text-muted-foreground">Appuyez sur Entrée ou ✚ pour ajouter</p>
+                          <p className="text-xs text-muted-foreground">Appuyez sur Entrée ou pour ajouter</p>
                         </div>
                       </section>
                       </div>

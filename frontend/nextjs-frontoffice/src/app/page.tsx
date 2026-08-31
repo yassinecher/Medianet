@@ -129,7 +129,7 @@ export default function LandingPage() {
   }, [])
 
   // Listen for "scroll-to-section" messages from the backoffice editor.
-  // When the admin clicks the 👁 Voir button on a section card, we receive
+  // When the admin clicks the Voir button on a section card, we receive
   // the section id here and scroll the iframe content to that section.
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -271,7 +271,7 @@ export default function LandingPage() {
           : ''}>
         {editMode && (
           <span className="absolute top-2 left-2 z-10 hidden group-hover:inline-flex items-center gap-1 rounded-full bg-brand-500 text-white text-[10px] font-bold px-2 py-0.5 shadow-lg pointer-events-none">
-            ✎ {id}
+{id}
           </span>
         )}
         {node}
@@ -283,7 +283,7 @@ export default function LandingPage() {
     <div className={`min-h-screen bg-background ${editMode ? 'pt-2' : ''}`} style={themeStyle}>
       {editMode && (
         <div className="sticky top-0 z-40 bg-brand-500 text-white text-center text-xs py-1 font-semibold">
-          ✎ Mode édition — clique une section pour l'éditer
+Mode édition — clique une section pour l'éditer
         </div>
       )}
       <Navbar />

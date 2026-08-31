@@ -393,7 +393,7 @@ export function SessionsPanel({ programmeId, criteria = [], onCountChange }: Ses
                         {(s.startDate || s.endDate || s.location) && (
                           <p className="text-xs text-muted-foreground flex flex-wrap gap-3">
                             {s.startDate && (<span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{s.startDate}{s.endDate && ` → ${s.endDate}`}</span>)}
-                            {s.location && (<span>📍 {s.location}</span>)}
+                            {s.location && (<span>{s.location}</span>)}
                             <span className="inline-flex items-center gap-1"><Layers className="h-3 w-3" />{(s.days ?? []).length} jour{(s.days ?? []).length > 1 ? 's' : ''}</span>
                           </p>
                         )}

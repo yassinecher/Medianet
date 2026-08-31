@@ -55,7 +55,9 @@ interface Turn {
   steps: Step[]
   /** True while we're still waiting for the backend to return. */
   pending?: boolean
-  /** Live activity label while streaming ("🔍 Recherche programmes…"). */
+  /** True when this turn ended in an error or was stopped — drives error styling. */
+  isError?: boolean
+  /** Live activity label while streaming ("Recherche programmes…"). */
   liveStatus?: string
   /** Pending action ids referenced by this turn (so we can highlight them in the right panel). */
   pendingActionIds?: number[]
@@ -115,26 +117,26 @@ const SUGGESTION_CATEGORIES: Array<{ tag: string; tagColor: string; items: { ico
     tag: 'Rapide',
     tagColor: 'bg-brand-500/15 text-brand-700 dark:text-brand-300',
     items: [
-      { icon: '📋', label: 'Liste les programmes ouverts' },
-      { icon: '📊', label: 'Combien de candidatures en évaluation ?' },
-      { icon: '⏳', label: 'Que reste-t-il à confirmer ?' },
+      { icon: '', label: 'Liste les programmes ouverts' },
+      { icon: '', label: 'Combien de candidatures en évaluation ?' },
+      { icon: '', label: 'Que reste-t-il à confirmer ?' },
     ],
   },
   {
     tag: 'Créer',
     tagColor: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
     items: [
-      { icon: '🚀', label: 'Crée un programme « FoodTech 2026 » ouvert dès demain' },
-      { icon: '✉️', label: 'Invite jane@example.com comme Juré' },
-      { icon: '🖼', label: 'Trouve 4 photos tunisiennes pour la page d\'accueil' },
+      { icon: '', label: 'Crée un programme « FoodTech 2026 » ouvert dès demain' },
+      { icon: '', label: 'Invite jane@example.com comme Juré' },
+      { icon: '', label: 'Trouve 4 photos tunisiennes pour la page d\'accueil' },
     ],
   },
   {
     tag: 'Audit',
     tagColor: 'bg-purple-500/15 text-purple-700 dark:text-purple-300',
     items: [
-      { icon: '🔍', label: 'Liste les utilisateurs inactifs' },
-      { icon: '🏆', label: 'Top 5 candidatures par score' },
+      { icon: '', label: 'Liste les utilisateurs inactifs' },
+      { icon: '', label: 'Top 5 candidatures par score' },
     ],
   },
 ]
@@ -358,7 +360,7 @@ export default function AdminAiPage() {
               })
               break
             case 'action_proposed':
-              patchLive((t) => { t.liveStatus = `📋 ${payload?.title ?? 'Action proposée'}` })
+              patchLive((t) => { t.liveStatus = `${payload?.title ?? 'Action proposée'}` })
               break
             case 'text':
               patchLive((t) => { t.finalText = payload?.content ?? '' })
@@ -418,10 +420,10 @@ export default function AdminAiPage() {
         setTurns((prev) => {
           const next = [...prev]
           const last = next[next.length - 1]
-          if (last && last.pending) { last.pending = false; last.finalText = '⏹ Génération arrêtée.' }
+          if (last && last.pending) { last.pending = false; last.finalText = 'Génération arrêtée.'; last.isError = true }
           return next
         })
-        toast('Génération arrêtée', { icon: '⏹' })
+        toast('Génération arrêtée')
         return
       }
       const msg = err.response?.data?.message ?? 'Erreur lors de la requête'
@@ -431,7 +433,8 @@ export default function AdminAiPage() {
         const last = next[next.length - 1]
         if (last && last.pending) {
           last.pending = false
-          last.finalText = `⚠ ${msg}`
+          last.finalText = `${msg}`
+          last.isError = true
         }
         return next
       })
@@ -725,7 +728,6 @@ function EmptyState({ info, onSuggest }: { info: any; onSuggest: (s: string) => 
               {cat.items.map((s, i) => (
                 <button key={i} type="button" onClick={() => onSuggest(s.label)}
                   className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-2 text-sm text-left hover:border-brand-400 hover:bg-accent/30 transition-all group">
-                  <span className="text-base">{s.icon}</span>
                   <span className="flex-1 text-foreground">{s.label}</span>
                   <Send className="h-3.5 w-3.5 text-muted-foreground group-hover:text-brand-500 group-hover:translate-x-0.5 transition-all" />
                 </button>
@@ -817,7 +819,7 @@ function TurnView({ turn, isLast, stillLoading, pendingActions, onConfirm, onCan
 
           {/* Final text with markdown + typing animation on the latest turn */}
           {!turn.pending && turn.finalText && (() => {
-            const isError = /^[⚠⏹]/.test(turn.finalText)
+            const isError = !!turn.isError
             return (
               <div className={`group relative rounded-2xl rounded-bl-md px-4 py-2.5 text-sm leading-relaxed ${
                 isError
@@ -1006,7 +1008,7 @@ function PlanWizard({ plan, conversationId }: {
                     {step.dependsOnStep != null && <span className="ml-2 italic">↗ dépend de #{step.dependsOnStep + 1}</span>}
                   </p>
                   {result?.error && (
-                    <p className="text-[10px] text-red-600 dark:text-red-400 mt-1">⚠ {result.error}</p>
+                    <p className="text-[10px] text-red-600 dark:text-red-400 mt-1">{result.error}</p>
                   )}
                   {isExpanded && editableArgs.length > 0 && (
                     <div className="mt-2 space-y-1.5 rounded-lg bg-muted/30 p-2">
@@ -1060,7 +1062,7 @@ function PlanWizard({ plan, conversationId }: {
               })()}
             </div>
             <p className="text-[10px] text-muted-foreground italic">
-              💡 Tape un nouveau message si tu veux qu'on continue (ex. « ajoute 2 critères »,
+Tape un nouveau message si tu veux qu'on continue (ex. « ajoute 2 critères »,
               « invite des mentors », « passe à autre chose »).
             </p>
           </div>

@@ -1,6 +1,7 @@
 import axios from 'axios'
 import Cookies from 'js-cookie'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '@/store/auth.store'
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
 export const api = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'application/json' } })
@@ -11,13 +12,23 @@ api.interceptors.request.use((c) => {
   return c
 })
 
+/** Guards against redirect storms when several requests 401 at once. */
+let sessionEnding = false
+
 api.interceptors.response.use(
   (r) => r,
   (err) => {
     if (typeof window !== 'undefined') {
       if (err.response?.status === 401) {
-        Cookies.remove('admin_token')
-        window.location.href = '/login'
+        // Clear cookie + persisted store so the app doesn't act "logged in" with
+        // a stale token. Never redirect away from the login page itself — that's
+        // what made a wrong password reload the page instead of showing the error.
+        try { useAuthStore.getState().logout() } catch { Cookies.remove('admin_token') }
+        const path = window.location.pathname
+        if (path !== '/login' && !sessionEnding) {
+          sessionEnding = true
+          window.location.href = '/login'
+        }
       }
       if (err.response?.status === 403) {
         // Backend 403s carry the missing permission ("Accès refusé — permission

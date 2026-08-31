@@ -138,7 +138,7 @@ export function CandidaturePhasePanel({ programmeId }: { programmeId: number }) 
     <div className="h-full overflow-y-auto p-4 space-y-4">
       {prog && (
         <div className={`rounded-xl border p-3 text-xs ${prog.acceptingApplications ? 'border-emerald-300/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-amber-300/50 bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>
-          <p className="font-bold">{prog.acceptingApplications ? '🟢 Candidatures ouvertes' : '🔒 Candidatures fermées'}</p>
+          <p className="font-bold">{prog.acceptingApplications ? 'Candidatures ouvertes' : 'Candidatures fermées'}</p>
           <p className="mt-0.5 opacity-90">
             {prog.candidatureDeadline
               ? `Ouvert pendant la session de candidature — jusqu'au ${new Date(prog.candidatureDeadline).toLocaleDateString('fr-FR')}.`
@@ -399,12 +399,12 @@ export function PreselectionPhasePanel({ programmeId, session, onUpdateSession }
     try {
       await notificationsApi.sendEmail({
         toEmail: to, toName: name, html: true,
-        subject: accepted ? `🎉 Candidature acceptée — ${proj}` : `Votre candidature — ${proj}`,
+        subject: accepted ? `Candidature acceptée — ${proj}` : `Votre candidature — ${proj}`,
         body: accepted
           ? wrap(`<h2 style="margin:0 0 12px">Félicitations !</h2><p>Bonjour ${name},</p><p>Votre candidature « <b>${proj}</b> » a été <b>acceptée</b>. Notre équipe vous contactera très prochainement pour la suite du programme.</p>`)
           : wrap(`<h2 style="margin:0 0 12px">Votre candidature</h2><p>Bonjour ${name},</p><p>Après étude, votre candidature « <b>${proj}</b> » n'a malheureusement pas été retenue cette fois-ci.${reason ? `</p><p><b>Motif :</b> ${reason}` : ''}</p><p>Nous vous encourageons à candidater à nos prochains programmes.</p>`),
       })
-    } catch { toast('Décision enregistrée — mais l’email au porteur a échoué.', { icon: '✉️' }) }
+    } catch { toast('Décision enregistrée — mais l’email au porteur a échoué.', { icon: '' }) }
   }
 
   // Admin decision — accept / refuse a candidature, then notify the porteur.

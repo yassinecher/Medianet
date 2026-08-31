@@ -87,14 +87,10 @@ spring:
           uri: lb://notification-service
           predicates:
             - Path=/api/notifications/**
-        - id: ai-scoring-service
-          uri: ${AI_SCORING_SERVICE_URL:http://localhost:8084}
-          predicates:
-            - Path=/api/ai/score/**
-        - id: ai-matching-service
-          uri: ${AI_MATCHING_SERVICE_URL:http://localhost:8085}
-          predicates:
-            - Path=/api/ai/match/**
+        # NOTE: ai-scoring-service (/api/ai/score) and ai-matching-service
+        # (/api/ai/match) were retired — superseded by admin-ai-service
+        # (/api/admin-ai/**). Routes removed so the gateway no longer depends on
+        # two services that are no longer built or deployed.
         # Public MinIO objects — uploaded logos, galleries and pitch videos.
         # Their public URL is built as <MINIO_PUBLIC_URL>/<bucket>/<key>, so the
         # path starts with the bucket name. The bucket carries an anonymous

@@ -85,7 +85,7 @@ export default function InvitationRegisterPage() {
         phone: form.phone || undefined,
       })
       setAuth(data, data.token)
-      toast.success('Compte créé avec succès ! Bienvenue 🎉')
+      toast.success('Compte créé avec succès ! Bienvenue')
       router.push('/dashboard')
     } catch (err: any) {
       const msg = err.response?.data?.message ?? 'Erreur lors de la création du compte'
@@ -192,7 +192,7 @@ export default function InvitationRegisterPage() {
             </div>
             {invitation.programmeName && (
               <p className="text-xs text-muted-foreground">
-                📦 Programme : <span className="font-medium text-foreground">{invitation.programmeName}</span>
+Programme : <span className="font-medium text-foreground">{invitation.programmeName}</span>
               </p>
             )}
             {invitation.message && (

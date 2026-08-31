@@ -201,7 +201,7 @@ function Ed({ k, def, className, style, block }: {
   )
 }
 
-// ── Movable block — click = select · ⠿ drag · ⤡ resize · 👁 hide ─────────────
+// ── Movable block — click = select · ⠿ drag · ⤡ resize · hide ─────────────
 // Text-safe by default: the corner handle scales PROPORTIONNELLEMENT and the
 // side handle changes the box WIDTH (le texte se réorganise, jamais étiré).
 // `stretch` (formes / images) enables true horizontal/vertical stretching.
@@ -703,7 +703,7 @@ export default function PresentationStudioPage() {
             ) : (
               <div className="h-full w-full" style={{ background: `linear-gradient(160deg, ${T.accent}, ${T.accent}99)`, borderRadius: '48px 0 0 48px' }}>
                 <div className="flex h-full items-center justify-center">
-                  <span style={{ fontSize: 120, opacity: 0.25 }}>🚀</span>
+                  <span style={{ fontSize: 120, opacity: 0.25 }}></span>
                 </div>
               </div>
             )}
@@ -1138,13 +1138,13 @@ export default function PresentationStudioPage() {
         await pres.writeFile({ fileName })
         window.open('https://www.canva.com/', '_blank', 'noopener,noreferrer')
         toast('Canva API non configurée — .pptx téléchargé : dans Canva, « Créer un design » → « Importer un fichier ».',
-          { icon: '🎨', duration: 10000 })
+          { icon: '', duration: 10000 })
         return
       }
       if (!st.connected) {
         const { url } = (await canvaApi.connectUrl()).data
         window.open(url, 'canva-auth', 'width=620,height=780')
-        toast('Autorisez Medianet dans la fenêtre Canva…', { icon: '🔑', duration: 6000 })
+        toast('Autorisez Medianet dans la fenêtre Canva…', { icon: '', duration: 6000 })
         if (!(await waitForCanva())) { toast.error('Connexion Canva non finalisée — réessayez.'); return }
       }
       const blob: Blob = await pres.write({ outputType: 'blob' })
@@ -1723,7 +1723,7 @@ export default function PresentationStudioPage() {
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Pencil className="h-3.5 w-3.5" />Tout texte est cliquable et éditable
                 <span className="text-border">|</span>
-                <Move className="h-3.5 w-3.5" />⠿ déplacer · bleu = échelle · vert = largeur · 👁 supprimer
+                <Move className="h-3.5 w-3.5" />⠿ déplacer · bleu = échelle · vert = largeur · supprimer
               </div>
               <div className="flex items-center gap-1.5">
                 <Button variant="outline" size="sm" onClick={prev} disabled={safeCur === 0}><ArrowLeft className="h-4 w-4" /></Button>
@@ -2040,7 +2040,7 @@ function DeckWizard({ mode, startStep, programmeId, programme, initial, onCancel
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                💡 Chaque <b>équipe</b> obtient sa propre diapositive. La 📷 ajoute ou <b>remplace</b> la photo.
+Chaque <b>équipe</b> obtient sa propre diapositive. La ajoute ou <b>remplace</b> la photo.
               </p>
               {contributors.length > 0 ? (
                 <ul className="space-y-1.5">
@@ -2117,7 +2117,7 @@ function DeckWizard({ mode, startStep, programmeId, programme, initial, onCancel
                       return (
                         <button key={i} onClick={() => setAcceptedIdeas((l) => on ? l.filter((x) => x !== idea) : [...l, idea])}
                           className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${on ? 'border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'border-border bg-muted/30 text-foreground hover:bg-accent'}`}>
-                          {on ? '✓ ' : '+ '}{idea}
+                          {on ? '' : '+ '}{idea}
                         </button>
                       )
                     })}

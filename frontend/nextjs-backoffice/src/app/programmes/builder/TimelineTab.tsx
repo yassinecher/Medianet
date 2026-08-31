@@ -1,6 +1,6 @@
 'use client'
 /**
- * TimelineTab — the "🗺️ Parcours" tab of the visual editor (clean rebuild).
+ * TimelineTab — the "Parcours" tab of the visual editor (clean rebuild).
  *
  * Model:
  *   • A Session has a KIND: "range" (date span) or "day" (single day).
@@ -485,12 +485,12 @@ function TimelineBoard({ programmeId, programme }: {
   }
   const undo = async () => {
     const last = undoRef.current.pop()
-    if (!last) { toast('Rien à annuler', { icon: '↩️' }); return }
+    if (!last) { toast('Rien à annuler', { icon: '↩' }); return }
     const apiPatch: any = { ...last.inverse }
     if ('parentSessionId' in apiPatch && apiPatch.parentSessionId == null) apiPatch.parentSessionId = -1
     if ('evaluationSelectionId' in apiPatch && apiPatch.evaluationSelectionId == null) apiPatch.evaluationSelectionId = -1
     setSessions(arr => arr.map(s => s.id === last.id ? { ...s, ...last.inverse } : s))
-    try { await sessionsApi.update(programmeId, last.id, apiPatch); toast('Annulé', { icon: '↩️' }) }
+    try { await sessionsApi.update(programmeId, last.id, apiPatch); toast('Annulé', { icon: '↩' }) }
     catch { toast.error('Erreur'); reload() }
   }
 
@@ -724,7 +724,7 @@ function TimelineBoard({ programmeId, programme }: {
     if (!el) return
     const t = Date.now()
     if (t < win.start.getTime() || t > win.end.getTime()) {
-      toast('Aujourd’hui est en dehors de la fenêtre du parcours.', { icon: '📅' })
+      toast('Aujourd’hui est en dehors de la fenêtre du parcours.', { icon: '' })
       return
     }
     const x = ((t - win.start.getTime()) / totalMs) * (days.length * pxPerDay) + 12
@@ -915,7 +915,7 @@ function TimelineBoard({ programmeId, programme }: {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-foreground truncate">
-            🗺️ Parcours · {programme?.title ?? `Programme #${programmeId}`}
+Parcours · {programme?.title ?? `Programme #${programmeId}`}
           </p>
           <p className="text-[10px] text-muted-foreground">
             {ranges.length} plage{ranges.length > 1 ? 's' : ''} · {dayCount} journée{dayCount > 1 ? 's' : ''} ·
@@ -3595,7 +3595,7 @@ function ActivityParticipants({ ctx }: { ctx: InviteCtx }) {
                 className="w-full flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-accent text-left disabled:opacity-50">
                 <span className="truncate">{c.name}</span>
                 <span className="text-[11px] text-muted-foreground truncate">{c.email}</span>
-                {done && <span className="ml-auto text-[9px] text-emerald-600">✓</span>}
+                {done && <span className="ml-auto text-[9px] text-emerald-600"></span>}
               </button>
             )
           })}

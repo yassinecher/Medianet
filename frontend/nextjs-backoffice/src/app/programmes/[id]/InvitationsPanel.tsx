@@ -11,7 +11,8 @@
  * All powered by the existing notification-service.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Users, Mail, Plus, Trash2, Send, X, Loader2, Check, Pencil, UserPlus, Lock, BellRing } from 'lucide-react'
+import { Users, Mail, Plus, Trash2, Send, X, Loader2, Check, Pencil, UserPlus, Lock, BellRing,
+  Rocket, Gavel, GraduationCap, FolderKanban, Megaphone } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { notificationsApi, contactsApi, contactGroupsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -35,14 +36,14 @@ const TYPE_LABEL: Record<string, string> = {
 /** Every invitation type, in the order they appear in the composer, with a short
  *  purpose line and a sensible default subject/body. RSVP defaults to true for
  *  types that imply a personal commitment (jury, porteur, mentor, organisateur). */
-const INVITE_TYPES: { value: string; label: string; blurb: string; rsvp: boolean; icon: string }[] = [
-  { value: 'PORTEUR',      label: 'Porteur',      blurb: 'Fondateur convié à rejoindre / candidater', rsvp: true,  icon: '🚀' },
-  { value: 'JURY',         label: 'Jury',         blurb: 'Évalue les candidatures du programme',       rsvp: true,  icon: '⚖️' },
-  { value: 'MENTOR',       label: 'Mentor',       blurb: 'Accompagne les porteurs',                    rsvp: true,  icon: '🎓' },
-  { value: 'ORGANISATEUR', label: 'Organisateur', blurb: 'Co-anime / gère une session',                rsvp: true,  icon: '🗂️' },
-  { value: 'MEMBER',       label: 'Membre',       blurb: 'Membre d’une équipe / organisation',         rsvp: false, icon: '👥' },
-  { value: 'GUEST',        label: 'Invité',       blurb: 'Observateur, partenaire ou externe',         rsvp: false, icon: '✨' },
-  { value: 'GENERAL',      label: 'Général',      blurb: 'Annonce simple — sans réponse attendue',     rsvp: false, icon: '📣' },
+const INVITE_TYPES: { value: string; label: string; blurb: string; rsvp: boolean; icon: any }[] = [
+  { value: 'PORTEUR',      label: 'Porteur',      blurb: 'Fondateur convié à rejoindre / candidater', rsvp: true,  icon: Rocket },
+  { value: 'JURY',         label: 'Jury',         blurb: 'Évalue les candidatures du programme',       rsvp: true,  icon: Gavel },
+  { value: 'MENTOR',       label: 'Mentor',       blurb: 'Accompagne les porteurs',                    rsvp: true,  icon: GraduationCap },
+  { value: 'ORGANISATEUR', label: 'Organisateur', blurb: 'Co-anime / gère une session',                rsvp: true,  icon: FolderKanban },
+  { value: 'MEMBER',       label: 'Membre',       blurb: 'Membre d’une équipe / organisation',         rsvp: false, icon: Users },
+  { value: 'GUEST',        label: 'Invité',       blurb: 'Observateur, partenaire ou externe',         rsvp: false, icon: UserPlus },
+  { value: 'GENERAL',      label: 'Général',      blurb: 'Annonce simple — sans réponse attendue',     rsvp: false, icon: Megaphone },
 ]
 
 /** Default subject + message for a type. Supports {{name}} and {{programme}}
@@ -298,7 +299,7 @@ function Composer({ programmeId, programmeName, contacts, groups, onSent, onCanc
               <button key={t.value} type="button" onClick={() => pickType(t.value)}
                 title={t.blurb}
                 className={`rounded-lg border p-2 text-left transition-colors ${on ? 'border-brand-500 bg-brand-500/10' : 'border-border hover:border-brand-400'}`}>
-                <p className="text-xs font-semibold text-foreground">{t.icon} {t.label}</p>
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground"><t.icon className="h-3.5 w-3.5 text-brand-500" />{t.label}</p>
                 <p className="text-[10px] leading-tight text-muted-foreground line-clamp-2">{t.blurb}</p>
               </button>
             )

@@ -224,7 +224,7 @@ export function CoachingPanel({ coaching, confidence, currentScore, onSeek }: {
           )}
           {confidence.reasons && confidence.reasons.length > 0 && (
             <ul className="space-y-0.5 text-[11px] text-muted-foreground">
-              {confidence.reasons.filter(Boolean).map((r, i) => <li key={i}>✓ {r}</li>)}
+              {confidence.reasons.filter(Boolean).map((r, i) => <li key={i}>{r}</li>)}
             </ul>
           )}
           {confidence.limits && confidence.limits.length > 0 && (

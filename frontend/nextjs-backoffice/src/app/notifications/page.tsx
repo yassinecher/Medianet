@@ -183,7 +183,7 @@ export default function NotificationsPage() {
         message: single.message,
         requiresRsvp: single.requiresRsvp,
       })
-      toast.success('Invitation envoyée ✓')
+      toast.success('Invitation envoyée')
       setSingle((s) => ({ ...s, recipientEmail: '', recipientName: '' }))
       refresh()
     } catch (err: any) {
@@ -593,12 +593,12 @@ export default function NotificationsPage() {
                           </div>
                           <p className="text-xs text-muted-foreground truncate mt-0.5">{inv.subject}</p>
                           <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
-                            {inv.programmeName && <span>📦 {inv.programmeName}</span>}
+                            {inv.programmeName && <span>{inv.programmeName}</span>}
                             {inv.sentAt && <span>· Envoyée {formatRelativeDate(inv.sentAt)}</span>}
                             {!inv.sentAt && inv.createdAt && <span>· Créée {formatRelativeDate(inv.createdAt)}</span>}
                           </div>
                           {inv.errorMessage && (
-                            <p className="mt-1 text-[10px] text-red-500 italic">⚠ {inv.errorMessage}</p>
+                            <p className="mt-1 text-[10px] text-red-500 italic">{inv.errorMessage}</p>
                           )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">

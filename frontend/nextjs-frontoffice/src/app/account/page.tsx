@@ -53,7 +53,7 @@ export default function AccountPage() {
     try {
       const r = await authApi.updateProfile({ firstName: firstName.trim(), lastName: lastName.trim() })
       if (r.data && token) setAuth(r.data, token)
-      toast.success('Profil mis à jour ✓')
+      toast.success('Profil mis à jour')
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Erreur lors de la mise à jour')
     } finally { setSavingProfile(false) }
@@ -69,7 +69,7 @@ export default function AccountPage() {
         firstName: firstName.trim(), lastName: lastName.trim(),
         currentPassword, newPassword,
       })
-      toast.success('Mot de passe modifié ✓')
+      toast.success('Mot de passe modifié')
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowPwForm(false)
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Mot de passe actuel incorrect ?')
@@ -183,7 +183,7 @@ export default function AccountPage() {
                 </div>
               </div>
               {newPassword && confirmPassword && newPassword !== confirmPassword && (
-                <p className="text-xs text-red-600 dark:text-red-400">⚠ Les mots de passe ne correspondent pas.</p>
+                <p className="text-xs text-red-600 dark:text-red-400">Les mots de passe ne correspondent pas.</p>
               )}
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={() => { setShowPwForm(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword('') }}>

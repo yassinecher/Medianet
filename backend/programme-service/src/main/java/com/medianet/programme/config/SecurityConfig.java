@@ -52,6 +52,7 @@ public class SecurityConfig {
                 // endpoint only completes a PKCE flow this server initiated.
                 .requestMatchers(HttpMethod.GET, "/api/canva/callback").permitAll()
                 // Everything else (including task endpoints) requires authentication
+                .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                 .anyRequest().authenticated()
             )
             // Anonymous requests get 401 (not Spring's default 403) so the

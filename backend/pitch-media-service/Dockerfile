@@ -6,7 +6,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# faster-whisper pulls ~200-300 MB of wheels (ctranslate2, onnxruntime, av, tokenizers).
+# Upgrade pip and add retries/timeout so a single dropped download doesn't fail the build.
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir --retries 5 --timeout 120 -r requirements.txt
 
 COPY app.py .
 

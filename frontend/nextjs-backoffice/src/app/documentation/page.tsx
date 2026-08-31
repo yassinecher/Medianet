@@ -353,7 +353,7 @@ function Intro() {
             Le site vitrine : programmes ouverts, page d’accueil, sociétés incubées, partenaires. Les porteurs y candidatent,
             suivent leur parcours et déposent leurs pitchs vidéo.
           </p>
-          <p className="mt-2 truncate text-[11px] text-muted-foreground">🔗 medianetincubator.duckdns.org</p>
+          <p className="mt-2 truncate text-[11px] text-muted-foreground">medianetincubator.duckdns.org</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="mb-2 flex items-center gap-2">
@@ -364,7 +364,7 @@ function Intro() {
             L’espace réservé où vous gérez tout : programmes, candidatures, utilisateurs, présentations, rapports… C’est le site
             dans lequel vous êtes actuellement.
           </p>
-          <p className="mt-2 truncate text-[11px] text-muted-foreground">🔗 medianetincubatoradmin.duckdns.org</p>
+          <p className="mt-2 truncate text-[11px] text-muted-foreground">medianetincubatoradmin.duckdns.org</p>
         </div>
       </div>
 
@@ -431,7 +431,7 @@ function DashboardDoc() {
 function AiDoc() {
   return (
     <Section id="ai" icon={Sparkles} title="Assistant IA — Medi" lead="Un copilote qui rédige, résume et suggère à votre place.">
-      <Shot active="Assistant IA" path="/ai-assistant" caption="Medi vous aide à rédiger descriptions, e-mails, critères… partout où l’étincelle ✨ apparaît.">
+      <Shot active="Assistant IA" path="/ai-assistant" caption="Medi vous aide à rédiger descriptions, e-mails, critères… partout où l’étincelle apparaît.">
         <div className="rounded-lg border border-border bg-card p-2">
           <div className="mb-2 flex items-center gap-1.5"><Bot className="h-3.5 w-3.5 text-brand-500" /><span className="text-[10px] font-semibold">Medi</span></div>
           <div className="ml-auto mb-1.5 w-4/5 rounded-lg rounded-br-none bg-brand-500 px-2 py-1 text-[9px] text-white">Rédige la description d’un programme Agritech de 6 mois</div>
@@ -442,7 +442,7 @@ function AiDoc() {
       <Block title="Ce que vous pouvez faire">
         <CanDo items={[
           <>Discuter avec <b>Medi</b> pour obtenir des idées, des plans ou des textes prêts à coller.</>,
-          <>Cliquer sur l’icône <b>étincelle ✨</b> à côté d’un champ (description, e-mail, critère) pour <b>générer ou améliorer</b> le texte.</>,
+          <>Cliquer sur l’icône <b>étincelle</b> à côté d’un champ (description, e-mail, critère) pour <b>générer ou améliorer</b> le texte.</>,
           <>Demander à Medi de <b>résumer</b> une candidature ou de <b>suggérer des critères</b> d’évaluation.</>,
           <>Régler le comportement de l’assistant dans <b>Assistant IA → Réglages</b>.</>,
         ]} />
@@ -486,7 +486,7 @@ function ProgrammesDoc() {
       <Block title="Créer un programme — pas à pas">
         <Steps items={[
           <>Cliquez sur <b>Nouveau programme</b> : l’<b>assistant de création</b> s’ouvre.</>,
-          <>Renseignez les <b>informations</b> (titre, description, dates, capacité) — l’étincelle ✨ de Medi peut rédiger pour vous.</>,
+          <>Renseignez les <b>informations</b> (titre, description, dates, capacité) — l’étincelle de Medi peut rédiger pour vous.</>,
           <>Construisez le <b>formulaire de candidature</b> (glisser-déposer des champs).</>,
           <>Choisissez la <b>visibilité</b> : publique (tout le monde peut candidater) ou privée sur invitation.</>,
           <>Validez : le programme est créé en <b>Brouillon</b>. Ouvrez-le quand vous êtes prêt à recevoir des candidatures.</>,

@@ -13,6 +13,7 @@ import { useTheme } from 'next-themes'
 import { useAuthStore, useUser } from '@/store/auth.store'
 import { startAuthEvents } from '@/lib/authEvents'
 import { AccessDenied } from '@/components/AccessDenied'
+import { MedianetLogo } from '@/components/brand/MedianetLogo'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn, getInitials } from '@/lib/utils'
@@ -83,13 +84,14 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const Sidebar = ({ onClose }: { onClose?: () => void }) => (
     <aside className="flex h-full w-64 flex-col border-r border-border bg-card">
       {/* Logo */}
-      <div className="flex h-16 items-center gap-3 border-b border-border px-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 shadow-lg shadow-brand-500/25">
-          <Shield className="h-4 w-4 text-white" />
-        </div>
-        <div>
-          <p className="text-sm font-bold text-foreground">Admin Console</p>
-          <p className="text-xs text-muted-foreground">Medianet Incubateur</p>
+      <div className="flex h-16 items-center gap-2.5 border-b border-border px-4">
+        <MedianetLogo size="sm" tagline={false} href="/dashboard" />
+        <span className="mx-0.5 h-6 w-px bg-border" />
+        <div className="flex items-center gap-1.5">
+          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-purple-600">
+            <Shield className="h-3.5 w-3.5 text-white" />
+          </span>
+          <p className="text-xs font-semibold text-muted-foreground">Admin</p>
         </div>
       </div>
 

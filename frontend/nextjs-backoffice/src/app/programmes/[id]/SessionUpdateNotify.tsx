@@ -28,7 +28,7 @@ export interface UpdateSuggest {
   changeSummary: string
 }
 
-const HEADING = '🔄 Mise à jour importante'
+const HEADING = 'Mise à jour importante'
 
 function updateTemplates(programmeName: string, p: SessionLike, changeSummary: string): Record<RType, { subject: string; intro: string }> {
   const t = p.title ?? 'Session'

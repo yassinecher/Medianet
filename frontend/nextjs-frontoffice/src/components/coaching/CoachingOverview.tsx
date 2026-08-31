@@ -117,7 +117,7 @@ export function CoachingOverview({ p, isMentor, onGoTab }: {
           {milestones.length === 0 ? (
             <p className="text-xs italic text-muted-foreground">{isMentor ? 'Définissez des jalons dans le plan de coaching.' : 'Aucun jalon défini par votre mentor.'}</p>
           ) : openMs.length === 0 ? (
-            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Tous les jalons sont atteints 🎉</p>
+            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Tous les jalons sont atteints</p>
           ) : (
             <ul className="space-y-1.5">
               {openMs.slice(0, 5).map((m, i) => (

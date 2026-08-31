@@ -73,7 +73,7 @@ const PROVIDERS: Record<ProviderId, {
 }> = {
   HUGGINGFACE: {
     label: 'HuggingFace',
-    icon: '🤗',
+    icon: '',
     description: 'Free Inference Providers — 1000+ modèles, niveau gratuit généreux, pas de quota journalier strict.',
     signupUrl: 'https://huggingface.co/settings/tokens',
     signupLabel: 'Créer un token HF',
@@ -84,7 +84,7 @@ const PROVIDERS: Record<ProviderId, {
   },
   CUSTOM: {
     label: 'Personnalisé',
-    icon: '🔧',
+    icon: '',
     description: 'Tout endpoint OpenAI-compatible (Groq, Together, OpenAI, Ollama distant, etc.).',
     signupUrl: '#',
     signupLabel: 'Configuration manuelle',
@@ -202,7 +202,7 @@ export default function AiSettingsPage() {
       setApiKeyInput('')
       setUnsplashInput('')
       setPexelsInput('')
-      toast.success('Paramètres sauvegardés ✓')
+      toast.success('Paramètres sauvegardés')
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'Erreur')
     } finally { setSaving(false) }
@@ -253,15 +253,15 @@ export default function AiSettingsPage() {
       })
       if (r.data?.ok) {
         const using = apiKeyInput ? 'la clé saisie (non encore enregistrée)' : 'la clé enregistrée'
-        toast.success(`✓ Test réussi avec ${using} sur ${r.data.model}. N'oubliez pas de cliquer Enregistrer pour que l'Assistant l'utilise.`, { duration: 7000 })
+        toast.success(`Test réussi avec ${using} sur ${r.data.model}. N'oubliez pas de cliquer Enregistrer pour que l'Assistant l'utilise.`, { duration: 7000 })
       } else if (r.data?.rateLimited) {
         toast.error(
-          `⏱ Modèle saturé (réessayez dans ${r.data.retryAfterSeconds}s) — pensez à ajouter des modèles de secours.`,
+          `Modèle saturé (réessayez dans ${r.data.retryAfterSeconds}s) — pensez à ajouter des modèles de secours.`,
           { duration: 6000 }
         )
       } else if (r.data?.outOfCredits) {
         toast.error(
-          `💸 Quota épuisé sur ${selectedModel}. Choisissez un autre modèle ou ajoutez-en un comme secours.`,
+          `Quota épuisé sur ${selectedModel}. Choisissez un autre modèle ou ajoutez-en un comme secours.`,
           { duration: 9000 }
         )
       } else {
@@ -352,7 +352,7 @@ export default function AiSettingsPage() {
                     ${active ? 'border-brand-500 bg-brand-500/5 shadow-sm'
                              : 'border-border bg-card hover:border-brand-400'}`}>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg">{cfg.icon}</span>
+                    <Cpu className="h-4 w-4 text-muted-foreground" />
                     <span className={`text-sm font-bold ${active ? 'text-brand-700 dark:text-brand-300' : 'text-foreground'}`}>{cfg.label}</span>
                     {active && <Check className="h-3.5 w-3.5 text-brand-600 ml-auto" />}
                   </div>
@@ -363,7 +363,7 @@ export default function AiSettingsPage() {
           </div>
           {settings && settings.provider !== provider && (
             <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">
-              ⚠ Changement de fournisseur : la clé API et le modèle actuels seront remplacés.
+Changement de fournisseur : la clé API et le modèle actuels seront remplacés.
               Cliquez « Enregistrer » pour valider.
             </p>
           )}
@@ -400,7 +400,7 @@ export default function AiSettingsPage() {
             <MagicCard className="p-5 space-y-4">
               <h2 className="flex items-center gap-2 font-bold text-foreground">
                 <Key className="h-4 w-4 text-brand-500" />
-                Clé API {providerCfg.label} <span className="text-base">{providerCfg.icon}</span>
+                Clé API {providerCfg.label}
               </h2>
 
               {settings?.configured ? (
@@ -434,12 +434,12 @@ export default function AiSettingsPage() {
                 </div>
                 {keyLooksLikePassword ? (
                   <p className="mt-1.5 text-[10px] text-red-600 dark:text-red-400 font-semibold">
-                    ⚠ Ça ressemble à un mot de passe, pas à une clé API. Une vraie clé fait 30+ caractères
+Ça ressemble à un mot de passe, pas à une clé API. Une vraie clé fait 30+ caractères
                     et commence souvent par un préfixe (<code>nvapi-</code>, <code>sk-</code>, <code>hf_</code>, etc.).
                   </p>
                 ) : keyShapeInvalid ? (
                   <p className="mt-1.5 text-[10px] text-red-600 dark:text-red-400">
-                    ⚠ Ce ne ressemble pas à une clé {providerCfg.label}.
+Ce ne ressemble pas à une clé {providerCfg.label}.
                     {providerCfg.keyPrefix && ` Elle devrait commencer par "${providerCfg.keyPrefix}".`}
                   </p>
                 ) : (
@@ -463,13 +463,13 @@ export default function AiSettingsPage() {
                 )}
               </div>
               <p className="text-[10px] text-muted-foreground -mt-2">
-                💡 Tester vérifie la clé mais ne l'enregistre pas. Cliquez <strong>Enregistrer</strong> en bas pour que l'Assistant l'utilise.
+Tester vérifie la clé mais ne l'enregistre pas. Cliquez <strong>Enregistrer</strong> en bas pour que l'Assistant l'utilise.
               </p>
 
               {/* Diagnostic — debug what's actually stored */}
               <details className="text-xs border-t border-border pt-3">
                 <summary className="cursor-pointer text-muted-foreground hover:text-foreground select-none flex items-center gap-1.5">
-                  🩺 Diagnostic (en cas de 401)
+Diagnostic (en cas de 401)
                 </summary>
                 <div className="mt-2 space-y-2">
                   <Button type="button" variant="outline" size="sm" onClick={handleRunDebug} className="w-full gap-1.5 text-xs">
@@ -481,7 +481,7 @@ export default function AiSettingsPage() {
                       <DebugRow label="Base URL" value={debug.baseUrl} mono />
                       <DebugRow label="Model" value={debug.model} mono />
                       <DebugRow label="Clé présente"
-                        value={debug.apiKeyPresent ? '✓ Oui' : '✗ Non'}
+                        value={debug.apiKeyPresent ? 'Oui' : 'Non'}
                         good={debug.apiKeyPresent} />
                       <DebugRow label="Longueur clé"
                         value={debug.apiKeyLength}
@@ -493,7 +493,7 @@ export default function AiSettingsPage() {
                               (provider === 'CUSTOM')} />
                       {debug.apiKeyHasWhitespace && (
                         <p className="text-red-600 dark:text-red-400 text-[10px] pt-1 font-sans">
-                          ⚠ La clé contient des espaces parasites !
+La clé contient des espaces parasites !
                         </p>
                       )}
                       {!debug.apiKeyPresent && (
@@ -503,12 +503,12 @@ export default function AiSettingsPage() {
                       )}
                       {debug.apiKeyPresent && provider === 'HUGGINGFACE' && !debug.apiKeyPrefix?.startsWith('hf_') && (
                         <p className="text-red-600 dark:text-red-400 text-[10px] pt-1 font-sans">
-                          ⚠ La clé enregistrée ne commence pas par <code>hf_</code> — ce n'est pas un token HuggingFace.
+La clé enregistrée ne commence pas par <code>hf_</code> — ce n'est pas un token HuggingFace.
                         </p>
                       )}
                       {debug.apiKeyPresent && provider === 'HUGGINGFACE' && debug.apiKeyPrefix?.startsWith('hf_') && (
                         <p className="text-blue-700 dark:text-blue-400 text-[10px] pt-1 font-sans">
-                          ℹ La clé est enregistrée et a le bon format. Voir le ping live ci-dessous pour savoir si elle marche.
+                          La clé est enregistrée et a le bon format. Voir le ping live ci-dessous pour savoir si elle marche.
                         </p>
                       )}
 
@@ -516,24 +516,24 @@ export default function AiSettingsPage() {
                       {debug.livePing && (
                         <div className="border-t border-border mt-2 pt-2 space-y-1">
                           <p className="font-sans font-bold text-[10px] uppercase tracking-wide text-muted-foreground">
-                            🛰 Ping live vers {debug.provider}
+Ping live vers {debug.provider}
                           </p>
                           {debug.livePing.ok ? (
                             <p className="font-sans text-emerald-700 dark:text-emerald-400">
-                              ✓ La clé fonctionne ! Le modèle <code>{debug.livePing.model}</code> a répondu.
+La clé fonctionne ! Le modèle <code>{debug.livePing.model}</code> a répondu.
                             </p>
                           ) : debug.livePing.rateLimited ? (
                             <p className="font-sans text-amber-700 dark:text-amber-400">
-                              ⏱ Rate-limited (réessayez dans {debug.livePing.retryAfterSeconds}s) — mais la clé est VALIDE.
+                              Rate-limited (réessayez dans {debug.livePing.retryAfterSeconds}s) — mais la clé est VALIDE.
                             </p>
                           ) : debug.livePing.outOfCredits ? (
                             <p className="font-sans text-amber-700 dark:text-amber-400">
-                              💸 Quota épuisé — la clé est VALIDE mais le modèle est saturé.
+Quota épuisé — la clé est VALIDE mais le modèle est saturé.
                             </p>
                           ) : (
                             <>
                               <p className="font-sans text-red-700 dark:text-red-400">
-                                ✗ {debug.livePing.status ? `HTTP ${debug.livePing.status}` : 'Échec'}
+{debug.livePing.status ? `HTTP ${debug.livePing.status}` : 'Échec'}
                               </p>
                               <pre className="whitespace-pre-wrap break-words text-[9px] text-muted-foreground bg-card border border-border rounded px-2 py-1 mt-1">
                                 {debug.livePing.error}
@@ -560,7 +560,7 @@ export default function AiSettingsPage() {
             {/* ── Unsplash key (optional) — improves photo quality ────── */}
             <MagicCard className="p-5 space-y-3">
               <div className="flex items-start gap-2">
-                <span className="text-xl">📷</span>
+                <ImageIcon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
                 <div className="flex-1">
                   <h2 className="font-bold text-foreground text-sm">Clé Unsplash (optionnelle)</h2>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -594,7 +594,7 @@ export default function AiSettingsPage() {
                     placeholder="Access Key (32 caractères)"
                     className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
                   <Button variant="outline" size="sm" onClick={() => setShowUnsplash((v) => !v)} title={showUnsplash ? 'Masquer' : 'Afficher'}>
-                    {showUnsplash ? '🙈' : '👁'}
+                    {showUnsplash ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
                 <p className="mt-1.5 text-[10px] text-muted-foreground">
@@ -611,7 +611,7 @@ export default function AiSettingsPage() {
             {/* ── Pexels key (preferred when set — bigger free tier than Unsplash) ── */}
             <MagicCard className="p-5 space-y-3">
               <div className="flex items-start gap-2">
-                <span className="text-xl">🖼️</span>
+                <ImageIcon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
                 <div className="flex-1">
                   <h2 className="font-bold text-foreground text-sm">Clé Pexels (recommandée)</h2>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -645,7 +645,7 @@ export default function AiSettingsPage() {
                     placeholder="API key (commence par 563492…)"
                     className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
                   <Button variant="outline" size="sm" onClick={() => setShowPexels((v) => !v)} title={showPexels ? 'Masquer' : 'Afficher'}>
-                    {showPexels ? '🙈' : '👁'}
+                    {showPexels ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
                 <p className="mt-1.5 text-[10px] text-muted-foreground">

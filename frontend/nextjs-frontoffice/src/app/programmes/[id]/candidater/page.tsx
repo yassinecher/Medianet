@@ -735,7 +735,7 @@ export default function CandidaterPage() {
       <AppShell>
         <div className="mx-auto max-w-xl px-4 py-20 text-center">
           <div className="rounded-2xl border border-border bg-card p-8">
-            <p className="mb-3 text-4xl">🔒</p>
+            <p className="mb-3 text-4xl"></p>
             <h1 className="mb-2 text-xl font-bold text-foreground">Candidatures fermées</h1>
             <p className="mb-5 text-sm text-muted-foreground">
               Les candidatures pour «&nbsp;{programme.title}&nbsp;» ne sont pas ouvertes actuellement.

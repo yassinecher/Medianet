@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { BorderBeam } from '@/components/magicui/border-beam'
+import { MedianetLogo } from '@/components/brand/MedianetLogo'
 
 export default function AdminLoginPage() {
   const router = useRouter()
@@ -66,11 +67,14 @@ export default function AdminLoginPage() {
           {/* Logo */}
           <div className="mb-8 text-center">
             <div className="mb-5 flex justify-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-purple-700 shadow-lg shadow-brand-500/30">
-                <Shield className="h-8 w-8 text-white" />
-              </div>
+              <MedianetLogo size="lg" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Console Admin</h1>
+            <div className="flex items-center justify-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-purple-700">
+                <Shield className="h-4 w-4 text-white" />
+              </span>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Console Admin</h1>
+            </div>
             <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
               Accès réservé aux administrateurs Medianet
             </p>

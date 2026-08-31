@@ -406,7 +406,7 @@ function OrgCard({
               <h3 className="font-semibold text-foreground truncate">{org.name}</h3>
             </div>
             <p className="text-xs text-muted-foreground flex flex-wrap gap-3">
-              {org.sector && <span>🏷️ {org.sector}</span>}
+              {org.sector && <span>{org.sector}</span>}
               {(org.city || org.country) && (
                 <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />
                   {[org.city, org.country].filter(Boolean).join(', ')}

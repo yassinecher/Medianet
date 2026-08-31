@@ -24,7 +24,7 @@ export default function LoginPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('expired') === '1') {
-      toast('Votre session a expiré, reconnectez-vous.', { id: 'session-expired', icon: '🔒' })
+      toast('Votre session a expiré, reconnectez-vous.', { id: 'session-expired' })
       window.history.replaceState({}, '', '/login')
     }
   }, [])

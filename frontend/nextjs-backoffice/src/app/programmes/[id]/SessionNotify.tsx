@@ -127,7 +127,7 @@ function defaultTemplates(programmeName: string, p: SessionLike): Record<RType, 
   }
 }
 
-export function emailHtml(programmeName: string, p: SessionLike, intro: string, heading = '📅 Une session approche') {
+export function emailHtml(programmeName: string, p: SessionLike, intro: string, heading = 'Une session approche') {
   const when = whenText(p)
   const typeLabel = SESSION_TYPE_LABEL[p.sessionType ?? ''] ?? 'Session'
   const rows = ([
@@ -151,7 +151,7 @@ export function emailHtml(programmeName: string, p: SessionLike, intro: string, 
     </table>
     ${p.description ? `<p style="font-size:14px;line-height:1.6;color:#334155;margin:0 0 20px">${p.description}</p>` : ''}
     <p style="text-align:center;margin:24px 0 8px">
-      <a href="${gcal}" style="background:#fff;color:#1a73e8;border:1px solid #1a73e8;padding:11px 22px;border-radius:10px;text-decoration:none;font-weight:600;display:inline-block;margin:0 6px 8px">📅 Ajouter à Google Agenda</a>
+      <a href="${gcal}" style="background:#fff;color:#1a73e8;border:1px solid #1a73e8;padding:11px 22px;border-radius:10px;text-decoration:none;font-weight:600;display:inline-block;margin:0 6px 8px">Ajouter à Google Agenda</a>
       <a href="${FRONTOFFICE_URL}" style="background:#1a73e8;color:#fff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:600;display:inline-block;margin:0 6px 8px">Accéder à la plateforme</a>
     </p>
   </div>

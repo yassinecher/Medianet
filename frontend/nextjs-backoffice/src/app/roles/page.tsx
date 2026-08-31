@@ -218,7 +218,7 @@ export default function RolesPage() {
           </div>
           {typeof editing === 'number' && (
             <p className="text-[10px] text-muted-foreground">
-              ⚡ Les utilisateurs qui détiennent ce rôle voient leurs accès se mettre à jour en direct, sans reconnexion.
+Les utilisateurs qui détiennent ce rôle voient leurs accès se mettre à jour en direct, sans reconnexion.
             </p>
           )}
         </div>

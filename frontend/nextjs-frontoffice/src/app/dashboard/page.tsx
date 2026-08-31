@@ -88,7 +88,7 @@ function JuryWorkspace({ items, myEvalOf }: { items: any[]; myEvalOf: (c: any) =
         ) : pending.length === 0 ? (
           <MagicCard className="p-8 text-center">
             <Award className="mx-auto h-9 w-9 text-emerald-500" />
-            <p className="mt-2 text-sm font-semibold text-foreground">Tout est évalué 🎉</p>
+            <p className="mt-2 text-sm font-semibold text-foreground">Tout est évalué</p>
             <p className="text-xs text-muted-foreground">Aucune candidature en attente de votre évaluation.</p>
           </MagicCard>
         ) : (
@@ -323,7 +323,7 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-black">
-                  Bonjour, {user?.firstName} 👋
+                  Bonjour, {user?.firstName}
                 </h1>
                 <p className="mt-1 text-sm sm:text-base text-white/90">{hero.tagline}</p>
 
@@ -517,7 +517,7 @@ export default function DashboardPage() {
                             <div className="min-w-0 flex-1">
                               <p className="font-semibold text-sm text-foreground truncate">{c.projectName}</p>
                               <div className="mt-0.5 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                                {c.programmeName && <span>📦 {c.programmeName}</span>}
+                                {c.programmeName && <span>{c.programmeName}</span>}
                                 {c.submittedAt && <span>· {formatRelativeDate(c.submittedAt)}</span>}
                               </div>
                             </div>
@@ -568,7 +568,7 @@ export default function DashboardPage() {
                             {p.tagline && <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{p.tagline}</p>}
                             <div className="mt-2 flex gap-2 text-[10px] text-muted-foreground">
                               {p.location && <span className="flex items-center gap-0.5"><MapPin className="h-2.5 w-2.5" />{p.location}</span>}
-                              {p.applicationDeadline && <span>⏰ {formatDate(p.applicationDeadline)}</span>}
+                              {p.applicationDeadline && <span>{formatDate(p.applicationDeadline)}</span>}
                             </div>
                           </div>
                         </div>
@@ -612,7 +612,7 @@ export default function DashboardPage() {
               ) : pendingTasks.length === 0 ? (
                 <MagicCard className="p-6 text-center">
                   <Award className="mx-auto h-8 w-8 text-emerald-500 mb-2" />
-                  <p className="text-sm text-muted-foreground">Aucune tâche en cours. Bien joué ! 🎉</p>
+                  <p className="text-sm text-muted-foreground">Aucune tâche en cours. Bien joué !</p>
                 </MagicCard>
               ) : (
                 <div className="space-y-2">
@@ -622,7 +622,7 @@ export default function DashboardPage() {
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium text-sm text-foreground">{t.title}</p>
                           <div className="flex gap-3 text-xs text-muted-foreground">
-                            {t.programmeName && <span>📦 {t.programmeName}</span>}
+                            {t.programmeName && <span>{t.programmeName}</span>}
                             {t.dueDate && (
                               <span className="flex items-center gap-1">
                                 <Clock className="h-3 w-3" />{formatRelativeDate(t.dueDate)}
@@ -722,7 +722,7 @@ export default function DashboardPage() {
 
             {/* Tips card */}
             <MagicCard className="p-5">
-              <h3 className="font-bold text-sm text-foreground mb-2">💡 Le saviez-vous ?</h3>
+              <h3 className="font-bold text-sm text-foreground mb-2">Le saviez-vous ?</h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 {activeRole === 'PORTEUR' && "Plus votre dossier de candidature est détaillé, plus vos chances d'être sélectionné sont élevées. Soignez la motivation et le pitch deck !"}
                 {activeRole === 'MENTOR'  && "Vos sessions de mentorat sont automatiquement enregistrées comme tâches. Cliquez sur \"Terminée\" pour les comptabiliser."}

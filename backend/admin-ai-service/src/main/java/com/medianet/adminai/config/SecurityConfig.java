@@ -37,6 +37,7 @@ public class SecurityConfig {
                 // types or every stream completion logs a spurious AccessDenied.
                 // The initial connect below stays fully authenticated.
                 .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC, jakarta.servlet.DispatcherType.ERROR).permitAll()
+                .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

@@ -22,7 +22,7 @@ interface Props {
   /** Optional placeholder for the URL field. */
   placeholder?: string
   /**
-   * Enable the "🔍 Rechercher" stock-photo search (Pexels/Unsplash/OpenVerse).
+   * Enable the "Rechercher" stock-photo search (Pexels/Unsplash/OpenVerse).
    * Default true. The `searchContext` tunes the aspect ratio / framing.
    */
   enableSearch?: boolean
@@ -43,7 +43,7 @@ interface PhotoResult {
 /**
  * Drop-in image picker. Three ways to set an image:
  *   1. Upload a file        (POST → /api/files/upload)
- *   2. 🔍 Search stock photos (POST → /api/admin-ai/search-photos — same chain as the AI)
+ *   2. Search stock photos (POST → /api/admin-ai/search-photos — same chain as the AI)
  *   3. Paste an external URL
  * All three produce a URL string the parent saves via onChange.
  */
@@ -199,7 +199,7 @@ export function ImageUpload({
             </Button>
           </div>
           <p className="text-[9px] text-muted-foreground">
-            💡 Utilise des mots-clés en <strong>anglais</strong>, 3+ mots, précis : « african startup team laptop bright ».
+Utilise des mots-clés en <strong>anglais</strong>, 3+ mots, précis : « african startup team laptop bright ».
           </p>
 
           {searching && (

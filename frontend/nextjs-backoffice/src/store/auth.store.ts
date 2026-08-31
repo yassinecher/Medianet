@@ -27,7 +27,13 @@ export const useAuthStore = create<AuthStore>()(
     {
       name: 'bo-auth',
       partialize: (s) => ({ user: s.user, token: s.token }),
-      onRehydrateStorage: () => (s) => { if (s) s.isAuthenticated = !!s.token },
+      onRehydrateStorage: () => (s) => {
+        if (!s) return
+        // The cookie is the source of truth: if it's gone (expired / cleared on a
+        // 401), drop the persisted session so guards stay consistent.
+        if (!Cookies.get('admin_token')) { s.user = null; s.token = null; s.isAuthenticated = false }
+        else s.isAuthenticated = true
+      },
     }
   )
 )

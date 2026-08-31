@@ -388,7 +388,7 @@ export function EvaluationDashboard({ programmeId, criteria: criteriaProp, phase
                             {sc != null ? (
                               <span className={`font-bold tabular-nums ${scoreColor(sc)}`}>{sc.toFixed(1)}</span>
                             ) : assigned ? (
-                              <span className="text-amber-500" title="En attente">⏳</span>
+                              <span className="inline-block h-2 w-2 rounded-full bg-amber-500" title="En attente" />
                             ) : (
                               <span className="text-muted-foreground/30">·</span>
                             )}

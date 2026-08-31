@@ -363,7 +363,7 @@ function NewProgrammeWizard() {
       const id = await persist()
       if (id == null) throw new Error('no id')
       await programmesApi.update(id, { status: 'OPEN' })
-      toast.success('Programme publié 🎉')
+      toast.success('Programme publié')
       router.push(`/programmes/${id}`)
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Publication impossible')

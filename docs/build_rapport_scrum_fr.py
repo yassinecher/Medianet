@@ -658,10 +658,20 @@ P("Le tableau ci-dessous précise comment ces rôles se sont incarnés dans le c
   "de ce projet de fin d'études.")
 table([
     ["Rôle Scrum", "Incarnation dans le projet"],
-    ["Product Owner", "L'encadrant entreprise (Yassine Mechich), qui priorise les besoins et valide les incréments au regard des attentes de Medianet."],
-    ["Scrum Master", "Rôle partagé, assurant le respect du cadre itératif et la levée des obstacles techniques."],
-    ["Équipe de développement", "L'étudiant (Yassine Cherni), en charge de la conception, du développement full-stack et des tests de chaque incrément."],
-], widths=[4.5, 11.5], cap_text="Rôles Scrum et leur incarnation dans le projet")
+    ["Product Owner", "**Nour**, responsable de la planification des programmes d'incubation chez Medianet : elle porte la vision produit, exprime et priorise le backlog, et valide chaque incrément au regard des besoins métier de l'incubateur."],
+    ["Scrum Master", "**Rôle partagé** : l'étudiant assure la facilitation quotidienne (tenue du cadre itératif, mêlée, suivi du backlog de sprint) ; l'encadrant entreprise (Yassine Mechich) agit en coach agile et lève les obstacles organisationnels."],
+    ["Équipe de développement", "L'étudiant (**Yassine Cherni**), en charge de la conception, du développement full-stack et des tests de chaque incrément."],
+], widths=[3.6, 12.4], cap_text="Rôles Scrum et leur incarnation dans le projet", font_size=9.5)
+P("Deux conventions transversales encadrent le travail de tous les sprints. La **priorisation** "
+  "suit l'échelle **MoSCoW** — *Must* (indispensable), *Should* (important), *Could* (utile) — "
+  "reportée dans les backlogs sous la forme *Haute / Moyenne / Basse*. L'**estimation** de "
+  "l'effort est exprimée en **points de récit** (*story points*) selon une suite de Fibonacci "
+  "(1, 2, 3, 5, 8, 13), qui traduit la complexité relative plutôt qu'une durée absolue.")
+P("La **Definition of Done** (définition du « terminé »), commune à toutes les user stories, "
+  "exige qu'une story ne soit considérée comme livrée que si : le code est intégré et compile "
+  "(typage statique `tsc`, build `mvn` / Next.js) ; les règles métier sont validées côté serveur ; "
+  "un scénario de test manuel de bout en bout passe pour chaque rôle concerné ; et l'incrément est "
+  "déployable en conteneurs (`docker compose up`) sans régression sur les sprints précédents.")
 P("Concrètement, l'approche adoptée repose sur les points suivants :")
 bullet("**Backlog produit.** Les besoins sont exprimés en **user stories** par acteur, puis priorisés.")
 bullet("**Incréments / sprints.** Chaque incrément vise un ensemble cohérent de user stories — "
@@ -1033,26 +1043,26 @@ P("Le backlog produit exprime les besoins sous forme de *user stories* — « en
   "Basse) et est rattachée à une **release**. Le tableau ci-dessous en donne l'essentiel ; il "
   "constitue le point de départ ordonnancé de tous les sprints qui suivent.")
 table([
-    ["#", "En tant que…", "je veux…", "Prio.", "Rel."],
-    ["US-01", "utilisateur", "m'inscrire et me connecter en sécurité (JWT)", "Haute", "R1"],
-    ["US-02", "administrateur", "gérer les utilisateurs, rôles et permissions fines", "Haute", "R1"],
-    ["US-03", "responsable", "créer et configurer un programme et ses critères", "Haute", "R1"],
-    ["US-04", "responsable", "construire un parcours visuel de sessions typées et imbriquées", "Haute", "R1"],
-    ["US-05", "responsable", "définir le type et la visibilité de chaque session", "Haute", "R1"],
-    ["US-06", "responsable", "voir le statut du programme se synchroniser depuis ses sessions", "Moyenne", "R1"],
-    ["US-07", "porteur", "postuler en ligne via le formulaire propre au programme", "Haute", "R2"],
-    ["US-08", "porteur", "lier ou créer mon organisation et mon équipe", "Moyenne", "R2"],
-    ["US-09", "administrateur", "affecter des jurys à une session d'évaluation", "Haute", "R2"],
-    ["US-10", "jury", "noter une candidature par critères pondérés, par session", "Haute", "R2"],
-    ["US-11", "jury", "obtenir un score IA (Medi) par critère, réutilisable", "Haute", "R2"],
-    ["US-12", "porteur", "téléverser des pitchs (entraînement et final) jusqu'à 2 Go", "Haute", "R2"],
-    ["US-13", "porteur", "recevoir une analyse mesurée et horodatée de mon pitch", "Haute", "R2"],
-    ["US-14", "administrateur", "gérer les participants et envoyer des invitations tracées", "Haute", "R3"],
-    ["US-15", "administrateur", "notifier les participants d'une session et archiver les envois", "Moyenne", "R3"],
-    ["US-16", "porteur / jury", "suivre le parcours, mes tâches et mes mises à jour", "Moyenne", "R3"],
-    ["US-17", "visiteur", "parcourir les programmes publics et leurs sessions visibles", "Basse", "R3"],
-    ["US-18", "administrateur", "gérer les catalogues de référence", "Basse", "R3"],
-], widths=[1.3, 2.7, 8.0, 1.9, 1.1], cap_text="Backlog produit — user stories priorisées", font_size=9.0)
+    ["#", "En tant que…", "je veux…", "Prio.", "Pts", "Spr.", "Rel."],
+    ["US-01", "utilisateur", "m'inscrire et me connecter en sécurité (JWT)", "Haute", "5", "S1", "R1"],
+    ["US-02", "administrateur", "gérer les utilisateurs, rôles et permissions fines", "Haute", "8", "S1", "R1"],
+    ["US-03", "responsable", "créer et configurer un programme et ses critères", "Haute", "8", "S2", "R1"],
+    ["US-04", "responsable", "construire un parcours visuel de sessions typées et imbriquées", "Haute", "13", "S2", "R1"],
+    ["US-05", "responsable", "définir le type et la visibilité de chaque session", "Haute", "5", "S2", "R1"],
+    ["US-06", "responsable", "voir le statut du programme se synchroniser depuis ses sessions", "Moyenne", "3", "S2", "R1"],
+    ["US-07", "porteur", "postuler en ligne via le formulaire propre au programme", "Haute", "5", "S3", "R2"],
+    ["US-08", "porteur", "lier ou créer mon organisation et mon équipe", "Moyenne", "3", "S3", "R2"],
+    ["US-09", "administrateur", "affecter des jurys à une session d'évaluation", "Haute", "3", "S4", "R2"],
+    ["US-10", "jury", "noter une candidature par critères pondérés, par session", "Haute", "8", "S4", "R2"],
+    ["US-11", "jury", "obtenir un score IA (Medi) par critère, réutilisable", "Haute", "8", "S5", "R2"],
+    ["US-12", "porteur", "téléverser des pitchs (entraînement et final) jusqu'à 2 Go", "Haute", "5", "S5", "R2"],
+    ["US-13", "porteur", "recevoir une analyse mesurée et horodatée de mon pitch", "Haute", "13", "S5", "R2"],
+    ["US-14", "administrateur", "gérer les participants et envoyer des invitations tracées", "Haute", "5", "S7", "R3"],
+    ["US-15", "administrateur", "notifier les participants d'une session et archiver les envois", "Moyenne", "5", "S7", "R3"],
+    ["US-16", "porteur / jury", "suivre le parcours, mes tâches et mes mises à jour", "Moyenne", "3", "S6", "R3"],
+    ["US-17", "visiteur", "parcourir les programmes publics et leurs sessions visibles", "Basse", "3", "S6", "R3"],
+    ["US-18", "administrateur", "gérer les catalogues de référence", "Basse", "2", "S7", "R3"],
+], widths=[1.2, 2.3, 6.7, 1.7, 0.9, 1.1, 1.1], cap_text="Backlog produit — user stories priorisées (priorité MoSCoW, points de récit, sprint, release)", font_size=8.8)
 H2("3.5 Planification des releases")
 P("Les user stories du backlog sont regroupées en incréments — les **sprints** — eux-mêmes "
   "réunis en trois **releases** cohérentes livrées successivement. Le tableau ci-dessous retrace "
@@ -1069,6 +1079,10 @@ table([
     ["Sprint 7", "R3", "Participants, invitations personnalisées et archive des communications."],
     ["Sprint 8", "—", "Tests de bout en bout, corrections, validation et rédaction du rapport."],
 ], widths=[2.2, 1.6, 12.2], cap_text="Feuille de route : sprints et releases", font_size=9.5)
+P("Les dix-huit user stories du backlog totalisent **105 points de récit**, répartis en "
+  "**42 points pour la Release 1**, **45 pour la Release 2** et **18 pour la Release 3**. Sur les "
+  "huit sprints de développement, cela représente une **vélocité moyenne d'environ 13 points par "
+  "sprint**, la Release 2 (analyse IA du pitch) concentrant logiquement la charge la plus élevée.")
 H2("3.6 Architecture globale")
 P("Les diagrammes de classes disent *ce que* le système sait ; le diagramme de composants dit "
   "*où* cette connaissance vit et *qui* a le droit de parler à qui. La figure ci-dessous se lit "
@@ -1119,7 +1133,7 @@ bullet("**Front-end :** Next.js (App Router), React, Tailwind CSS, Framer Motion
        "lucide-react, react-hot-toast, Axios.")
 bullet("**Média / IA :** ffmpeg, Whisper (transcription), Ollama (modèle de vision local).")
 H3("3.7.4 Langages de programmation")
-bullet("**Java 17** — les microservices.")
+bullet("**Java 21** (LTS) — les microservices Spring Boot.")
 bullet("**TypeScript / JavaScript** — les front-ends Next.js.")
 bullet("**Python** — le service de pipeline média (pitch-media-service).")
 bullet("**SQL** — PostgreSQL.")
@@ -1134,6 +1148,11 @@ pagebreak()
 def uc_table(rows, cap_text):
     table([["Champ", "Description"]] + rows, widths=[3.2, 12.8], cap_text=cap_text, font_size=9.5)
 
+def sprint_backlog(rows, cap_text):
+    """Sprint backlog table: ID | User story | Priorité | Points | Statut."""
+    table([["ID", "User story", "Priorité", "Pts", "Statut"]] + rows,
+          widths=[1.3, 9.9, 1.9, 1.0, 1.9], cap_text=cap_text, font_size=9.0)
+
 # =========================================================================
 # CHAPITRE 4 — RELEASE 1
 # =========================================================================
@@ -1147,16 +1166,24 @@ P("La première release pose les fondations du produit et livre déjà son cœur
   "parcours complet. Ce chapitre suit le déroulé d'un sprint Scrum : backlog, analyse, "
   "conception, réalisation, puis revue et rétrospective.")
 H2("4.1 Backlog de la release")
-P("Cette release tire du backlog produit les user stories fondatrices, résumées ci-dessous.")
-table([
-    ["#", "User story", "Prio."],
-    ["US-01", "En tant qu'utilisateur, m'inscrire et me connecter en sécurité (JWT).", "Haute"],
-    ["US-02", "En tant qu'administrateur, gérer les utilisateurs, rôles et permissions fines.", "Haute"],
-    ["US-03", "En tant que responsable, créer et configurer un programme et ses critères.", "Haute"],
-    ["US-04", "En tant que responsable, construire un parcours visuel de sessions typées et imbriquées.", "Haute"],
-    ["US-05", "En tant que responsable, définir le type et la visibilité de chaque session.", "Haute"],
-    ["US-06", "En tant que responsable, voir le statut du programme se synchroniser depuis ses sessions.", "Moyenne"],
-], widths=[1.3, 12.7, 2.0], cap_text="Backlog de la Release 1", font_size=9.5)
+P("Cette release tire du backlog produit les user stories fondatrices et les répartit sur ses "
+  "deux sprints. Chaque sprint ouvre sur un **objectif de sprint** (*sprint goal*), puis détaille "
+  "son **backlog de sprint** : identifiant de la story, énoncé, priorité (MoSCoW), estimation en "
+  "points de récit et statut au regard de la *Definition of Done*.")
+P("**Objectif du Sprint 1 :** permettre à un utilisateur de se connecter en sécurité et à un "
+  "administrateur de gérer les comptes, rôles et permissions.", space_after=2)
+sprint_backlog([
+    ["US-01", "En tant qu'utilisateur, m'inscrire et me connecter en sécurité (JWT).", "Haute", "5", "Terminé"],
+    ["US-02", "En tant qu'administrateur, gérer les utilisateurs, rôles et permissions fines.", "Haute", "8", "Terminé"],
+], "Backlog du Sprint 1 — Authentification, utilisateurs & rôles (13 points)")
+P("**Objectif du Sprint 2 :** permettre à un responsable de créer un programme et d'en dessiner "
+  "le parcours visuel de sessions typées et imbriquées.", space_after=2)
+sprint_backlog([
+    ["US-03", "En tant que responsable, créer et configurer un programme et ses critères.", "Haute", "8", "Terminé"],
+    ["US-04", "En tant que responsable, construire un parcours visuel de sessions typées et imbriquées.", "Haute", "13", "Terminé"],
+    ["US-05", "En tant que responsable, définir le type et la visibilité de chaque session.", "Haute", "5", "Terminé"],
+    ["US-06", "En tant que responsable, voir le statut du programme se synchroniser depuis ses sessions.", "Moyenne", "3", "Terminé"],
+], "Backlog du Sprint 2 — Modèle de programme & constructeur de parcours (29 points)")
 H2("4.2 Analyse")
 P("Quatre cas d'utilisation majeurs sont livrés par cette release. Ils sont décrits ci-dessous "
   "sous forme de descriptions textuelles.")
@@ -1303,16 +1330,27 @@ P("La deuxième release est la plus dense du projet. Elle couvre les sprints 3 �
   "visuelle et notation calibrée. C'est ici que se concrétisent les fondements théoriques du "
   "chapitre 2.")
 H2("5.1 Backlog de la release")
-table([
-    ["#", "User story", "Prio."],
-    ["US-07", "En tant que porteur, postuler en ligne via le formulaire propre au programme.", "Haute"],
-    ["US-08", "En tant que porteur, lier ou créer mon organisation et mon équipe.", "Moyenne"],
-    ["US-09", "En tant qu'administrateur, affecter des jurys à une session d'évaluation.", "Haute"],
-    ["US-10", "En tant que jury, noter une candidature par critères pondérés, par session.", "Haute"],
-    ["US-11", "En tant que jury, obtenir un score IA (Medi) par critère, réutilisable.", "Haute"],
-    ["US-12", "En tant que porteur, téléverser des pitchs (entraînement et final) jusqu'à 2 Go.", "Haute"],
-    ["US-13", "En tant que porteur, recevoir une analyse mesurée et horodatée de mon pitch.", "Haute"],
-], widths=[1.3, 12.7, 2.0], cap_text="Backlog de la Release 2", font_size=9.5)
+P("Les user stories de la sélection et de l'analyse de pitch sont réparties sur les trois sprints "
+  "de la release, chacun ouvert par son objectif de sprint.")
+P("**Objectif du Sprint 3 :** permettre à un porteur de déposer une candidature en ligne via le "
+  "formulaire propre au programme.", space_after=2)
+sprint_backlog([
+    ["US-07", "En tant que porteur, postuler en ligne via le formulaire propre au programme.", "Haute", "5", "Terminé"],
+    ["US-08", "En tant que porteur, lier ou créer mon organisation et mon équipe.", "Moyenne", "3", "Terminé"],
+], "Backlog du Sprint 3 — Candidatures en ligne (8 points)")
+P("**Objectif du Sprint 4 :** permettre l'affectation des jurys et la notation d'une candidature "
+  "par critères pondérés, réévaluable par session.", space_after=2)
+sprint_backlog([
+    ["US-09", "En tant qu'administrateur, affecter des jurys à une session d'évaluation.", "Haute", "3", "Terminé"],
+    ["US-10", "En tant que jury, noter une candidature par critères pondérés, par session.", "Haute", "8", "Terminé"],
+], "Backlog du Sprint 4 — Évaluation par jury (11 points)")
+P("**Objectif du Sprint 5 :** livrer la notation IA (Medi) et l'analyse automatique du pitch "
+  "ancrée dans des mesures.", space_after=2)
+sprint_backlog([
+    ["US-11", "En tant que jury, obtenir un score IA (Medi) par critère, réutilisable.", "Haute", "8", "Terminé"],
+    ["US-12", "En tant que porteur, téléverser des pitchs (entraînement et final) jusqu'à 2 Go.", "Haute", "5", "Terminé"],
+    ["US-13", "En tant que porteur, recevoir une analyse mesurée et horodatée de mon pitch.", "Haute", "13", "Terminé"],
+], "Backlog du Sprint 5 — Notation IA & analyse du pitch (26 points)")
 H2("5.2 Analyse")
 P("**UC-2 — Déposer une candidature**", space_after=2)
 uc_table([
@@ -1476,14 +1514,20 @@ P("La troisième release complète le périmètre fonctionnel. Elle couvre les s
   "l'issue de cette release, un programme peut être privé, ses participants gérés et informés, et "
   "chaque message rendu auditable.")
 H2("6.1 Backlog de la release")
-table([
-    ["#", "User story", "Prio."],
-    ["US-14", "En tant qu'administrateur, gérer les participants et envoyer des invitations tracées.", "Haute"],
-    ["US-15", "En tant qu'administrateur, notifier les participants d'une session et archiver les envois.", "Moyenne"],
-    ["US-16", "En tant que porteur / jury, suivre le parcours, mes tâches et mes mises à jour.", "Moyenne"],
-    ["US-17", "En tant que visiteur, parcourir les programmes publics et leurs sessions visibles.", "Basse"],
-    ["US-18", "En tant qu'administrateur, gérer les catalogues de référence.", "Basse"],
-], widths=[1.3, 12.7, 2.0], cap_text="Backlog de la Release 3", font_size=9.5)
+P("Les dernières user stories du périmètre sont réparties sur les deux sprints de la release.")
+P("**Objectif du Sprint 6 :** appliquer la visibilité des sessions côté serveur (Visible / "
+  "Masquée / Privée), adossée à la couche de validation centralisée.", space_after=2)
+sprint_backlog([
+    ["US-17", "En tant que visiteur, parcourir les programmes publics et leurs sessions visibles.", "Basse", "3", "Terminé"],
+    ["US-16", "En tant que porteur / jury, suivre le parcours, mes tâches et mes mises à jour.", "Moyenne", "3", "Terminé"],
+], "Backlog du Sprint 6 — Visibilité & validation (6 points)")
+P("**Objectif du Sprint 7 :** gérer les participants et rendre les communications traçables "
+  "(invitations personnalisées, notifications par session, archive).", space_after=2)
+sprint_backlog([
+    ["US-14", "En tant qu'administrateur, gérer les participants et envoyer des invitations tracées.", "Haute", "5", "Terminé"],
+    ["US-15", "En tant qu'administrateur, notifier les participants d'une session et archiver les envois.", "Moyenne", "5", "Terminé"],
+    ["US-18", "En tant qu'administrateur, gérer les catalogues de référence.", "Basse", "2", "Terminé"],
+], "Backlog du Sprint 7 — Participants & communications (12 points)")
 H2("6.2 Analyse")
 P("**UC-9 — Gérer les participants et envoyer des invitations**", space_after=2)
 uc_table([
@@ -1699,6 +1743,154 @@ P("Le développement s'est déployé, de façon reproductible, via **Docker Comp
   "livrant un incrément déployable.")
 figure(os.path.join(HERE, 'planning_scrum.png'),
        "Feuille de route Scrum du projet (releases, sprints et incréments)")
+
+# ---- 7.8 Conteneurisation, déploiement et sécurité ----
+H2("7.8 Conteneurisation, déploiement et sécurité")
+P("Au-delà de la planification, le déploiement de la plateforme constitue en soi une "
+  "contribution technique. L'ensemble — sept services Spring Boot (auth, candidature, "
+  "notification, programme, admin-ai, api-gateway, eureka-server), le service Python/FastAPI "
+  "d'analyse de pitch (transcription Whisper, mesures audio et vision), le runtime de modèles "
+  "Ollama et les deux front-ends Next.js (front-office et back-office) — est **conteneurisé** et "
+  "orchestré par **Docker Compose**. La cible d'exécution est un **unique VM Azure**, placé "
+  "derrière un **nginx hôte** avec **certbot** (TLS), dont le pare-feu n'ouvre que les ports "
+  "**22, 80 et 443**. Deux fichiers de composition coexistent : `docker-compose.yml` construit "
+  "les images en développement, tandis que `docker-compose.prod.yml` les récupère (*pull*) depuis "
+  "un registre en production. Cette section documente et justifie les décisions prises : le choix "
+  "des images, le durcissement de la sécurité, le choix de l'orchestrateur et l'organisation des "
+  "bases de données.")
+
+H3("7.8.1 Choix des images Docker")
+P("Chaque image de base a été choisie pour un compromis explicite entre **taille**, "
+  "**reproductibilité** et **contraintes binaires**. Le principe transverse est d'**épingler les "
+  "versions** — plutôt que de suivre `:latest` — pour garantir des builds reproductibles, et de "
+  "privilégier les variantes *alpine*, sauf lorsqu'une dépendance native l'interdit. Les services "
+  "Java suivent un **build multi-étapes** (*multi-stage*) : une première étape compile avec Maven "
+  "et le JDK, une seconde n'embarque qu'une JRE minimale — l'image finale ne contient ni le JDK "
+  "ni les sources.")
+table([
+    ["Image", "Rôle", "Justification"],
+    ["maven:3.9.6-eclipse-temurin-21-alpine", "Étape de *build* Java", "Compile les sept services Spring Boot ; JDK 21 **LTS** ; présente uniquement dans l'étape de build (non embarquée)."],
+    ["eclipse-temurin:21-jre-alpine", "*Runtime* Java", "JRE minimale (pas de JDK) sur base alpine : image finale légère, surface réduite, version LTS."],
+    ["node:20-alpine", "*Build* & exécution Next.js", "Build multi-étapes, sortie **standalone** (serveur autonome), exécution en utilisateur **non-root**."],
+    ["python:3.11-slim", "Service pitch-media (FastAPI)", "**slim (glibc) et non alpine** : les wheels *faster-whisper* / *ctranslate2* sont compilées pour la glibc ; sous musl (alpine), elles imposeraient de longues recompilations, voire échoueraient."],
+    ["postgres:15-alpine", "Bases de données (×5)", "Variante alpine : économie de RAM et de disque — de l'ordre de 750 Mo cumulés sur cinq instances."],
+    ["nginx:1.25-alpine", "*Reverse proxy* / TLS", "Terminaison TLS (certbot) et routage vers les front-ends et la passerelle ; version épinglée."],
+    ["minio/minio (RELEASE.*)", "Stockage objet S3", "Compatible S3 pour images, logos et vidéos de pitch ; tag `RELEASE.*` épinglé."],
+    ["rabbitmq:3.13", "Bus de messages", "Échanges asynchrones entre services ; version majeure épinglée."],
+    ["ollama/ollama", "*Runtime* de modèles", "Exécute localement le modèle de vision, appelé par le service pitch-media."],
+], widths=[4.7, 3.3, 8.0], cap_text="Images Docker retenues : rôle et justification", font_size=8.6)
+
+H3("7.8.2 Durcissement de la sécurité")
+P("La configuration initiale, héritée des premiers sprints, présentait plusieurs faiblesses de "
+  "sécurité et de robustesse. Chacune a été traitée selon le schéma **problème → décision → "
+  "bénéfice**.")
+bullet("**Secrets codés en dur.** *Problème :* la clé SMTP Brevo, le `JWT_SECRET` et les mots de "
+       "passe des bases figuraient en clair dans le fichier de composition versionné. *Décision :* "
+       "externalisation dans un fichier **`.env` git-ignoré**, référencé par `${VAR}`, accompagné "
+       "d'un template **`.env.example`** versionné ; les secrets réellement exposés ont été "
+       "**rotés**, puisqu'ils subsistent dans l'historique Git. *Bénéfice :* plus aucun secret "
+       "dans le dépôt, et une configuration distincte par environnement.")
+bullet("**Surface d'attaque trop large.** *Problème :* tous les services publiaient leurs ports "
+       "sur l'hôte (`ports:`), y compris les cinq bases de données. *Décision :* bascule de "
+       "`ports:` vers **`expose:`** pour tous les services internes ; seuls la **passerelle "
+       "(8080)**, les **deux front-ends (3000/3001)** et **MinIO (9000/9001)** restent publiés, et "
+       "uniquement sur la boucle locale derrière nginx. *Bénéfice :* les bases et les services "
+       "métier ne sont plus joignables depuis l'extérieur, conformément au pare-feu 22/80/443.")
+bullet("**Services morts encore câblés.** *Problème :* deux services obsolètes (ai-scoring, "
+       "ai-matching), remplacés par admin-ai, étaient toujours construits et déclarés comme "
+       "dépendances de la passerelle. *Décision :* leur **suppression** du fichier de composition, "
+       "des routes de la passerelle et de la CI. *Bénéfice :* démarrage plus fiable, deux images "
+       "en moins à construire, cohérence avec l'architecture documentée.")
+bullet("**Démarrage non fiabilisé.** *Problème :* les dépendances utilisaient "
+       "`condition: service_started`, qui n'attend que le lancement du conteneur, pas sa "
+       "disponibilité — d'où des courses au démarrage. *Décision :* ajout de **sondes de santé** "
+       "Spring Actuator (`/actuator/health`) et passage à **`condition: service_healthy`** ; "
+       "ajout d'une politique **`restart: unless-stopped`**. *Bénéfice :* un service n'est "
+       "sollicité que lorsqu'il est réellement prêt, et se relève seul après un incident.")
+bullet("**Ressources non bornées.** *Problème :* cinq JVM et le pipeline média sur un seul hôte, "
+       "sans limite, exposaient à une saturation mémoire. *Décision :* **plafond de tas JVM** "
+       "(`-Xmx`) par service et **limites conteneur** sur Ollama et pitch-media ; **épinglage des "
+       "versions d'images**. *Bénéfice :* une empreinte mémoire prévisible et un hôte protégé des "
+       "emballements.")
+P("Le tableau ci-dessous récapitule la politique d'exposition des ports après durcissement.")
+table([
+    ["Composant", "Port(s)", "Exposition"],
+    ["nginx (hôte) + certbot", "80 / 443", "Public (seul point d'entrée TLS)"],
+    ["api-gateway", "8080", "Publié (boucle locale, via nginx)"],
+    ["front-office / back-office", "3000 / 3001", "Publiés (boucle locale, via nginx)"],
+    ["MinIO (API / console)", "9000 / 9001", "Publiés (accès aux médias)"],
+    ["Services Spring Boot internes", "8081, 8083, 8086–8088", "`expose:` — réseau interne uniquement"],
+    ["eureka-server", "8761", "`expose:` — réseau interne uniquement"],
+    ["pitch-media / ollama", "8087 / 11434", "`expose:` — réseau interne uniquement"],
+    ["PostgreSQL (×5) / RabbitMQ", "5432 / 5672", "`expose:` — réseau interne uniquement"],
+], widths=[5.2, 3.0, 7.8], cap_text="Politique d'exposition des ports après durcissement", font_size=9.0)
+P("Aujourd'hui, tous les conteneurs partagent un unique réseau *bridge*. Une **segmentation** en "
+  "trois réseaux (*edge*, *backend*, *data*) constitue une perspective d'amélioration : elle "
+  "empêcherait physiquement les front-ends d'atteindre les bases de données.")
+
+H3("7.8.3 Choix de l'orchestration : Docker Compose ou Kubernetes")
+P("Le choix de l'orchestrateur mérite d'être argumenté, tant **Kubernetes** s'est imposé comme "
+  "standard. Kubernetes apporte l'**ordonnancement multi-nœuds**, l'**auto-réparation**, les "
+  "**mises à jour progressives** (*rolling updates*) et l'**autoscaling** — mais au prix d'un "
+  "**plan de contrôle** (API server, etcd, contrôleurs) coûteux en mémoire, difficilement "
+  "justifiable sur un **seul nœud**. Pour un déploiement **mono-nœud** et le périmètre d'un projet "
+  "de fin d'études, **Docker Compose** offre le meilleur rapport valeur/complexité : une "
+  "description déclarative, un démarrage en une commande, et une empreinte quasi nulle hors des "
+  "conteneurs applicatifs. On note d'ailleurs que, sous Kubernetes, **Eureka et la passerelle "
+  "deviendraient en partie redondants** — le DNS de services et un *Ingress Controller* en "
+  "assurent nativement l'équivalent.")
+P("Le tableau ci-dessous établit la correspondance des concepts, utile si une migration devenait "
+  "pertinente.")
+table([
+    ["Concept Docker Compose", "Équivalent Kubernetes"],
+    ["service", "Deployment (+ Pod)"],
+    ["ports: / expose:", "Service (ClusterIP) / Ingress"],
+    ["fichier .env", "ConfigMap / Secret"],
+    ["volume nommé", "PersistentVolumeClaim (PVC)"],
+    ["healthcheck", "sondes readiness / liveness"],
+    ["depends_on: condition", "initContainers + sondes"],
+    ["montée d'échelle (--scale)", "Deployment.replicas"],
+    ["Eureka (découverte)", "DNS de services (kube-dns)"],
+    ["Spring Cloud Gateway", "Ingress Controller"],
+], widths=[6.4, 9.6], cap_text="Correspondance des concepts Docker Compose ↔ Kubernetes", font_size=9.0)
+
+H3("7.8.4 Organisation des bases de données")
+P("La plateforme applique le principe **« une base de données par service »** : chaque "
+  "microservice possède sa propre instance PostgreSQL, et aucun service ne lit les tables d'un "
+  "autre. Ce choix d'**architecture** garantit une **isolation forte** et l'**indépendance des "
+  "schémas** — un service peut faire évoluer son modèle sans coordination avec les autres, ce qui "
+  "sert directement l'agilité défendue dans ce mémoire.")
+P("Sur un VM à mémoire limitée, ce choix a toutefois un coût : cinq instances PostgreSQL "
+  "consomment cinq fois la mémoire de base. Une **consolidation** en une **seule instance "
+  "hébergeant cinq bases** constitue alors un **compromis de déploiement** légitime — l'isolation "
+  "logique est préservée dans le code (une base, un utilisateur par service), tandis que "
+  "l'empreinte diminue. Ce compromis reste un choix d'exploitation, distinct du choix "
+  "d'architecture. Enfin, une **montée de version majeure** de PostgreSQL n'est pas un simple "
+  "changement de tag : elle impose une **migration** des données (`pg_upgrade` ou "
+  "*dump/restore*), à planifier comme une opération à part entière.")
+
+H3("7.8.5 Perspectives : une échelle de maturité du déploiement")
+P("Le déploiement actuel n'est qu'un premier palier d'une trajectoire d'industrialisation que "
+  "l'on peut représenter comme une **échelle de maturité** :")
+bullet("**Docker Compose (mono-nœud, actuel)** — description déclarative, un seul VM ; simple, "
+       "suffisant pour le périmètre du projet.")
+bullet("**Docker Swarm ou k3s (orchestration légère)** — introduit les mises à jour progressives "
+       "et une auto-réparation basique sans le coût d'un cluster complet.")
+bullet("**AKS / Azure Container Apps (multi-nœuds)** — ordonnancement multi-nœuds, montée en "
+       "charge automatique et haute disponibilité ; Eureka y serait abandonné au profit du DNS de "
+       "services et d'un *Ingress*.")
+P("Deux chantiers transversaux accompagnent cette montée en maturité : la **segmentation réseau** "
+  "(*edge* / *backend* / *data*) déjà évoquée, et l'adoption d'un **gestionnaire de secrets** "
+  "dédié — **Docker secrets** à court terme, **Azure Key Vault** à l'échelle du cloud — pour "
+  "sortir définitivement les secrets des fichiers de configuration.")
+P("**En synthèse**, la conteneurisation de MEDIANET INCUBATEUR répond à un objectif de "
+  "**reproductibilité** et de **portabilité** : des images épinglées et minimales, un déploiement "
+  "en une commande, et une cible mono-nœud délibérément simple. Le travail de durcissement — "
+  "externalisation des secrets, réduction de la surface d'attaque, sondes de santé et limites de "
+  "ressources — a transformé une composition fonctionnelle mais fragile en un déploiement "
+  "**sûr et robuste**, tout en traçant, par l'échelle de maturité ci-dessus, un chemin clair vers "
+  "une exploitation à plus grande échelle.")
+
 H2("Conclusion")
 P("Ce chapitre a répondu à la question qu'il posait en ouverture. Les mesures ont été validées "
   "une à une, et chaque validation a intercepté un défaut qui aurait autrement atteint "

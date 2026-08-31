@@ -3,7 +3,7 @@
  * CandidatureReview — a back-office modal that shows a candidature with the SAME
  * jury-style layout (details on the left, scoring on the right) so an admin or
  * investor can review it like a juré. It adds:
- *   • AI scoring (POST /api/ai/score/{id}) — per-criterion + recommendation + commentary;
+ *   • AI scoring (POST /api/admin-ai/score/{id}) — per-criterion + recommendation + commentary;
  *   • jury management — list assignments, change/remove a jury, assign a new one;
  *   • the read-only view of every jury's submitted scores + comments.
  * Admins don't submit scores here (evaluation is the jury's job) — this is a review.

@@ -94,15 +94,15 @@ const ALL_SECTIONS = ['hero', 'stats', 'about', 'features', 'process', 'programm
 // The "default" preset uses empty strings → on save, the backend stores NULL,
 // which makes the Tailwind config fallbacks (original blue palette) kick in.
 const THEME_PRESETS: Array<{ id: string; label: string; primary: string; accent: string; emoji: string }> = [
-  { id: 'default',  label: 'Défaut',   primary: '',        accent: '',        emoji: '⚪' },
-  { id: 'sunset',   label: 'Sunset',   primary: '#FF6A00', accent: '#9333EA', emoji: '🌅' },
-  { id: 'ocean',    label: 'Ocean',    primary: '#0EA5E9', accent: '#14B8A6', emoji: '🌊' },
-  { id: 'forest',   label: 'Forest',   primary: '#16A34A', accent: '#CA8A04', emoji: '🌲' },
-  { id: 'royal',    label: 'Royal',    primary: '#7C3AED', accent: '#F59E0B', emoji: '👑' },
-  { id: 'tunisia',  label: 'Tunisia',  primary: '#E70013', accent: '#1F2937', emoji: '🇹🇳' },
+  { id: 'default',  label: 'Défaut',   primary: '',        accent: '',        emoji: '' },
+  { id: 'sunset',   label: 'Sunset',   primary: '#FF6A00', accent: '#9333EA', emoji: '' },
+  { id: 'ocean',    label: 'Ocean',    primary: '#0EA5E9', accent: '#14B8A6', emoji: '' },
+  { id: 'forest',   label: 'Forest',   primary: '#16A34A', accent: '#CA8A04', emoji: '' },
+  { id: 'royal',    label: 'Royal',    primary: '#7C3AED', accent: '#F59E0B', emoji: '' },
+  { id: 'tunisia',  label: 'Tunisia',  primary: '#E70013', accent: '#1F2937', emoji: '' },
   { id: 'minimal',  label: 'Minimal',  primary: '#111827', accent: '#6B7280', emoji: '◾' },
-  { id: 'rose',     label: 'Rose',     primary: '#E11D48', accent: '#F472B6', emoji: '🌹' },
-  { id: 'midnight', label: 'Midnight', primary: '#1E40AF', accent: '#8B5CF6', emoji: '🌌' },
+  { id: 'rose',     label: 'Rose',     primary: '#E11D48', accent: '#F472B6', emoji: '' },
+  { id: 'midnight', label: 'Midnight', primary: '#1E40AF', accent: '#8B5CF6', emoji: '' },
 ]
 
 // ── Device preview widths ─────────────────────────────────────────────────────
@@ -187,14 +187,14 @@ function PreviewPane({ url, bump, device, userZoom, onReload }: {
       </div>
 
       <p className="text-[10px] text-muted-foreground italic">
-        💡 Échelle {Math.round(scale * 100)}% — le rendu reste fidèle à un écran {deviceWidth}px.
+Échelle {Math.round(scale * 100)}% — le rendu reste fidèle à un écran {deviceWidth}px.
         L'aperçu se recharge après chaque enregistrement.
       </p>
     </div>
   )
 }
 
-/** Tiny "👁 Voir" button — scrolls the preview iframe to a section. */
+/** Tiny "Voir" button — scrolls the preview iframe to a section. */
 function ScrollToPreviewButton({ section, onScroll }: { section: string; onScroll: (s: string) => void }) {
   return (
     <button type="button" onClick={() => onScroll(section)}
@@ -205,7 +205,7 @@ function ScrollToPreviewButton({ section, onScroll }: { section: string; onScrol
   )
 }
 
-/** Small "✨ Generate" button — opens a tiny prompt for an optional brief, then calls aiSuggest. */
+/** Small "Generate" button — opens a tiny prompt for an optional brief, then calls aiSuggest. */
 function AiButton({ section, suggest, label = 'IA' }: {
   section: string
   suggest: (section: string, brief?: string) => Promise<void>
@@ -227,7 +227,7 @@ function AiButton({ section, suggest, label = 'IA' }: {
       title={`Générer ${section} avec l'IA`}
       className="inline-flex items-center gap-1 rounded-md border border-purple-500/30 bg-gradient-to-r from-purple-500/10 to-brand-500/10 px-2 py-1 text-[10px] font-bold text-purple-700 dark:text-purple-300 hover:from-purple-500/20 hover:to-brand-500/20 transition-colors disabled:opacity-50">
       {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-      ✨ {label}
+{label}
     </button>
   )
 }
@@ -409,7 +409,7 @@ export default function LandingPageEditor() {
 
   /** Call the AI to generate content for one section, then merge into the page. */
   const aiSuggest = async (section: string, brief?: string) => {
-    const toastId = toast.loading(`✨ Génération de "${section}"…`)
+    const toastId = toast.loading(`Génération de "${section}"…`)
     try {
       const r = await adminAiApi.landingSuggest({ section, brief, locale: 'fr' })
       if (r.data?.error) {
@@ -451,9 +451,7 @@ export default function LandingPageEditor() {
                   }`}
                   style={isDefault ? undefined
                                    : { background: `linear-gradient(135deg, ${t.primary} 50%, ${t.accent} 50%)` }}>
-                  <span className={`text-[10px] transition-opacity ${isDefault ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                    {t.emoji}
-                  </span>
+                  {isDefault && <span className="h-3 w-3 rounded-full" style={{ background: '#6272f6' }} />}
                 </button>
               )
             })}
@@ -510,7 +508,7 @@ export default function LandingPageEditor() {
             {!autoSaveOn ? 'AUTO OFF' :
               autoSaveStatus === 'pending' ? 'modifications…' :
               autoSaveStatus === 'saving'  ? 'enregistrement…' :
-              autoSaveStatus === 'saved'   ? 'enregistré ✓' :
+              autoSaveStatus === 'saved'   ? 'enregistré' :
                                               'auto-save'}
           </button>
 
@@ -1050,7 +1048,7 @@ export default function LandingPageEditor() {
             </div>
           </div>
           <p className="text-[10px] text-muted-foreground italic">
-            💡 Les cartes elles-mêmes sont générées automatiquement depuis les programmes ouverts.
+Les cartes elles-mêmes sont générées automatiquement depuis les programmes ouverts.
             Pour changer leur contenu, va dans <strong>Programmes</strong> dans la barre latérale.
           </p>
         </MagicCard>

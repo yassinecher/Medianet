@@ -89,7 +89,7 @@ export default function ProfilePage() {
       const r = await authApi.updatePorteurProfile(draft)
       setMe((m) => (m ? { ...m, porteurProfile: r.data } : m))
       setEditing(false)
-      toast.success('Profil mis à jour ✓')
+      toast.success('Profil mis à jour')
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Erreur lors de la mise à jour')
     } finally { setSaving(false) }

@@ -343,7 +343,7 @@ export default function UsersPage() {
                               <Button size="sm" variant="ghost" onClick={() => setEditingRolesFor(null)}>Annuler</Button>
                             </div>
                             <p className="text-[10px] text-muted-foreground">
-                              ⚡ Les nouveaux rôles s'appliquent en direct : si l'utilisateur est connecté, son interface se met à jour immédiatement, sans reconnexion.
+Les nouveaux rôles s'appliquent en direct : si l'utilisateur est connecté, son interface se met à jour immédiatement, sans reconnexion.
                             </p>
                           </div>
                         </motion.div>

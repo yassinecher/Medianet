@@ -249,7 +249,7 @@ function SessionNode({ data, selected }: any) {
           status === 'ACTIVE'    ? 'bg-emerald-500 text-white' :
           status === 'COMPLETED' ? 'bg-slate-500 text-white'   : 'bg-muted text-muted-foreground'
         }`}>
-          {status === 'ACTIVE' ? '● Live' : status === 'COMPLETED' ? '✓' : '○'}
+          {status === 'ACTIVE' ? '● Live' : status === 'COMPLETED' ? '● Fini' : '○'}
         </span>
       </div>
       <p className="text-xs font-bold text-foreground truncate">{data.title || 'Sans titre'}</p>
@@ -552,7 +552,7 @@ function BuilderInner(props: BuilderProps = {}) {
     })
     markDirty()
     setTimeout(() => { try { rf.fitView({ padding: 0.15, duration: 600 }) } catch {} }, 100)
-    toast.success('Disposition appliquée ✓')
+    toast.success('Disposition appliquée')
   }
 
   // ── Drag-and-drop from palette ──────────────────────────────────────────
@@ -698,7 +698,7 @@ function BuilderInner(props: BuilderProps = {}) {
       // session nodes on the canvas (from older sessions) are ignored.
 
       clearDirty()
-      toast.success(props.existingProgrammeId ? 'Programme mis à jour ✓' : 'Programme créé ✓')
+      toast.success(props.existingProgrammeId ? 'Programme mis à jour' : 'Programme créé')
       router.push(`/programmes/${programmeId}`)
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? e?.message ?? 'Erreur')
@@ -1130,7 +1130,7 @@ function FormTemplateInspector({ d, onChange }: { d: FormTemplateData; onChange:
               </div>
               <button type="button" onClick={() => setFormModal(false)}
                 className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
-                ✕
+
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">

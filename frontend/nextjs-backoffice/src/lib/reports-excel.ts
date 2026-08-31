@@ -201,7 +201,7 @@ export function downloadApplicationsWorkbook(programmeName: string, candidatures
     for (const jr of juryRows(c)) jset.set(jr.name, !!jr.ev)
     entretiens.push([
       projectName(c), founder(c), c.city ?? c.region ?? '', '', '', '', '',
-      ...juryNames.map((n) => (jset.has(n) ? (jset.get(n) ? '✔' : '•') : '')),
+      ...juryNames.map((n) => (jset.has(n) ? (jset.get(n) ? 'X' : '•') : '')),
     ])
   }
   if (cands.length === 0) entretiens.push([{ v: 'Aucune candidature', colspan: enHead.length }])
