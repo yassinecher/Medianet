@@ -77,6 +77,13 @@ export default function SessionPage() {
   const programmeId = Number(id)
   const isNew = sessionId === 'new'
   const parentParam = search.get('parent')
+  // When a session page is opened FROM the Parcours (timeline), every exit —
+  // cancel, back, after-save, delete — must return to the Parcours, not the
+  // Sessions hub. This marker is carried through so the whole chain stays there.
+  const fromParcours = search.get('from') === 'parcours'
+  const fromQ = fromParcours ? '?from=parcours' : ''
+  const parcoursHref = `/programmes/${programmeId}/timeline`
+  const hubHref = fromParcours ? parcoursHref : `/programmes/${programmeId}?tab=phases`
 
   const [loading, setLoading] = useState(!isNew)
   const [saving, setSaving] = useState(false)
@@ -173,7 +180,7 @@ export default function SessionPage() {
         if (parentParam) payload.parentSessionId = Number(parentParam)
         const { data } = await sessionsApi.create(programmeId, { ...payload, lane: 'Principal', phaseOrder: 0 })
         toast.success('Session créée')
-        router.replace(`/programmes/${programmeId}/sessions/${data?.id ?? ''}`)
+        router.replace(`/programmes/${programmeId}/sessions/${data?.id ?? ''}${fromQ}`)
       } else if (session) {
         await sessionsApi.update(programmeId, session.id, payload)
         toast.success('Session enregistrée')
@@ -203,7 +210,7 @@ export default function SessionPage() {
     if (!outcome) return
     toast.success(outcome === 'purge' ? 'Session supprimée définitivement' : 'Session mise à la corbeille')
     // Before leaving: offer to notify the people related to the cancelled session.
-    setAfterSuggest(parent ? `/programmes/${programmeId}/sessions/${parent.id}` : `/programmes/${programmeId}?tab=phases`)
+    setAfterSuggest(parent ? `/programmes/${programmeId}/sessions/${parent.id}${fromQ}` : hubHref)
     setSuggest({
       session,
       changeSummary: outcome === 'purge'
@@ -238,11 +245,13 @@ export default function SessionPage() {
   }
 
   const backHref = parent
-    ? `/programmes/${programmeId}/sessions/${parent.id}`
-    : `/programmes/${programmeId}?tab=phases`
+    ? `/programmes/${programmeId}/sessions/${parent.id}${fromQ}`
+    : hubHref
   // Return EXACTLY where the user was (Parcours/Gantt scroll included) when the
-  // page was reached in-app; fall back to the hub for direct visits.
+  // page was reached in-app; fall back to the right hub for direct visits.
   const goBack = () => {
+    // A parcours-originated page must land back on the Parcours deterministically.
+    if (fromParcours) { router.push(backHref); return }
     if (typeof window !== 'undefined' && window.history.length > 1) router.back()
     else router.push(backHref)
   }
@@ -256,7 +265,7 @@ export default function SessionPage() {
   if (!isNew && !session) {
     return <AdminLayout><div className="mx-auto max-w-3xl py-16 text-center">
       <p className="text-sm text-muted-foreground">Session introuvable.</p>
-      <Link href={`/programmes/${programmeId}?tab=phases`} className="mt-3 inline-block text-sm font-medium text-brand-600 hover:underline">← Retour au parcours</Link>
+      <Link href={hubHref} className="mt-3 inline-block text-sm font-medium text-brand-600 hover:underline">← Retour au parcours</Link>
     </div></AdminLayout>
   }
 
@@ -276,7 +285,7 @@ export default function SessionPage() {
               )}
             </div>
             <p className="truncate text-xs text-muted-foreground">
-              {parent ? <>Sous-session de <Link href={`/programmes/${programmeId}/sessions/${parent.id}`} className="font-medium text-brand-600 hover:underline">{parent.title}</Link></> : 'Session du parcours'}
+              {parent ? <>Sous-session de <Link href={`/programmes/${programmeId}/sessions/${parent.id}${fromQ}`} className="font-medium text-brand-600 hover:underline">{parent.title}</Link></> : 'Session du parcours'}
             </p>
           </div>
           {!isNew && session && isDay && (
@@ -514,7 +523,7 @@ export default function SessionPage() {
 
         {/* Sub-sessions (range sessions) */}
         {!isNew && session && !isDay && (
-          <SubSessions programmeId={programmeId} parentId={session.id} children={children} />
+          <SubSessions programmeId={programmeId} parentId={session.id} children={children} fromQ={fromQ} />
         )}
 
         {/* Activities agenda (day sessions) */}
@@ -724,7 +733,7 @@ function CriteriaCard({ programmeId, session, criteria, onChanged }: {
 }
 
 // ── Nested sub-sessions ──────────────────────────────────────────────────────
-function SubSessions({ programmeId, parentId, children }: { programmeId: number; parentId: number; children: Session[] }) {
+function SubSessions({ programmeId, parentId, children, fromQ = '' }: { programmeId: number; parentId: number; children: Session[]; fromQ?: string }) {
   return (
     <MagicCard className="p-5">
       <div className="mb-3 flex items-center justify-between">
@@ -732,7 +741,7 @@ function SubSessions({ programmeId, parentId, children }: { programmeId: number;
           <Layers className="h-4 w-4 text-brand-500" />Sous-sessions
           {children.length > 0 && <Badge variant="secondary">{children.length}</Badge>}
         </h2>
-        <Link href={`/programmes/${programmeId}/sessions/new?parent=${parentId}`}>
+        <Link href={`/programmes/${programmeId}/sessions/new?parent=${parentId}${fromQ ? '&from=parcours' : ''}`}>
           <Button variant="outline" size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" />Ajouter</Button>
         </Link>
       </div>
@@ -744,7 +753,7 @@ function SubSessions({ programmeId, parentId, children }: { programmeId: number;
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
           {[...children].sort((a, b) => (a.startDate ?? '').localeCompare(b.startDate ?? '')).map((c) => (
             <li key={c.id}>
-              <Link href={`/programmes/${programmeId}/sessions/${c.id}`}
+              <Link href={`/programmes/${programmeId}/sessions/${c.id}${fromQ}`}
                 className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/50">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color || '#6366F1' }} />
                 <div className="min-w-0 flex-1">

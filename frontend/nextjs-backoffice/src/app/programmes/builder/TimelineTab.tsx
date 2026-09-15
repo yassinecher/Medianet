@@ -1395,7 +1395,7 @@ function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset 
     setDrag(null); setNestHint(null)
     const s = rows.map(r => r.s).find(x => x.id === d.id)
     if (!s) return
-    if (!d.moved) { saveScroll(); router.push(`/programmes/${programmeId}/sessions/${s.id}`); return }
+    if (!d.moved) { saveScroll(); router.push(`/programmes/${programmeId}/sessions/${s.id}?from=parcours`); return }
     const sd = parseDate(s.startDate); const ed = parseDate(s.endDate ?? s.startDate)
     if (!sd || !ed) return
     // Dropped ON another session's row → nest inside it (dates carried along,
@@ -1507,7 +1507,7 @@ function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset 
           return (
             <div key={s.id} data-gantt-row={s.id}
               className={`flex border-t border-border/40 transition-colors ${isNestTarget ? 'bg-emerald-500/10' : 'hover:bg-brand-500/[0.05]'}`}>
-              <Link href={`/programmes/${programmeId}/sessions/${s.id}`} title="Ouvrir la session" onClick={saveScroll}
+              <Link href={`/programmes/${programmeId}/sessions/${s.id}?from=parcours`} title="Ouvrir la session" onClick={saveScroll}
                 className={`sticky left-0 z-10 flex w-[150px] shrink-0 items-center gap-2 border-r border-border bg-card px-3 py-2 sm:w-[240px] ${depth > 0 ? 'pl-5 sm:pl-7' : ''}`}>
                 {depth > 0 && <span className="shrink-0 text-muted-foreground">↳</span>}
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c }} />
@@ -1560,7 +1560,7 @@ function GanttChart({ programmeId, topLevel, childrenOf, onUpdate, onDropPreset 
         {/* Drop zone / add row */}
         <div className="flex border-t border-border/40">
           <div className="sticky left-0 z-10 flex w-[150px] shrink-0 items-center border-r border-border bg-card px-3 py-2 sm:w-[240px]">
-            <Link href={`/programmes/${programmeId}/sessions/new`}
+            <Link href={`/programmes/${programmeId}/sessions/new?from=parcours`}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:underline dark:text-brand-400">
               <Plus className="h-3.5 w-3.5" />Nouvelle session
             </Link>
