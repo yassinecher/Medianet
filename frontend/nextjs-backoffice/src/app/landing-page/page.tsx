@@ -232,6 +232,28 @@ function AiButton({ section, suggest, label = 'IA' }: {
   )
 }
 
+/**
+ * Base URL of the front-office — used for the live-preview iframe and the
+ * "open in a new tab" link. Prefers the build-time env; otherwise DERIVES it
+ * from the current admin host so the preview still works in production when the
+ * env wasn't baked in. Crucially it keeps the SAME protocol (https) as the
+ * back-office, so the iframe isn't blocked as mixed content (the old hardcoded
+ * `http://localhost:3000` was unreachable + blocked on the deployed HTTPS site,
+ * which made every landing edit look like it "didn't work").
+ */
+function frontofficeBase(): string {
+  const env = process.env.NEXT_PUBLIC_FRONTOFFICE_URL
+  if (env) return env.replace(/\/+$/, '')
+  if (typeof window === 'undefined') return 'http://localhost:3000'
+  const { protocol, host } = window.location
+  let fo = host
+    .replace('incubatoradmin', 'incubator')   // medianetincubatoradmin.duckdns.org → medianetincubator…
+    .replace('backoffice', 'frontoffice')
+    .replace(/(^|\.)admin\./, '$1app.')        // admin.medianet.dz → app.medianet.dz
+  if (fo === host) fo = host.replace(/:3001$/, ':3000')   // dev: :3001 → :3000
+  return `${protocol}//${fo}`
+}
+
 export default function LandingPageEditor() {
   const [page, setPage] = useState<LandingPage>({})
   const [loading, setLoading] = useState(true)
@@ -244,7 +266,7 @@ export default function LandingPageEditor() {
   const [autoSaveOn, setAutoSaveOn] = useState(true) // live preview = auto-save
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved'>('idle')
   // ?edit=1 tells the frontoffice it's running inside the editor → enables click-to-edit overlay
-  const previewUrl = (process.env.NEXT_PUBLIC_FRONTOFFICE_URL ?? 'http://localhost:3000') + `?edit=1&_=${previewBump}`
+  const previewUrl = `${frontofficeBase()}/?edit=1&_=${previewBump}`
 
   useEffect(() => {
     landingPageApi.get()
@@ -528,7 +550,7 @@ export default function LandingPageEditor() {
             <p className="text-muted-foreground text-sm">Personnalisez ce que les visiteurs voient sur <code className="text-xs">/</code>.</p>
           </div>
           <div className="flex gap-2">
-            <a href={process.env.NEXT_PUBLIC_FRONTOFFICE_URL ?? 'http://localhost:3000'} target="_blank" rel="noopener noreferrer"
+            <a href={frontofficeBase()} target="_blank" rel="noopener noreferrer"
               className="inline-flex h-9 items-center justify-center rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent transition-colors">
               Aperçu →
             </a>
