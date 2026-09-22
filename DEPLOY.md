@@ -89,12 +89,11 @@ docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compo
 
 ## Image list (all `:${TAG}`)
 ```
-yassinecherni9/medianet-eureka-server         yassinecherni9/medianet-ai-scoring-service
-yassinecherni9/medianet-auth-service          yassinecherni9/medianet-ai-matching-service
-yassinecherni9/medianet-candidature-service   yassinecherni9/medianet-admin-ai-service
-yassinecherni9/medianet-notification-service  yassinecherni9/medianet-pitch-media-service
-yassinecherni9/medianet-programme-service     yassinecherni9/medianet-api-gateway
-yassinecherni9/medianet-frontoffice           yassinecherni9/medianet-backoffice
+yassinecherni9/medianet-eureka-server         yassinecherni9/medianet-admin-ai-service
+yassinecherni9/medianet-auth-service          yassinecherni9/medianet-pitch-media-service
+yassinecherni9/medianet-candidature-service   yassinecherni9/medianet-api-gateway
+yassinecherni9/medianet-notification-service  yassinecherni9/medianet-frontoffice
+yassinecherni9/medianet-programme-service     yassinecherni9/medianet-backoffice
 yassinecherni9/medianet-nginx
 ```
 Third-party images (postgres, minio, ollama, rabbitmq) are pulled from their own

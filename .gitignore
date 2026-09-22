@@ -32,6 +32,24 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# ─── Python (pitch-media-service) ─────────────────────────────
+**/__pycache__/
+*.pyc
+*.pyo
+**/.pytest_cache/
+**/venv/
+**/.venv/
+
+# ─── AI-assisted development tooling (local only, not part of the
+#     delivered application — keep it out of the public history) ──
+.claude/
+.agents/
+_bmad/
+_bmad-output/
+
+# ─── Report / thesis drafts (kept locally, not part of the codebase) ──
+docs/
+
 # ─── Docker ──────────────────────────────────────────────────
 nginx/certs/
 

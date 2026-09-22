@@ -292,6 +292,9 @@ services:
       MANAGEMENT_HEALTH_RABBIT_ENABLED: "false"
       EUREKA_URI: http://eureka-server:8761/eureka
       JAVA_TOOL_OPTIONS: ${AUTH_JAVA_OPTS:--Xmx320m}
+      # Seeded admin account (created once, on first boot). Override in .env.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@medianet.dz}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin1234!}
     depends_on:
       postgres-auth:
         condition: service_healthy
