@@ -38,9 +38,8 @@ target "_common" {
 group "default" {
   targets = [
     "eureka-server", "auth-service", "candidature-service", "notification-service",
-    "programme-service", "ai-scoring-service", "ai-matching-service",
-    "admin-ai-service", "pitch-media-service", "api-gateway", "nginx",
-    "frontoffice", "backoffice",
+    "programme-service", "admin-ai-service", "pitch-media-service", "api-gateway",
+    "nginx", "frontoffice", "backoffice",
   ]
 }
 
@@ -69,16 +68,6 @@ target "programme-service" {
   inherits = ["_common"]
   context  = "./backend/programme-service"
   tags     = [img("programme-service")]
-}
-target "ai-scoring-service" {
-  inherits = ["_common"]
-  context  = "./backend/ai-scoring-service"
-  tags     = [img("ai-scoring-service")]
-}
-target "ai-matching-service" {
-  inherits = ["_common"]
-  context  = "./backend/ai-matching-service"
-  tags     = [img("ai-matching-service")]
 }
 target "admin-ai-service" {
   inherits = ["_common"]

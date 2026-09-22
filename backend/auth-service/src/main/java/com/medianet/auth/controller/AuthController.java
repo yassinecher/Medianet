@@ -273,9 +273,10 @@ public class AuthController {
         return ResponseEntity.ok(authService.updateJuryProfile(userId, req));
     }
 
-    // ── AI-service helpers (any authenticated caller) ─────────────────────────
+    // ── Cross-service helpers (any authenticated caller) ──────────────────────
 
-    /** Returns all active mentor users — used by ai-matching-service. */
+    /** Returns all active mentor users — used for mentor assignment and best-fit
+     *  matching (programme roster, organisation vis-à-vis, admin AI assistant). */
     @GetMapping("/mentors")
     public ResponseEntity<List<UserDto>> getAvailableMentors() {
         return ResponseEntity.ok(authService.getUsersByRole("MENTOR"));

@@ -11,6 +11,8 @@ export const metadata: Metadata = {
   description: 'Console d\'administration Medianet Incubateur',
 }
 
+/** Root shell for the backoffice (admin console): theme provider + global toasts.
+ *  Per-page chrome (sidebar, topbar) lives in AdminLayout, not here. */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr" suppressHydrationWarning>

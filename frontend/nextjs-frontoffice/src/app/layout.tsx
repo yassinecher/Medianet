@@ -11,6 +11,8 @@ export const metadata: Metadata = {
   description: "Plateforme d'incubation de startups Medianet",
 }
 
+/** Root shell for the frontoffice (porteur/mentor/jury portal): theme provider +
+ *  global toasts. Per-page chrome (navbar, sidebar) lives in AppShell, not here. */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr" suppressHydrationWarning>

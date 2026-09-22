@@ -6,6 +6,7 @@ import com.medianet.auth.service.ModuleCatalog;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -13,6 +14,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.time.LocalDateTime;
 import java.util.*;
 
+/**
+ * Identity and access: users, JWT issuance/validation, dynamic roles and
+ * per-user permission grants, live permission refresh over SSE, organisations,
+ * and role-specific profiles (porteur / mentor / jury). Owns its own PostgreSQL
+ * database ({@code auth_db}) and seeds the default admin account on first boot
+ * (see {@link #initData} below).
+ */
 @SpringBootApplication
 @EnableScheduling   // SSE heartbeat (AuthEventService)
 public class AuthServiceApplication {
@@ -27,7 +35,11 @@ public class AuthServiceApplication {
             RoleRepository roleRepository,
             PermissionRepository permissionRepository,
             AdminProfileRepository adminProfileRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            // The seeded admin account is configurable via .env (ADMIN_EMAIL /
+            // ADMIN_PASSWORD) — never hardcode real credentials in source.
+            @Value("${ADMIN_EMAIL:admin@medianet.dz}") String adminEmail,
+            @Value("${ADMIN_PASSWORD:Admin1234!}") String adminPassword) {
 
         return args -> {
 
@@ -107,13 +119,13 @@ public class AuthServiceApplication {
             }
 
             // ── 3. Seed admin user ────────────────────────────────────────────
-            if (userRepository.findByEmail("admin@medianet.dz").isEmpty()) {
+            if (userRepository.findByEmail(adminEmail).isEmpty()) {
                 Role adminRole = roleRepository.findByName("ADMIN")
                         .orElseThrow(() -> new RuntimeException("ADMIN role not found"));
 
                 User admin = User.builder()
-                        .email("admin@medianet.dz")
-                        .password(passwordEncoder.encode("Admin1234!"))
+                        .email(adminEmail)
+                        .password(passwordEncoder.encode(adminPassword))
                         .firstName("Admin")
                         .lastName("Medianet")
                         .roles(new HashSet<>(Set.of(adminRole)))
