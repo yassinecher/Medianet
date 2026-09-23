@@ -39,7 +39,7 @@ export default function CandidaturesPage() {
             <p className="text-muted-foreground">{candidatures.length} candidature(s)</p>
           </div>
           <Link href="/programmes">
-            <Button className="bg-gradient-to-r from-brand-600 to-purple-600 text-white">
+            <Button className="bg-gradient-to-r from-brand-600 to-brand-accent text-white">
               <Plus className="h-4 w-4" />Nouvelle candidature
             </Button>
           </Link>
@@ -84,7 +84,7 @@ export default function CandidaturesPage() {
               <div className="py-16 text-center">
                 <p className="text-muted-foreground">Vous n'avez pas encore de candidature.</p>
                 <Link href="/programmes">
-                  <Button className="mt-4 bg-gradient-to-r from-brand-600 to-purple-600 text-white">
+                  <Button className="mt-4 bg-gradient-to-r from-brand-600 to-brand-accent text-white">
                     Explorer les programmes
                   </Button>
                 </Link>

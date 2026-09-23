@@ -23,7 +23,7 @@ export function AIThinkingPanel({ stages, running, onClose }: {
         className="fixed bottom-4 right-4 z-50 w-[22rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-border
                    bg-card/85 p-3 shadow-2xl backdrop-blur-xl">
         <div className="mb-2 flex items-center gap-2">
-          <span className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-purple-600">
+          <span className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-accent">
             <Brain className="h-3.5 w-3.5 text-white" />
             {running && <span className="absolute inset-0 animate-ping rounded-lg bg-brand-500/40" />}
           </span>

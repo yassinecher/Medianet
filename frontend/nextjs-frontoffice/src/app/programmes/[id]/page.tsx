@@ -100,13 +100,13 @@ function PorteurProgressCard({ phases, done, current, next, pct }: {
 }) {
   const upcoming = phases.filter((p) => (p.status ?? 'UPCOMING') === 'UPCOMING').length
   return (
-    <div className="rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500/5 to-purple-500/5 p-5 shadow-sm">
+    <div className="rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500/5 to-brand-accent/5 p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-bold text-foreground"><Trophy className="h-4 w-4 text-brand-500" />Votre parcours dans le programme</h3>
         <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-xs font-bold text-brand-700 dark:text-brand-300">{pct}%</span>
       </div>
       <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-purple-500 transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
+        <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-brand-accent transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
       </div>
       <div className="grid grid-cols-3 gap-2 text-center">
         <MiniStat icon={CheckCircle2} label="Terminées" value={done} tone="text-emerald-500" />
@@ -443,7 +443,7 @@ export default function ProgrammeDetailPage() {
          <div
   className="relative h-72 sm:h-96 dark:brightness-75"
   style={{
-    background: 'linear-gradient(90deg, #fbb431 0%, #0a8fb1 35%,  #14c8f3 100%)'
+    background: 'var(--banner-bg, linear-gradient(90deg, #fbb431 0%, #0a8fb1 35%,  #14c8f3 100%))'
   }}
 >    <div className="absolute inset-0 opacity-20"
               style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '32px 32px' }} />
@@ -760,7 +760,7 @@ export default function ProgrammeDetailPage() {
             <div className="lg:sticky lg:top-6 space-y-4">
               {/* Deadline countdown — urgency at a glance */}
               {!alreadyApplied && showApply && deadlineDays != null && deadlineDays >= 0 && (
-                <div className="rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500/10 to-purple-500/10 p-4 text-center">
+                <div className="rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500/10 to-brand-accent/10 p-4 text-center">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Clôture des candidatures</p>
                   <p className="mt-1 text-4xl font-black leading-none text-brand-600 dark:text-brand-400 tabular-nums">{deadlineDays}</p>
                   <p className="text-xs text-muted-foreground">jour{deadlineDays > 1 ? 's' : ''} restant{deadlineDays > 1 ? 's' : ''}</p>
@@ -827,7 +827,7 @@ export default function ProgrammeDetailPage() {
                 )}
                 {!alreadyApplied && showApply && (
                   <div className="mt-6 space-y-3">
-                    <Button className="w-full gap-2 bg-gradient-to-r from-brand-600 to-purple-600 text-white font-bold shadow-lg hover:shadow-brand-500/30 hover:shadow-xl transition-all"
+                    <Button className="w-full gap-2 bg-gradient-to-r from-brand-600 to-brand-accent text-white font-bold shadow-lg hover:shadow-brand-500/30 hover:shadow-xl transition-all"
                       size="lg" onClick={handleApply}>
                       {programme.applicationUrl ? <ExternalLink className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
                       Rejoindre le programme
@@ -859,7 +859,7 @@ export default function ProgrammeDetailPage() {
         {/* ── Final call-to-action band ── */}
         {!alreadyApplied && showApply && (
           <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }}
-            className="relative mt-14 overflow-hidden rounded-3xl bg-gradient-to-r from-brand-600 via-brand-600 to-purple-600 p-8 text-center text-white shadow-xl sm:p-12">
+            className="relative mt-14 overflow-hidden rounded-3xl bg-gradient-to-r from-brand-600 via-brand-600 to-brand-accent p-8 text-center text-white shadow-xl sm:p-12">
             <div className="absolute inset-0 opacity-20"
               style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '28px 28px' }} />
             <div className="relative">

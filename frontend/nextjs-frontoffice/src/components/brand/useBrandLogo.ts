@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { landingPageApi } from '@/lib/api'
+import { fetchSiteSettings } from '@/lib/siteSettings'
 
 /**
  * Logo override chosen by an admin in the landing-page editor (`logoUrl`).
@@ -32,9 +32,8 @@ export function useBrandLogoUrl(): string | null {
     listeners.add(setUrl)
     setUrl(cached !== undefined ? cached : readStored())
     if (cached === undefined) {
-      inflight ??= landingPageApi.get()
-        .then((r) => (r.data?.logoUrl as string) || null)
-        .catch(() => readStored())
+      inflight ??= fetchSiteSettings()
+        .then((data) => (data ? (data.logoUrl as string) || null : readStored()))
       inflight.then(setBrandLogoUrl)
     }
     return () => { listeners.delete(setUrl) }

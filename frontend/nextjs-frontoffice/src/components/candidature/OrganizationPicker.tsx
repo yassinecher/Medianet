@@ -93,7 +93,7 @@ export function OrganizationPicker({ currentUserId, selectedId, onSelect }: Prop
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 text-white">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-600 to-brand-accent text-white">
           <Building2 className="h-4 w-4" />
         </div>
         <div>

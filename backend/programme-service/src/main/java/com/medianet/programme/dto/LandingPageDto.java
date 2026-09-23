@@ -79,6 +79,10 @@ public class LandingPageDto {
     private String logoUrl;
     private String primaryColor;
     private String accentColor;
+    /** "default" | "same" | "custom" — colors applied to the other front-office pages. */
+    private String siteThemeMode;
+    private String sitePrimaryColor;
+    private String siteAccentColor;
 
     // Visibility flags
     private Boolean showHero;

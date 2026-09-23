@@ -18,8 +18,9 @@ export function BorderBeam({
   className,
   size = 200,
   duration = 10,
-  colorFrom = '#00A3E0',
-  colorTo = '#7dd3fc',
+  // Theme-aware defaults; any CSS color works (hex, rgb(), var()).
+  colorFrom = 'rgb(var(--brand-500))',
+  colorTo = 'rgb(var(--brand-300))',
   delay = 0,
   borderWidth = 1.5,
 }: {
@@ -48,7 +49,7 @@ export function BorderBeam({
       const deg = (elapsed / totalMs) * 360
       // Long, feathered head/tail so the sweep reads as a soft travelling glow
       // (hard 60°/180° stops looked rigid/mechanical on rectangular cards).
-      el.style.background = `conic-gradient(from ${deg}deg, transparent 0deg, ${colorFrom}22 30deg, ${colorFrom} 110deg, ${colorTo} 170deg, ${colorTo}22 250deg, transparent 300deg)`
+      el.style.background = `conic-gradient(from ${deg}deg, transparent 0deg, color-mix(in srgb, ${colorFrom} 13%, transparent) 30deg, ${colorFrom} 110deg, ${colorTo} 170deg, color-mix(in srgb, ${colorTo} 13%, transparent) 250deg, transparent 300deg)`
       raf = requestAnimationFrame(tick)
     }
 

@@ -79,7 +79,7 @@ export function CoachingOverview({ p, isMentor, onGoTab }: {
           <p className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground"><Target className="h-3.5 w-3.5" />Plan</p>
           <p className="mt-1 text-2xl font-bold text-foreground">{pct}<span className="text-sm text-muted-foreground">%</span></p>
           <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-purple-500" style={{ width: `${Math.max(3, pct)}%` }} />
+            <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-brand-accent" style={{ width: `${Math.max(3, pct)}%` }} />
           </div>
         </button>
         <button onClick={() => onGoTab('meetings')} className={`${stat} text-left transition-colors hover:border-brand-300`}>

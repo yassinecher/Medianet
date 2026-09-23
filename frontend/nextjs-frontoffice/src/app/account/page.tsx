@@ -95,7 +95,7 @@ export default function AccountPage() {
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
           <MagicCard className="p-6">
             <div className="flex items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-purple-600 text-white text-xl font-bold shadow-lg">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-600 to-brand-accent text-white text-xl font-bold shadow-lg">
                 {getInitials(`${user.firstName} ${user.lastName}`)}
               </div>
               <div className="flex-1 min-w-0">

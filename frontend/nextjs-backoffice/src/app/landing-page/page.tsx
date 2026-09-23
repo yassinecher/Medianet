@@ -84,6 +84,10 @@ interface LandingPage {
   logoUrl?: string
   primaryColor?: string
   accentColor?: string
+  /** Colors of the other front-office pages: default | same (as landing) | custom */
+  siteThemeMode?: 'default' | 'same' | 'custom'
+  sitePrimaryColor?: string
+  siteAccentColor?: string
   showHero?: boolean
   showStats?: boolean
   showAbout?: boolean
@@ -119,6 +123,28 @@ const CUSTOM_LAYOUTS: Record<CustomLayout, { label: string; hint: string; icon: 
   carousel:     { label: 'Carrousel de photos', hint: 'Photos défilantes avec flèches et légendes', icon: GalleryHorizontal },
 }
 const newSectionId = () => Math.random().toString(36).slice(2, 10)
+
+const SITE_THEME_MODES: { id: 'default' | 'same' | 'custom'; label: string; hint: string }[] = [
+  { id: 'default', label: 'Défaut Medianet',          hint: 'Les autres pages gardent les couleurs Medianet.' },
+  { id: 'same',    label: "Comme la page d'accueil",  hint: "Les couleurs ci-dessus s'appliquent à tout le site public." },
+  { id: 'custom',  label: 'Couleurs dédiées',         hint: 'Choisissez des couleurs différentes pour le reste du site.' },
+]
+
+/** Hex color field: native picker + text input. Empty value = default palette. */
+function ColorField({ label, value, fallback, onChange }: {
+  label: string; value?: string; fallback: string; onChange: (v: string) => void
+}) {
+  return (
+    <div>
+      <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">{label}</label>
+      <div className="flex gap-2">
+        <input type="color" value={value || fallback} onChange={(e) => onChange(e.target.value)}
+          className="h-10 w-12 rounded-lg border border-input cursor-pointer" />
+        <Input value={value ?? ''} placeholder="Défaut" onChange={(e) => onChange(e.target.value)} className="font-mono" />
+      </div>
+    </div>
+  )
+}
 
 // ── Theme presets (one-click apply primary + accent colors) ───────────────────
 // The "default" preset uses empty strings → on save, the backend stores NULL,
@@ -776,6 +802,40 @@ export default function LandingPageEditor() {
                   onChange={(e) => set('accentColor', e.target.value)} className="font-mono" />
               </div>
             </div>
+          </div>
+
+          {/* Colors of the rest of the front office */}
+          <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
+            <div>
+              <p className="text-[10px] font-medium text-muted-foreground uppercase">Couleurs du reste du site public</p>
+              <p className="text-[10px] text-muted-foreground">
+                Programmes, connexion, tableaux de bord, profil… Les contrastes sont ajustés automatiquement pour les modes clair et sombre.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {SITE_THEME_MODES.map((m) => {
+                const active = (page.siteThemeMode ?? 'default') === m.id
+                return (
+                  <button key={m.id} type="button" onClick={() => set('siteThemeMode', m.id)} title={m.hint}
+                    className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                      active ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300'
+                             : 'border-border bg-card text-muted-foreground hover:border-brand-400'}`}>
+                    {m.label}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-[10px] text-muted-foreground -mt-1">
+              {SITE_THEME_MODES.find((m) => m.id === (page.siteThemeMode ?? 'default'))?.hint}
+            </p>
+            {page.siteThemeMode === 'custom' && (
+              <div className="grid sm:grid-cols-2 gap-4">
+                <ColorField label="Couleur primaire du site" value={page.sitePrimaryColor} fallback="#00A3E0"
+                  onChange={(v) => set('sitePrimaryColor', v)} />
+                <ColorField label="Couleur accent du site" value={page.siteAccentColor} fallback="#9333EA"
+                  onChange={(v) => set('siteAccentColor', v)} />
+              </div>
+            )}
           </div>
 
           {/* Section list with toggle + reorder */}

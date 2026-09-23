@@ -244,7 +244,7 @@ export default function JuryEvaluatePage() {
                       <div className="flex items-center justify-between gap-2">
                         <span className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-700 dark:text-purple-300"><Sparkles className="h-3.5 w-3.5" />Évaluation Medi</span>
                         <button onClick={runMedi} disabled={aiLoading}
-                          className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-purple-600 to-brand-600 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-60">
+                          className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-brand-accent to-brand-600 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-60">
                           {aiLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}{ai ? 'Relancer' : 'Demander à Medi'}
                         </button>
                       </div>

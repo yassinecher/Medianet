@@ -118,7 +118,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           collapsed && 'justify-center px-0'
         )}>
           {collapsed ? (
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-purple-600">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-accent">
               <span className="text-xs font-bold text-white">M</span>
             </div>
           ) : (
@@ -373,7 +373,7 @@ function AvatarMenu({ user, roles, onLogout }: {
       {open && (
         <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-border bg-card shadow-xl overflow-hidden z-50">
           {/* User header */}
-          <div className="border-b border-border px-3 py-3 bg-gradient-to-br from-brand-500/5 to-purple-500/5">
+          <div className="border-b border-border px-3 py-3 bg-gradient-to-br from-brand-500/5 to-brand-accent/5">
             <p className="text-sm font-bold text-foreground truncate">{user.firstName} {user.lastName}</p>
             <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
             {roles.length > 0 && (
