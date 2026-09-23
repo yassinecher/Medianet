@@ -16,9 +16,34 @@ api.interceptors.request.use((config) => {
 /** Guards against redirect storms when several requests 401 at once. */
 let sessionEnding = false
 
+/**
+ * The gateway answers 401 {code: 'TOKEN_STALE'} when the user's roles or
+ * permissions changed after this JWT was minted (server-side revocation). One
+ * shared refresh is performed for every request that hit it, then they retry.
+ */
+let staleRefresh: Promise<any> | null = null
+function refreshStaleSession(): Promise<any> {
+  if (!staleRefresh) {
+    staleRefresh = api.post('/api/auth/refresh')
+      .then(({ data }) => { useAuthStore.getState().setAuth(data, data.token); return data })
+      .finally(() => { setTimeout(() => { staleRefresh = null }, 0) })
+  }
+  return staleRefresh
+}
+
 api.interceptors.response.use(
   (res) => res,
-  (error) => {
+  async (error) => {
+    const cfg = error.config
+    if (typeof window !== 'undefined' && error.response?.status === 401
+        && error.response.data?.code === 'TOKEN_STALE' && cfg && !cfg._staleRetry) {
+      cfg._staleRetry = true
+      try {
+        const data = await refreshStaleSession()
+        cfg.headers.Authorization = `Bearer ${data.token}`
+        return api(cfg)
+      } catch { /* refresh failed → fall through to the normal 401 handling */ }
+    }
     if (typeof window !== 'undefined') {
       if (error.response?.status === 401) {
         // The session is dead. Clear BOTH the cookie and the persisted store —

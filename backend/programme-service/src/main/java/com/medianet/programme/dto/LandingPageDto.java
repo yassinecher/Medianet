@@ -21,6 +21,8 @@ public class LandingPageDto {
     private String heroSubtitle;
     private String heroBadge;
     private String heroImageUrl;
+    /** Additional hero photos (slideshow). */
+    private List<String> heroImages;
 
     private String primaryCtaLabel;
     private String primaryCtaLink;
@@ -61,6 +63,7 @@ public class LandingPageDto {
     private String  programmesTitle;
     private String  programmesSubtitle;
     private Integer programmesLimit;
+    private List<String> programmesImages;
 
     // Final CTA + footer
     private String ctaTitle;
@@ -69,7 +72,11 @@ public class LandingPageDto {
     private String ctaButtonLink;
     private String footerText;
 
+    // Admin-created sections
+    private List<LandingCustomSection> customSections;
+
     // Theme
+    private String logoUrl;
     private String primaryColor;
     private String accentColor;
 

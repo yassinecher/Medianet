@@ -2,7 +2,7 @@
 import Cookies from 'js-cookie'
 import toast from 'react-hot-toast'
 import { authApi, streamAuthEvents } from '@/lib/api'
-import { useAuthStore } from '@/store/auth.store'
+import { useAuthStore, hasAdminAccess, endAdminSession } from '@/store/auth.store'
 
 /**
  * Singleton subscription to the auth-service live events stream.
@@ -57,6 +57,10 @@ async function handleEvent(type: string, _payload: any) {
 async function refreshAuth(announce: boolean) {
   try {
     const { data } = await authApi.refresh()
+    if (!hasAdminAccess(data)) {
+      endAdminSession("Votre rôle administrateur a été retiré — accès à l'espace d'administration révoqué.")
+      return
+    }
     useAuthStore.getState().setAuth(data, data.token)
     if (announce) toast('Vos rôles et permissions ont été mis à jour', { id: 'perms-updated' })
   } catch {

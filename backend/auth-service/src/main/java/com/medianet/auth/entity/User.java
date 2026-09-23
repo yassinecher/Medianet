@@ -60,6 +60,14 @@ public class User {
      */
     private String authProvider;
 
+    /**
+     * Bumped every time the user's roles, permissions or active flag change.
+     * Embedded in the JWT as {@code tv}; the gateway rejects tokens carrying an
+     * older version, so a revoked right stops working immediately instead of at
+     * token expiry. Nullable (= 0) so ddl-auto:update can add it to a populated table.
+     */
+    private Integer tokenVersion;
+
     private LocalDateTime createdAt;
 
     // ── Role-specific profiles (optional, only present if role is assigned) ──

@@ -34,6 +34,8 @@ export function ProgrammeCard({ programme, appliedStatus, invited }: { programme
   const title = programme.title ?? programme.name ?? ''
   const accepting = (programme as any).acceptingApplications
   const left = daysLeft(programme)
+  // No banner? Use the first photo of the programme gallery so the card still has a visual.
+  const cover = programme.bannerImageUrl || programme.galleryUrls?.find(Boolean)
   // Countdown chip: urgent (≤7j) = amber pulse, open = emerald, closed = muted.
   const countdown = accepting && left != null && left >= 0
     ? { label: left === 0 ? 'Dernier jour !' : `Clôture dans ${left} j`, urgent: left <= 7 }
@@ -48,9 +50,9 @@ export function ProgrammeCard({ programme, appliedStatus, invited }: { programme
         invited && 'ring-2 ring-violet-500/60 ring-offset-2 ring-offset-background shadow-md shadow-violet-500/10',
       )}>
         {/* Banner */}
-        {programme.bannerImageUrl ? (
+        {cover ? (
           <div className="relative h-36 overflow-hidden">
-            <img src={programme.bannerImageUrl} alt={title}
+            <img src={cover} alt={title}
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
             {programme.logoUrl && (
@@ -66,7 +68,7 @@ export function ProgrammeCard({ programme, appliedStatus, invited }: { programme
 
             
           <div   style={{
-    background: 'linear-gradient(90deg, #fbb431 0%, #0a8fb1 35%, #14c8f3 100%)'
+    background: 'var(--shimmer-bg, linear-gradient(90deg, #fbb431 0%, #0a8fb1 35%, #14c8f3 100%))'
   }} className="relative h-20 dark:brightness-75">
             <div className="absolute inset-0 opacity-10"
               style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />

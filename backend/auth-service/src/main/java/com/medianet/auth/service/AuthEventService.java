@@ -1,10 +1,15 @@
 package com.medianet.auth.service;
 
+import com.medianet.auth.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -24,10 +29,18 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * {@code permissions-changed} event. The client then calls {@code POST
  * /api/auth/refresh} to obtain a fresh JWT (claims re-read from the DB) and
  * re-renders its layout.
+ *
+ * <p>Every such change also bumps the users' {@code tokenVersion}, which revokes
+ * the JWTs they already hold: the gateway rejects a token whose {@code tv} claim
+ * is older than the DB value, even if the client never received the event.
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class AuthEventService {
+
+    private final UserRepository userRepository;
+    private final PlatformTransactionManager transactionManager;
 
     /** userId → open SSE streams for that user. */
     private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
@@ -72,13 +85,31 @@ public class AuthEventService {
      * (and nothing is announced for a rolled-back change).
      */
     private void sendAfterCommit(List<Long> userIds, String event) {
-        Runnable task = () -> userIds.forEach(id -> send(id, event));
+        // Revoke first, then notify: the client's refresh must mint a token that
+        // already carries the new version. Runs in its own transaction after the
+        // caller's commit so it can't be overwritten by a later flush of a
+        // still-managed User entity.
+        Runnable task = () -> {
+            revokeTokens(userIds);
+            userIds.forEach(id -> send(id, event));
+        };
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override public void afterCommit() { task.run(); }
             });
         } else {
             task.run();
+        }
+    }
+
+    private void revokeTokens(List<Long> userIds) {
+        if (userIds.isEmpty()) return;
+        try {
+            TransactionTemplate tx = new TransactionTemplate(transactionManager);
+            tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            tx.executeWithoutResult(s -> userRepository.bumpTokenVersion(userIds));
+        } catch (Exception e) {
+            log.warn("Could not bump token version for users {}: {}", userIds, e.getMessage());
         }
     }
 

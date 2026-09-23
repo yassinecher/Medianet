@@ -27,6 +27,11 @@ jwt:
   secret: ${JWT_SECRET:medianet-super-secret-jwt-key-2024-medianet-incubation}
   expiration: 86400000
 
+# Google Sign-In — the PUBLIC OAuth client id (audience the ID token is checked
+# against). No client secret is used. Leave empty to disable the feature.
+google:
+  client-id: ${GOOGLE_CLIENT_ID:}
+
 eureka:
   client:
     service-url:

@@ -39,6 +39,9 @@ const config: Config = {
           900: 'rgb(var(--brand-900,  46  50 133) / <alpha-value>)',
           950: 'rgb(var(--brand-950,  27  29  78) / <alpha-value>)',
         },
+        // Secondary gradient color — overridable from the landing editor
+        // ("couleur accent"); defaults to the original purple.
+        'brand-accent': 'rgb(var(--brand-accent, 147 51 234) / <alpha-value>)',
       },
       borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)' },
       fontFamily: { sans: ['var(--font-inter)', 'system-ui', 'sans-serif'] },

@@ -1,33 +1,36 @@
+'use client'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { useBrandLogoUrl } from './useBrandLogo'
+
+const HEIGHT = { sm: 'h-8', md: 'h-9', lg: 'h-11' } as const
 
 /**
- * Medianet wordmark — MEDIA in gold, NET in cyan, an optional tagline and the
- * signature multicolor stripe. Pure CSS/typography (no image asset), so it works
- * in both themes. Self-contained (the stripe gradient is inline).
+ * Medianet Incubator logo. Defaults to the bundled SVG (navy wordmark in light
+ * mode, a light-text variant in dark mode); an admin can replace it from the
+ * landing-page editor ("Logo du site"), which then applies to every page.
+ * `stripe` / `tagline` are kept for call-site compatibility — the artwork
+ * already contains the tagline and the multicolor mark.
  */
-export function MedianetLogo({ size = 'md', stripe = true, tagline = true, href, className }: {
+export function MedianetLogo({ size = 'md', href, className }: {
   size?: 'sm' | 'md' | 'lg'
   stripe?: boolean
   tagline?: boolean
+  /** Wrap in a link (e.g. "/") when provided. */
   href?: string
   className?: string
 }) {
-  const word = size === 'lg' ? 'text-3xl' : size === 'sm' ? 'text-lg' : 'text-2xl'
+  const custom = useBrandLogoUrl()
+  const h = HEIGHT[size]
   const inner = (
-    <span className={cn('inline-flex flex-col leading-none', className)}>
-      <span className={cn('font-extrabold tracking-tight', word)}>
-        <span style={{ color: '#fbb431' }}>MEDIA</span>
-        <span style={{ color: '#0cb3d7' }}>NET</span>
-      </span>
-      {tagline && (
-        <span className="mt-0.5 text-[8px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          E-business Digital Strategy
-        </span>
-      )}
-      {stripe && (
-        <span className="mt-1.5 h-[3px] w-full rounded-full"
-          style={{ background: 'linear-gradient(90deg,#fbb431 0%,#f97316 35%,#0cb3d7 70%,#6272f6 100%)' }} />
+    <span className={cn('inline-flex items-center', className)}>
+      {custom ? (
+        <img src={custom} alt="Medianet Incubator" className={cn(h, 'w-auto max-w-[220px] object-contain')} />
+      ) : (
+        <>
+          <img src="/brand/medianet-incubator.svg" alt="Medianet Incubator" className={cn(h, 'w-auto dark:hidden')} />
+          <img src="/brand/medianet-incubator-dark.svg" alt="Medianet Incubator" className={cn(h, 'hidden w-auto dark:block')} />
+        </>
       )}
     </span>
   )

@@ -10,7 +10,7 @@ import {
   Handshake, BookOpen,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import { useAuthStore, useUser } from '@/store/auth.store'
+import { useAuthStore, useUser, hasAdminAccess, endAdminSession } from '@/store/auth.store'
 import { startAuthEvents } from '@/lib/authEvents'
 import { AccessDenied } from '@/components/AccessDenied'
 import { MedianetLogo } from '@/components/brand/MedianetLogo'
@@ -54,6 +54,13 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   // Live permission updates: refreshes the JWT (and this layout) whenever an
   // admin changes this user's roles/permissions; logs out if disabled.
   useEffect(() => { startAuthEvents() }, [])
+
+  // A session whose user is no longer ADMIN (role removed) must not keep the shell.
+  useEffect(() => {
+    if (user && !hasAdminAccess(user)) {
+      endAdminSession("Votre rôle administrateur a été retiré — accès à l'espace d'administration révoqué.")
+    }
+  }, [user])
 
   const handleLogout = () => { logout(); router.push('/login') }
 

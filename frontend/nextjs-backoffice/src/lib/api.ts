@@ -1,7 +1,7 @@
 import axios from 'axios'
 import Cookies from 'js-cookie'
 import toast from 'react-hot-toast'
-import { useAuthStore } from '@/store/auth.store'
+import { useAuthStore, hasAdminAccess, endAdminSession } from '@/store/auth.store'
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
 export const api = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'application/json' } })
@@ -15,9 +15,39 @@ api.interceptors.request.use((c) => {
 /** Guards against redirect storms when several requests 401 at once. */
 let sessionEnding = false
 
+/**
+ * The gateway answers 401 {code: 'TOKEN_STALE'} when the user's roles or
+ * permissions changed after this JWT was minted (server-side revocation). One
+ * shared refresh is performed for every request that hit it, then they retry.
+ */
+let staleRefresh: Promise<any> | null = null
+function refreshStaleSession(): Promise<any> {
+  if (!staleRefresh) {
+    staleRefresh = api.post('/api/auth/refresh')
+      .then(({ data }) => { useAuthStore.getState().setAuth(data, data.token); return data })
+      .finally(() => { setTimeout(() => { staleRefresh = null }, 0) })
+  }
+  return staleRefresh
+}
+
 api.interceptors.response.use(
   (r) => r,
-  (err) => {
+  async (err) => {
+    const cfg = err.config
+    if (typeof window !== 'undefined' && err.response?.status === 401
+        && err.response.data?.code === 'TOKEN_STALE' && cfg && !cfg._staleRetry) {
+      cfg._staleRetry = true
+      try {
+        const data = await refreshStaleSession()
+        if (!hasAdminAccess(data)) {
+          sessionEnding = true
+          endAdminSession("Votre rôle administrateur a été retiré — accès à l'espace d'administration révoqué.")
+          return Promise.reject(err)
+        }
+        cfg.headers.Authorization = `Bearer ${data.token}`
+        return api(cfg)
+      } catch { /* refresh failed → fall through to the normal 401 handling */ }
+    }
     if (typeof window !== 'undefined') {
       if (err.response?.status === 401) {
         // Clear cookie + persisted store so the app doesn't act "logged in" with

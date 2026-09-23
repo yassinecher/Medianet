@@ -1,5 +1,8 @@
 package com.medianet.programme.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medianet.programme.dto.LandingCustomSection;
 import com.medianet.programme.dto.LandingPageDto;
 import com.medianet.programme.entity.LandingFaq;
 import com.medianet.programme.entity.LandingFeature;
@@ -9,6 +12,7 @@ import com.medianet.programme.entity.LandingStat;
 import com.medianet.programme.entity.LandingTestimonial;
 import com.medianet.programme.repository.LandingPageRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,9 +22,11 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class LandingPageService {
 
     private final LandingPageRepository repository;
+    private final ObjectMapper objectMapper;
 
     private static final Long SINGLETON_ID = 1L;
 
@@ -40,6 +46,9 @@ public class LandingPageService {
         if (req.getHeroSubtitle()      != null) p.setHeroSubtitle(req.getHeroSubtitle());
         if (req.getHeroBadge()         != null) p.setHeroBadge(req.getHeroBadge());
         if (req.getHeroImageUrl()      != null) p.setHeroImageUrl(req.getHeroImageUrl());
+        if (req.getHeroImages()        != null) p.setHeroImagesJson(toJson(nonBlank(req.getHeroImages())));
+        if (req.getCustomSections()    != null) p.setCustomSectionsJson(toJson(req.getCustomSections()));
+        if (req.getLogoUrl()           != null) p.setLogoUrl(req.getLogoUrl().isBlank() ? null : req.getLogoUrl());
 
         if (req.getPrimaryCtaLabel()   != null) p.setPrimaryCtaLabel(req.getPrimaryCtaLabel());
         if (req.getPrimaryCtaLink()    != null) p.setPrimaryCtaLink(req.getPrimaryCtaLink());
@@ -91,6 +100,7 @@ public class LandingPageService {
         if (req.getProgrammesTitle()    != null) p.setProgrammesTitle(req.getProgrammesTitle());
         if (req.getProgrammesSubtitle() != null) p.setProgrammesSubtitle(req.getProgrammesSubtitle());
         if (req.getProgrammesLimit()    != null) p.setProgrammesLimit(req.getProgrammesLimit());
+        if (req.getProgrammesImages()   != null) p.setProgrammesImagesJson(toJson(nonBlank(req.getProgrammesImages())));
         if (req.getSectionOrder()    != null) p.setSectionOrder(req.getSectionOrder());
 
         return toDto(repository.save(p));
@@ -185,12 +195,37 @@ public class LandingPageService {
         return repository.save(p);
     }
 
+    private static List<String> nonBlank(List<String> urls) {
+        return urls.stream().filter(u -> u != null && !u.isBlank()).toList();
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Contenu de section invalide", e);
+        }
+    }
+
+    private <T> List<T> fromJson(String json, TypeReference<List<T>> type) {
+        if (json == null || json.isBlank()) return new ArrayList<>();
+        try {
+            return objectMapper.readValue(json, type);
+        } catch (Exception e) {
+            log.warn("Unreadable landing-page JSON column, ignoring: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
     private LandingPageDto toDto(LandingPage p) {
         return LandingPageDto.builder()
                 .heroTitle(p.getHeroTitle())
                 .heroSubtitle(p.getHeroSubtitle())
                 .heroBadge(p.getHeroBadge())
                 .heroImageUrl(p.getHeroImageUrl())
+                .heroImages(fromJson(p.getHeroImagesJson(), new TypeReference<List<String>>() {}))
+                .customSections(fromJson(p.getCustomSectionsJson(), new TypeReference<List<LandingCustomSection>>() {}))
+                .logoUrl(p.getLogoUrl())
                 .primaryCtaLabel(p.getPrimaryCtaLabel())
                 .primaryCtaLink(p.getPrimaryCtaLink())
                 .secondaryCtaLabel(p.getSecondaryCtaLabel())
@@ -227,6 +262,7 @@ public class LandingPageService {
                 .programmesTitle(p.getProgrammesTitle())
                 .programmesSubtitle(p.getProgrammesSubtitle())
                 .programmesLimit(p.getProgrammesLimit())
+                .programmesImages(fromJson(p.getProgrammesImagesJson(), new TypeReference<List<String>>() {}))
                 .sectionOrder(p.getSectionOrder())
                 .build();
     }

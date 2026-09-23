@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Shield, Eye, EyeOff, Loader2 } from 'lucide-react'
@@ -17,6 +17,14 @@ export default function AdminLoginPage() {
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  // Explain a forced logout (e.g. the ADMIN role was removed during the session).
+  useEffect(() => {
+    try {
+      const reason = sessionStorage.getItem('bo-logout-reason')
+      if (reason) { sessionStorage.removeItem('bo-logout-reason'); toast.error(reason, { id: 'logout-reason', duration: 6000 }) }
+    } catch {}
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

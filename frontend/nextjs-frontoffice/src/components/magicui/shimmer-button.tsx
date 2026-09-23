@@ -21,7 +21,8 @@ export const ShimmerButton = React.forwardRef<
   (
     {
       shimmerColor,
-background = 'linear-gradient(90deg, #fbb431 0%, #0a8fb1 55%, #14c8f3 100%)', 
+// --shimmer-bg is set by the landing page when an admin picks theme colors.
+background = 'var(--shimmer-bg, linear-gradient(90deg, #fbb431 0%, #0a8fb1 55%, #14c8f3 100%))',
 borderRadius = '9999px',
 duration = 2,
       className,
@@ -57,11 +58,11 @@ duration = 2,
   'overflow-hidden whitespace-nowrap rounded-full',
   'px-7 py-3 font-semibold text-white',
   'border border-white/20',
-  'shadow-[0_10px_30px_rgba(12,179,215,0.35)]',
+  'shadow-[0_10px_30px_rgb(var(--brand-500)/0.35)]',
   'transition-all duration-300 ease-out',
   'hover:scale-[1.03]',
   'hover:border-white/40',
-  'hover:shadow-[0_15px_40px_rgba(12,179,215,0.45)]',
+  'hover:shadow-[0_15px_40px_rgb(var(--brand-500)/0.45)]',
   'active:scale-[0.97]',
           className,
         )}
