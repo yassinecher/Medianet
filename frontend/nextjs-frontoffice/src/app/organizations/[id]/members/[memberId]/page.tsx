@@ -85,14 +85,14 @@ export default function MemberProfilePage() {
         {/* ── Header (cover + avatar) ── */}
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
           className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-          <div className="h-28 bg-gradient-to-r from-brand-500 via-brand-600 to-purple-600" />
+          <div className="h-28 bg-gradient-to-r from-brand-500 via-brand-600 to-brand-accent" />
           <div className="px-5 pb-5">
             <div className="-mt-10 flex items-end gap-4">
               {member.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={member.avatarUrl} alt={member.fullName} className="h-20 w-20 rounded-2xl object-cover border-4 border-card shadow-md" />
               ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-card bg-gradient-to-br from-brand-500 to-purple-600 text-white text-2xl font-black shadow-md">
+                <div className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-card bg-gradient-to-br from-brand-600 to-brand-accent text-white text-2xl font-black shadow-md">
                   {getInitials(member.fullName)}
                 </div>
               )}

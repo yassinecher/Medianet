@@ -73,7 +73,7 @@ function OrganisationCard({ organizationId, embedded }: { organizationId: number
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-      <div className="h-16 bg-gradient-to-r from-brand-500 via-brand-600 to-purple-600" />
+      <div className="h-16 bg-gradient-to-r from-brand-500 via-brand-600 to-brand-accent" />
       <div className="px-5 pb-5">
         <div className="-mt-8 flex items-end gap-3">
           {org.logoUrl ? (

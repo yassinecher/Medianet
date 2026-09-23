@@ -181,7 +181,7 @@ export default function PitchWorkspacePage() {
             <p className="truncate text-xs text-muted-foreground">{sub.companyName}</p>
           </div>
           {score != null && (
-            <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-purple-600 text-white shadow-lg">
+            <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-br from-brand-600 to-brand-accent text-white shadow-lg">
               <span className="text-lg font-black leading-none">{score}</span>
               <span className="text-[9px] opacity-80">/ 10</span>
             </div>

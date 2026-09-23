@@ -44,7 +44,7 @@ export default function CoachingListPage() {
   const Card = ({ e, role }: { e: Eng; role: 'mentor' | 'porteur' }) => (
     <Link href={`/coaching/${e.id}`}>
       <MagicCard className="flex h-full items-start gap-3 p-4 transition-transform hover:scale-[1.02]">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500/20 to-brand-500/20">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-accent/20 to-brand-500/20">
           <Building2 className="h-5 w-5 text-purple-500" />
         </div>
         <div className="min-w-0 flex-1">

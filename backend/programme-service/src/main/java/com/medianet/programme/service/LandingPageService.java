@@ -88,6 +88,15 @@ public class LandingPageService {
         // Non-empty hex → store as-is (admin chose a custom color).
         if (req.getPrimaryColor() != null) p.setPrimaryColor(req.getPrimaryColor().isBlank() ? null : req.getPrimaryColor());
         if (req.getAccentColor()  != null) p.setAccentColor(req.getAccentColor().isBlank()  ? null : req.getAccentColor());
+        if (req.getSiteThemeMode() != null) {
+            String mode = req.getSiteThemeMode().trim().toLowerCase();
+            if (!List.of("default", "same", "custom").contains(mode)) {
+                throw new IllegalArgumentException("siteThemeMode invalide : " + req.getSiteThemeMode());
+            }
+            p.setSiteThemeMode(mode);
+        }
+        if (req.getSitePrimaryColor() != null) p.setSitePrimaryColor(req.getSitePrimaryColor().isBlank() ? null : req.getSitePrimaryColor());
+        if (req.getSiteAccentColor()  != null) p.setSiteAccentColor(req.getSiteAccentColor().isBlank()  ? null : req.getSiteAccentColor());
         if (req.getShowHero()        != null) p.setShowHero(req.getShowHero());
         if (req.getShowStats()       != null) p.setShowStats(req.getShowStats());
         if (req.getShowAbout()       != null) p.setShowAbout(req.getShowAbout());
@@ -250,6 +259,9 @@ public class LandingPageService {
                 .footerText(p.getFooterText())
                 .primaryColor(p.getPrimaryColor())
                 .accentColor(p.getAccentColor())
+                .siteThemeMode(p.getSiteThemeMode() == null ? "default" : p.getSiteThemeMode())
+                .sitePrimaryColor(p.getSitePrimaryColor())
+                .siteAccentColor(p.getSiteAccentColor())
                 .showHero(p.getShowHero())
                 .showStats(p.getShowStats())
                 .showAbout(p.getShowAbout())

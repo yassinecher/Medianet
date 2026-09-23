@@ -161,6 +161,16 @@ public class LandingPage {
     /** Optional accent color for gradients. */
     private String accentColor;
 
+    /**
+     * Colors of the REST of the front office (every page except the landing):
+     * "default" = Medianet palette, "same" = reuse primaryColor/accentColor,
+     * "custom" = sitePrimaryColor/siteAccentColor.
+     */
+    @Builder.Default
+    private String siteThemeMode = "default";
+    private String sitePrimaryColor;
+    private String siteAccentColor;
+
     // ── Section visibility flags (all default true) ───────────────────────────
     @Builder.Default private Boolean showHero         = true;
     @Builder.Default private Boolean showStats        = true;

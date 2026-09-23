@@ -91,7 +91,7 @@ export default function CoachingWorkspacePage() {
             <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
               className="rounded-2xl border border-border bg-gradient-to-br from-card to-muted/20 p-5 shadow-sm">
               <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500/25 to-brand-500/25 text-purple-600 dark:text-purple-300">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-accent/25 to-brand-500/25 text-purple-600 dark:text-purple-300">
                   <Building2 className="h-7 w-7" />
                 </div>
                 <div className="min-w-0 flex-1">

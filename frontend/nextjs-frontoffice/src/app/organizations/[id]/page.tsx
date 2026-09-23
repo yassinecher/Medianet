@@ -192,7 +192,7 @@ export default function OrganizationProfilePage() {
         {/* ── Header / identity (cover + avatar) ── */}
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
           className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-          <div className="h-28 bg-gradient-to-r from-brand-500 via-brand-600 to-purple-600" />
+          <div className="h-28 bg-gradient-to-r from-brand-500 via-brand-600 to-brand-accent" />
           <div className="px-5 pb-5">
             {!editingOrg ? (
               <>

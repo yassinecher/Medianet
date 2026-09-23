@@ -4,7 +4,18 @@ import { cn } from '@/lib/utils'
 
 interface Particle { x: number; y: number; vx: number; vy: number; size: number; alpha: number }
 
-export function Particles({ className, quantity = 80, color = '#6272f6', ease = 0.05 }: {
+/** "#rrggbb" → "r g b" (null when not a 6-digit hex). */
+function hexTriplet(hex: string): string | null {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim())
+  return m ? m.slice(1).map((x) => parseInt(x, 16)).join(' ') : null
+}
+
+/**
+ * Canvas particles. Without `color`, the dots use the current brand color
+ * (`--brand-500`, i.e. the admin's theme incl. light/dark), re-read periodically
+ * so a theme or mode switch is picked up.
+ */
+export function Particles({ className, quantity = 80, color, ease = 0.05 }: {
   className?: string; quantity?: number; color?: string; ease?: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -24,7 +35,15 @@ export function Particles({ className, quantity = 80, color = '#6272f6', ease = 
       size: Math.random() * 1.8 + 0.4, alpha: Math.random() * 0.5 + 0.1,
     }))
 
+    // "r g b" of the dots: explicit hex prop, else the themed --brand-500.
+    const readRgb = () => (color && hexTriplet(color))
+      || getComputedStyle(canvas).getPropertyValue('--brand-500').trim()
+      || '0 163 224'
+    let rgb = readRgb()
+    let frame = 0
+
     const draw = () => {
+      if (!color && ++frame % 60 === 0) rgb = readRgb()
       ctx.clearRect(0, 0, w, h)
       for (const p of particles) {
         p.x += p.vx; p.y += p.vy
@@ -36,7 +55,7 @@ export function Particles({ className, quantity = 80, color = '#6272f6', ease = 
         if (p.y < 0) p.y = h; if (p.y > h) p.y = 0
         ctx.beginPath()
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
-        ctx.fillStyle = color + Math.round(p.alpha * 255).toString(16).padStart(2, '0')
+        ctx.fillStyle = `rgb(${rgb} / ${p.alpha.toFixed(3)})`
         ctx.fill()
       }
       raf.current = requestAnimationFrame(draw)

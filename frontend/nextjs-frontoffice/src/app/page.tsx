@@ -16,11 +16,12 @@ import { MagicCard } from '@/components/magicui/magic-card'
 import { ProgrammeCard } from '@/components/programmes/ProgrammeCard'
 import { Navbar } from '@/components/layout/Navbar'
 import { SiteFooter } from '@/components/layout/SiteFooter'
-import { programmesApi, landingPageApi } from '@/lib/api'
+import { programmesApi } from '@/lib/api'
+import { fetchSiteSettings } from '@/lib/siteSettings'
 import { HeroSlideshow, CustomSectionView, PhotoCarousel, type CustomSection } from '@/components/landing/LandingMedia'
 import { MedianetLogo } from '@/components/brand/MedianetLogo'
 import { setBrandLogoUrl } from '@/components/brand/useBrandLogo'
-import { buildLandingThemeCss, hexToRgb } from '@/lib/landingTheme'
+import { buildLandingThemeCss } from '@/lib/landingTheme'
 import type { Programme } from '@/types'
 
 // Map icon string name → Lucide component
@@ -165,9 +166,9 @@ export default function LandingPage() {
     Promise.allSettled([
       programmesApi.list({ status: 'OPEN', size: 12 })
         .then((r) => setProgrammes(r.data?.content ?? r.data ?? [])),
-      landingPageApi.get()
-        .then((r) => {
-          const data: Landing = r.data ?? {}
+      fetchSiteSettings()
+        .then((res) => {
+          const data: Landing = res ?? {}
           // Hand the logo to the navbar/footer now, so they don't refetch or flash.
           setBrandLogoUrl(data.logoUrl)
           setPage({ ...FALLBACK, ...data })
@@ -225,14 +226,11 @@ export default function LandingPage() {
   const testimonials = page.testimonials ?? []
   const faqs         = page.faqs         ?? []
 
-  // Hero particles are drawn on a canvas, so they need the literal color.
-  const particleColor = page.primaryColor && hexToRgb(page.primaryColor) ? page.primaryColor : '#00A3E0'
-
   // Visibility flags default to true unless explicitly false
   const visible = (flag: keyof Landing) => page[flag] !== false
   // Some sections are auto-hidden when empty even if the flag is on
   const sections: Record<string, JSX.Element | null> = {
-    hero:         visible('showHero')         ? renderHero(page, particleColor) : null,
+    hero:         visible('showHero')         ? renderHero(page) : null,
     stats:        visible('showStats')         && stats.length        > 0 ? renderStats(stats) : null,
     about:        visible('showAbout')         && (page.aboutBody || page.aboutTitle) ? renderAbout(page) : null,
     features:     visible('showFeatures')      && features.length     > 0 ? renderFeatures(features) : null,
@@ -299,11 +297,11 @@ Mode édition — clique une section pour l'éditer
 
 // ── Section render helpers ──────────────────────────────────────────────────
 
-function renderHero(page: Landing, particleColor: string) {
+function renderHero(page: Landing) {
   const heroPhotos = [page.heroImageUrl, ...(page.heroImages ?? [])].filter((u): u is string => !!u)
   return (
     <section className="relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden px-4 text-center">
-        <div className="absolute inset-0"><Particles key={particleColor} quantity={90} color={particleColor} /></div>
+        <div className="absolute inset-0"><Particles quantity={90} /></div>
         <div className="mesh-gradient absolute inset-0" />
         {heroPhotos.length > 0 ? (
           <HeroSlideshow images={heroPhotos} />
@@ -443,8 +441,8 @@ function renderProcess(page: Landing, steps: ProcessStep[]) {
                     <img src={s.imageUrl} alt={s.title ?? ''} className="h-full w-full object-cover" />
                   </div>
                 )}
-                <div className={`relative mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-accent shadow-lg shadow-brand-500/30 ring-4 ring-background ${s.imageUrl ? '-mt-10' : ''}`}>
-                  <Icon className="h-5 w-5 text-brand-contrast" />
+                <div className={`relative mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand-600 to-brand-accent shadow-lg shadow-brand-500/30 ring-4 ring-background ${s.imageUrl ? '-mt-10' : ''}`}>
+                  <Icon className="h-5 w-5 text-white" />
                 </div>
                 <h3 className="mb-2 font-semibold text-foreground">{s.title}</h3>
                 <p className="text-sm text-muted-foreground">{s.description}</p>
@@ -474,7 +472,7 @@ function renderTestimonials(page: Landing, testimonials: Testimonial[]) {
                   {t.photoUrl ? (
                     <img src={t.photoUrl} alt={t.authorName ?? ''} className="h-9 w-9 rounded-full object-cover" />
                   ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-accent text-xs font-bold text-brand-contrast">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-600 to-brand-accent text-xs font-bold text-white">
                       {(t.authorName ?? '?').charAt(0).toUpperCase()}
                     </div>
                   )}

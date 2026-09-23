@@ -91,7 +91,7 @@ export default function ProgrammesPage() {
       <motion.div
         initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}
         className="relative mb-6 overflow-hidden rounded-3xl p-7 sm:p-9 text-white shadow-lg dark:brightness-90"
-        style={{ background: 'linear-gradient(90deg, #fbb431 0%, #0a8fb1 45%, #14c8f3 100%)' }}
+        style={{ background: 'var(--banner-bg, linear-gradient(90deg, #fbb431 0%, #0a8fb1 45%, #14c8f3 100%))' }}
       >
         {/* dot texture */}
         <div className="pointer-events-none absolute inset-0 opacity-20"

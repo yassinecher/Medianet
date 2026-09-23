@@ -20,6 +20,7 @@ type HSL = [number, number, number] // h 0-360, s 0-100, l 0-100
 const LIGHT_BG: RGB = [247, 249, 250] // --background light (204 26% 98%)
 const DARK_BG: RGB = [7, 13, 19]      // --background dark  (210 45% 5%)
 const DARK_TEXT: RGB = [15, 23, 32]
+const WHITE: RGB = [255, 255, 255]
 
 export function hexToRgb(hex?: string | null): RGB | null {
   if (!hex) return null
@@ -79,6 +80,13 @@ function ensureContrast(hsl: HSL, bg: RGB, ratio: number, step: number): HSL {
   return [h, s, l]
 }
 
+/** Accent for a mode: kept visible on the page and dark enough for white labels (3:1, bold UI text). */
+function accentFor(accent: RGB, mode: 'light' | 'dark'): RGB {
+  const [ah, as, al] = rgbToHsl(accent)
+  const hsl: HSL = [ah, as, mode === 'light' ? clamp(al, 22, 65) : clamp(al, 40, 75)]
+  return hslToRgb(ensureContrast(hsl, WHITE, 3, -2))
+}
+
 /** Best readable text color (white or near-black) on top of `bg`. */
 function onColor(bg: RGB): RGB {
   return contrast([255, 255, 255], bg) >= contrast(DARK_TEXT, bg) ? [255, 255, 255] : DARK_TEXT
@@ -104,6 +112,8 @@ function buildMode(primary: RGB, accent: RGB | null, mode: 'light' | 'dark'): Mo
     // light mode uses text-brand-600/700, dark mode uses dark:text-brand-300/400.
     if (mode === 'light' && (k === '600' || k === '700')) shade = ensureContrast(shade, bg, 4.5, -2)
     if (mode === 'dark' && (k === '300' || k === '400')) shade = ensureContrast(shade, bg, 4.5, +2)
+    // Dark shades carry WHITE labels (gradient buttons, banners, avatars) in both modes.
+    if (Number(k) >= 600) shade = ensureContrast(shade, WHITE, 4.5, -2)
     vars[`--brand-${k}`] = triplet(hslToRgb(shade))
   }
   const baseRgb = hslToRgb(base)
@@ -116,8 +126,7 @@ function buildMode(primary: RGB, accent: RGB | null, mode: 'light' | 'dark'): Mo
 
   let accentHex: string | null = null
   if (accent) {
-    const [ah, as, al] = rgbToHsl(accent)
-    const a = hslToRgb([ah, as, mode === 'light' ? clamp(al, 22, 65) : clamp(al, 40, 75)])
+    const a = accentFor(accent, mode)
     vars['--brand-accent'] = triplet(a)
     accentHex = toHex(a)
   }
@@ -131,26 +140,56 @@ function modeCss(selector: string, m: ModeVars): string {
   v['--shimmer-bg'] = `linear-gradient(90deg, ${m.primaryHex} 0%, ${to} 100%)`
   v['--brand-cta'] = m.primaryHex
   v['--brand-cta-accent'] = to
+  // Wide banners with WHITE titles (programmes pages): built from the white-safe
+  // dark shade + accent, never from the raw (possibly light) base color.
+  v['--banner-bg'] = `linear-gradient(90deg, rgb(${m.vars['--brand-600']}) 0%, ${m.accentHex ?? `rgb(${m.vars['--brand-800']})`} 100%)`
   return `${selector}{${Object.entries(v).map(([k, val]) => `${k}:${val}`).join(';')}}`
 }
 
 /**
- * CSS for the landing wrapper, or '' when no valid custom color is set (the
- * default Medianet palette from globals.css then applies unchanged).
+ * Theme CSS for two selectors (light + dark), or '' when no valid custom color
+ * is set (the default Medianet palette from globals.css then applies unchanged).
  */
-export function buildLandingThemeCss(primaryHex?: string | null, accentHex?: string | null): string {
+export function buildThemeCss(primaryHex: string | null | undefined, accentHex: string | null | undefined,
+                              lightSel: string, darkSel: string): string {
   const primary = hexToRgb(primaryHex)
   const accent = hexToRgb(accentHex)
   if (!primary && !accent) return ''
   if (!primary) {
     // Accent only: just recolor the gradients, keep the default brand scale.
     const css = (sel: string, mode: 'light' | 'dark') => {
-      const [ah, as, al] = rgbToHsl(accent!)
-      const a = hslToRgb([ah, as, mode === 'light' ? clamp(al, 22, 65) : clamp(al, 40, 75)])
+      const a = accentFor(accent!, mode)
       return `${sel}{--brand-accent:${triplet(a)};--brand-cta-accent:${toHex(a)};--shimmer-bg:linear-gradient(90deg, #fbb431 0%, ${toHex(a)} 100%)}`
     }
-    return css('.landing-theme', 'light') + css('.dark .landing-theme', 'dark')
+    return css(lightSel, 'light') + css(darkSel, 'dark')
   }
-  return modeCss('.landing-theme', buildMode(primary, accent, 'light'))
-       + modeCss('.dark .landing-theme', buildMode(primary, accent, 'dark'))
+  return modeCss(lightSel, buildMode(primary, accent, 'light'))
+       + modeCss(darkSel, buildMode(primary, accent, 'dark'))
+}
+
+/** Landing page wrapper (`.landing-theme`). */
+export function buildLandingThemeCss(primaryHex?: string | null, accentHex?: string | null): string {
+  return buildThemeCss(primaryHex, accentHex, '.landing-theme', '.dark .landing-theme')
+}
+
+export interface SiteThemeSettings {
+  primaryColor?: string | null
+  accentColor?: string | null
+  siteThemeMode?: string | null
+  sitePrimaryColor?: string | null
+  siteAccentColor?: string | null
+}
+
+/**
+ * Whole front-office theme, per the admin's "Couleurs du reste du site" choice:
+ * default → '' (Medianet palette), same → landing colors, custom → site colors.
+ * `html:root` / `html.dark` out-rank globals.css `:root` / `.dark` regardless of
+ * stylesheet order; the landing's own `.landing-theme` still overrides it there.
+ */
+export function buildSiteThemeCss(s: SiteThemeSettings | null | undefined): string {
+  if (!s) return ''
+  const mode = s.siteThemeMode ?? 'default'
+  if (mode === 'same') return buildThemeCss(s.primaryColor, s.accentColor, 'html:root', 'html.dark')
+  if (mode === 'custom') return buildThemeCss(s.sitePrimaryColor, s.siteAccentColor, 'html:root', 'html.dark')
+  return ''
 }

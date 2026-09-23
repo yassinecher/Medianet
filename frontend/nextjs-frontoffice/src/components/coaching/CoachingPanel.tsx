@@ -100,7 +100,7 @@ export function CoachingPanel({ participantId }: { participantId: number }) {
         {milestones.length > 0 && (
           <>
             <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-purple-500 transition-all" style={{ width: `${Math.max(3, pct)}%` }} />
+              <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-brand-accent transition-all" style={{ width: `${Math.max(3, pct)}%` }} />
             </div>
             <ul className="space-y-1.5">
               {milestones.map((m, i) => (

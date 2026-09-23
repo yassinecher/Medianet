@@ -97,7 +97,7 @@ export default function InvitationRegisterPage() {
   if (loading) {
     return (
       <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
-        <div className="absolute inset-0"><Particles quantity={50} color="#6272f6" /></div>
+        <div className="absolute inset-0"><Particles quantity={50} /></div>
         <div className="mesh-gradient absolute inset-0" />
         <div className="relative z-10 w-full max-w-md space-y-4">
           <Skeleton className="h-72 rounded-2xl" />
@@ -110,7 +110,7 @@ export default function InvitationRegisterPage() {
   if (error || !invitation) {
     return (
       <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
-        <div className="absolute inset-0"><Particles quantity={50} color="#6272f6" /></div>
+        <div className="absolute inset-0"><Particles quantity={50} /></div>
         <div className="mesh-gradient absolute inset-0" />
         <div className="relative z-10 w-full max-w-md">
           <div className="rounded-2xl border border-border bg-card p-8 shadow-2xl text-center">
@@ -132,7 +132,7 @@ export default function InvitationRegisterPage() {
   if (invitation.status === 'ACCEPTED') {
     return (
       <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
-        <div className="absolute inset-0"><Particles quantity={50} color="#6272f6" /></div>
+        <div className="absolute inset-0"><Particles quantity={50} /></div>
         <div className="mesh-gradient absolute inset-0" />
         <div className="relative z-10 w-full max-w-md">
           <div className="rounded-2xl border border-border bg-card p-8 shadow-2xl text-center">
@@ -157,7 +157,7 @@ export default function InvitationRegisterPage() {
   // ── Form ────────────────────────────────────────────────────────────────
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-12">
-      <div className="absolute inset-0"><Particles quantity={50} color="#6272f6" /></div>
+      <div className="absolute inset-0"><Particles quantity={50} /></div>
       <div className="mesh-gradient absolute inset-0" />
 
       <motion.div
@@ -166,11 +166,11 @@ export default function InvitationRegisterPage() {
         transition={{ duration: 0.35 }}
         className="relative z-10 w-full max-w-md">
         <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-8 shadow-2xl">
-          <BorderBeam colorFrom="#a78bfa" colorTo="#6272f6" duration={8} />
+          <BorderBeam duration={8} />
 
           <div className="mb-6 text-center">
             <div className="mb-3 flex justify-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-purple-600 shadow-lg shadow-brand-500/30">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-accent shadow-lg shadow-brand-500/30">
                 <Shield className="h-6 w-6 text-white" />
               </div>
             </div>
@@ -233,7 +233,7 @@ Programme : <span className="font-medium text-foreground">{invitation.programmeN
             </div>
 
             <Button type="submit" disabled={submitting}
-              className="w-full bg-gradient-to-r from-brand-600 to-purple-600 text-white">
+              className="w-full bg-gradient-to-r from-brand-600 to-brand-accent text-white">
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {submitting ? 'Création...' : `Créer mon compte ${roleLabel}`}
             </Button>

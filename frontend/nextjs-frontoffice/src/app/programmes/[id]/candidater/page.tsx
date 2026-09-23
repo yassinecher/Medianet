@@ -909,7 +909,7 @@ export default function CandidaterPage() {
               <Button
                 onClick={handleSubmit}
                 disabled={submitting || (!useCustom && (!form.projectName.trim() || !form.motivation.trim()))}
-                className="gap-2 bg-gradient-to-r from-brand-600 to-purple-600 text-white font-bold shadow-lg hover:shadow-brand-500/30 hover:shadow-xl transition-all">
+                className="gap-2 bg-gradient-to-r from-brand-600 to-brand-accent text-white font-bold shadow-lg hover:shadow-brand-500/30 hover:shadow-xl transition-all">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {submitting ? 'Envoi en cours...' : 'Soumettre ma candidature'}
               </Button>

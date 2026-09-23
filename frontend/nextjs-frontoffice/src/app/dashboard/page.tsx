@@ -38,7 +38,7 @@ const TASK_STATUS_LABEL: Record<string, string> = {
 const ROLE_HERO: Record<string, { icon: any; gradient: string; tagline: string }> = {
   PORTEUR: {
     icon: Briefcase,
-    gradient: 'from-brand-500 via-brand-600 to-purple-600',
+    gradient: 'from-brand-600 via-brand-700 to-brand-accent',
     tagline: 'Découvrez les programmes ouverts et suivez vos candidatures.',
   },
   MENTOR: {
@@ -559,7 +559,7 @@ export default function DashboardPage() {
                           {p.logoUrl ? (
                             <img src={p.logoUrl} alt="" className="h-10 w-10 rounded-lg object-contain bg-white" />
                           ) : (
-                            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-brand-500/20 to-purple-500/20 flex items-center justify-center">
+                            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-brand-500/20 to-brand-accent/20 flex items-center justify-center">
                               <FolderKanban className="h-5 w-5 text-brand-500" />
                             </div>
                           )}
