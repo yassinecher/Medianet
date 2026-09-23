@@ -29,7 +29,7 @@ export default function AProposPage() {
             <div className="mb-6 flex justify-center"><MedianetLogo size="lg" /></div>
             <h1 className="mx-auto max-w-2xl text-3xl font-extrabold leading-tight text-foreground sm:text-4xl"
               style={{ textWrap: 'balance' } as React.CSSProperties}>
-              L&apos;e-business tunisien a un incubateur&nbsp;: <span style={{ color: '#00A3E0' }}>Medianet</span>.
+              L&apos;e-business tunisien a un incubateur&nbsp;: <span className="text-brand-600 dark:text-brand-400">Medianet</span>.
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
               Depuis plus de 20 ans, Medianet conçoit des solutions digitales pour les plus grandes
@@ -95,7 +95,7 @@ export default function AProposPage() {
               { n: '1', l: 'écosystème : Medianet' },
             ].map((s) => (
               <div key={s.l} className="rounded-2xl border border-border bg-background p-5 text-center shadow-sm">
-                <p className="text-3xl font-extrabold" style={{ color: '#00A3E0' }}>{s.n}</p>
+                <p className="text-3xl font-extrabold text-brand-600 dark:text-brand-400">{s.n}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{s.l}</p>
               </div>
             ))}

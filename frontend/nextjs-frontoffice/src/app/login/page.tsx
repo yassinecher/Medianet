@@ -105,7 +105,7 @@ export default function LoginPage() {
             </div>
           </div>
           <Button type="submit" disabled={loading}
-            className="w-full text-white" style={{ background: 'linear-gradient(90deg,#0084c7,#00a3e0)' }}>
+            className="w-full text-white" style={{ background: 'var(--banner-bg, linear-gradient(90deg,#0084c7,#00a3e0))' }}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {loading ? 'Connexion...' : 'Se connecter'}
           </Button>

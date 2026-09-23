@@ -30,17 +30,17 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ── Brand side (lg+) ── */}
+      {/* Dark brand shades only (950→600): white-safe for any admin theme color. */}
       <div className="relative hidden overflow-hidden lg:block"
-        style={{ background: 'linear-gradient(155deg,#062a40 0%,#064e75 38%,#0084c7 78%,#00a3e0 100%)' }}>
+        style={{ background: 'linear-gradient(155deg, rgb(var(--brand-950)) 0%, rgb(var(--brand-800)) 38%, rgb(var(--brand-700)) 72%, rgb(var(--brand-600)) 100%)' }}>
         {/* decorative shapes */}
         <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/5 blur-2xl" />
-        <div className="absolute -bottom-32 -left-16 h-[28rem] w-[28rem] rounded-full bg-cyan-300/10 blur-3xl" />
+        <div className="absolute -bottom-32 -left-16 h-[28rem] w-[28rem] rounded-full bg-brand-300/10 blur-3xl" />
         <div className="absolute right-16 top-1/3 h-40 w-40 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm" style={{ transform: 'rotate(12deg)' }} />
 
         <div className="relative z-10 flex h-full flex-col justify-between p-12">
           <div>
-            <span className="text-2xl font-extrabold tracking-tight text-white">MEDIA<span className="text-white/60">NET</span></span>
-            <span className="brand-stripe mt-2 block h-1 w-40 rounded-full" />
+            <MedianetLogo size="lg" onDark />
           </div>
 
           <div className="max-w-md space-y-6">
