@@ -42,6 +42,8 @@ const config: Config = {
         // Secondary gradient color — overridable from the landing editor
         // ("couleur accent"); defaults to the original purple.
         'brand-accent': 'rgb(var(--brand-accent, 147 51 234) / <alpha-value>)',
+        // Readable text ON a brand fill (white, or near-black for light brand colors).
+        'brand-contrast': 'rgb(var(--brand-contrast, 255 255 255) / <alpha-value>)',
       },
       borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)' },
       fontFamily: { sans: ['var(--font-inter)', 'system-ui', 'sans-serif'] },

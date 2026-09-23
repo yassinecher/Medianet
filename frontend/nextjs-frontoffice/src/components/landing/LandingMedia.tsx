@@ -32,14 +32,19 @@ export function HeroSlideshow({ images, interval = 6000 }: { images: string[]; i
   return (
     <div className="pointer-events-none absolute inset-0">
       <AnimatePresence initial={false}>
+        {/* framer animates the OUTER opacity (0→1); the photo's own strength is
+            set on the inner div — putting both on one element let the animation
+            override it, showing the photo at 100% behind the text. */}
         <motion.div key={images[i]}
           initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 1.2 }}
-          className="absolute inset-0 opacity-25 dark:opacity-30"
-          style={{ backgroundImage: `url(${images[i]})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+          className="absolute inset-0">
+          <div className="absolute inset-0 opacity-30 dark:opacity-25"
+            style={{ backgroundImage: `url(${images[i]})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        </motion.div>
       </AnimatePresence>
-      {/* Keep the headline readable over any photo */}
-      <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/20 to-background" />
+      {/* Keep the headline and paragraph readable over any photo, in both modes */}
+      <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/40 to-background" />
     </div>
   )
 }
@@ -173,7 +178,7 @@ export function CustomSectionView({ section: s }: { section: CustomSection }) {
   )
   const cta = s.ctaLabel && (
     <Link href={s.ctaLink || '/register'}
-      className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/25 transition hover:bg-brand-600">
+      className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-brand-contrast shadow-lg shadow-brand-500/25 transition hover:bg-brand-600">
       {s.ctaLabel} <ArrowRight className="h-4 w-4" />
     </Link>
   )
