@@ -56,7 +56,7 @@ duration = 2,
         className={cn(
           'group relative inline-flex items-center justify-center gap-2',
   'overflow-hidden whitespace-nowrap rounded-full',
-  'px-7 py-3 font-semibold text-white',
+  'px-7 py-3 font-semibold text-brand-contrast',
   'border border-white/20',
   'shadow-[0_10px_30px_rgb(var(--brand-500)/0.35)]',
   'transition-all duration-300 ease-out',
@@ -98,7 +98,7 @@ duration = 2,
         />
 
         {/* ── Text — solid white, always ────────────────────────────────── */}
-        <span className="relative z-10 flex items-center gap-2 text-white">
+        <span className="relative z-10 flex items-center gap-2 text-brand-contrast">
           {children}
         </span>
       </motion.button>

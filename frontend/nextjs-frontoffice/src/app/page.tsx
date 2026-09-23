@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import { Particles } from '@/components/magicui/particles'
 import { Globe } from '@/components/magicui/globe'
-import { AnimatedGradientText } from '@/components/magicui/animated-gradient-text'
 import { ShimmerButton } from '@/components/magicui/shimmer-button'
 import { NumberTicker } from '@/components/magicui/number-ticker'
 import { MagicCard } from '@/components/magicui/magic-card'
@@ -19,35 +18,10 @@ import { Navbar } from '@/components/layout/Navbar'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { programmesApi, landingPageApi } from '@/lib/api'
 import { HeroSlideshow, CustomSectionView, PhotoCarousel, type CustomSection } from '@/components/landing/LandingMedia'
+import { MedianetLogo } from '@/components/brand/MedianetLogo'
+import { setBrandLogoUrl } from '@/components/brand/useBrandLogo'
+import { buildLandingThemeCss, hexToRgb } from '@/lib/landingTheme'
 import type { Programme } from '@/types'
-
-/** Parse #RRGGBB or #RGB into [r,g,b]. Returns null on invalid input. */
-function hexToRgb(hex: string): [number, number, number] | null {
-  if (!hex) return null
-  let h = hex.replace('#', '').trim()
-  if (h.length === 3) h = h.split('').map((c) => c + c).join('')
-  if (h.length !== 6) return null
-  const r = parseInt(h.slice(0, 2), 16)
-  const g = parseInt(h.slice(2, 4), 16)
-  const b = parseInt(h.slice(4, 6), 16)
-  if ([r, g, b].some(Number.isNaN)) return null
-  return [r, g, b]
-}
-
-/** [r,g,b] → "h s% l%" (the format of the shadcn --primary / --ring variables). */
-function rgbToHslTriplet([r, g, b]: [number, number, number]): string {
-  const rn = r / 255, gn = g / 255, bn = b / 255
-  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn)
-  const l = (max + min) / 2
-  let h = 0, s = 0
-  if (max !== min) {
-    const d = max - min
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-    h = max === rn ? (gn - bn) / d + (gn < bn ? 6 : 0) : max === gn ? (bn - rn) / d + 2 : (rn - gn) / d + 4
-    h /= 6
-  }
-  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`
-}
 
 // Map icon string name → Lucide component
 const ICONS: Record<string, React.ElementType> = {
@@ -136,6 +110,9 @@ export default function LandingPage() {
   const [hydrated, setHydrated] = useState(false)
   const [programmes, setProgrammes] = useState<Programme[]>([])
   const [page, setPage] = useState<Landing>(FALLBACK)
+  // The page stays hidden until the saved settings (content, colors, logo) are
+  // loaded, so visitors never see the default content/colors flash first.
+  const [loaded, setLoaded] = useState(false)
   // ── Edit mode (preview iframe in backoffice) ─────────────────────────
   // When loaded with ?edit=1 we add hover outlines + emit postMessage on click
   // so the backoffice editor can scroll to the matching section card.
@@ -181,12 +158,22 @@ export default function LandingPage() {
   }, [isAuthenticated, editMode, router])
 
   useEffect(() => {
+    let done = false
+    const finish = () => { if (!done) { done = true; setLoaded(true) } }
+    // Safety net: if the API is slow/unreachable, show the default page after 6s.
+    const timer = setTimeout(finish, 6000)
     Promise.allSettled([
       programmesApi.list({ status: 'OPEN', size: 12 })
         .then((r) => setProgrammes(r.data?.content ?? r.data ?? [])),
       landingPageApi.get()
-        .then((r) => setPage({ ...FALLBACK, ...(r.data ?? {}) })),
-    ])
+        .then((r) => {
+          const data: Landing = r.data ?? {}
+          // Hand the logo to the navbar/footer now, so they don't refetch or flash.
+          setBrandLogoUrl(data.logoUrl)
+          setPage({ ...FALLBACK, ...data })
+        }),
+    ]).finally(() => { clearTimeout(timer); finish() })
+    return () => clearTimeout(timer)
   }, [])
 
   // While hydrating OR while we're about to redirect, show a tiny splash so the
@@ -195,7 +182,16 @@ export default function LandingPage() {
   if (!hydrated || (isAuthenticated && !editMode)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-6 w-6 animate-spin text-brand-500" />
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+  if (!loaded) {
+    // Neutral splash (no brand color yet — it isn't known until the settings load).
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background">
+        <MedianetLogo size="lg" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     )
   }
@@ -258,47 +254,12 @@ export default function LandingPage() {
   // Append any sections the stored order forgot
   for (const k of Object.keys(sections)) if (!order.includes(k)) order.push(k)
 
-  // CSS variable overrides for theme colors — picked up by tailwind utilities below
   // ── Theme injection ────────────────────────────────────────────────
-  // Convert the admin's `primaryColor` into a coherent brand-50..950 palette
-  // by adjusting lightness. The tailwind config reads --brand-XXX so this
-  // changes ALL existing text-brand-*/bg-brand-*/from-brand-* utilities at once.
-  const themeStyle: Record<string, string> = {}
-  const primaryRgb = page.primaryColor ? hexToRgb(page.primaryColor) : null
-  const accentRgb  = page.accentColor  ? hexToRgb(page.accentColor)  : null
-  if (primaryRgb) {
-    const triplet = (r: number, g: number, b: number) => `${r} ${g} ${b}`
-    const adj = (delta: number) => {
-      const [r, g, b] = primaryRgb.map((c) => Math.max(0, Math.min(255, Math.round(c + delta))))
-      return triplet(r, g, b)
-    }
-    Object.assign(themeStyle, {
-      '--brand-50':  adj(+180),
-      '--brand-100': adj(+150),
-      '--brand-200': adj(+110),
-      '--brand-300': adj(+70),
-      '--brand-400': adj(+35),
-      '--brand-500': triplet(...primaryRgb),
-      '--brand-600': adj(-25),
-      '--brand-700': adj(-55),
-      '--brand-800': adj(-85),
-      '--brand-900': adj(-115),
-      '--brand-950': adj(-150),
-      // shadcn tokens (bg-primary buttons, focus rings) follow the brand too
-      '--primary': rgbToHslTriplet(primaryRgb),
-      '--ring':    rgbToHslTriplet(primaryRgb),
-    })
-  }
-  if (accentRgb) themeStyle['--brand-accent'] = accentRgb.join(' ')
-  // Gradient used by the shimmer CTAs + programme cards (was hardcoded gold→cyan).
-  if (primaryRgb || accentRgb) {
-    const from = page.primaryColor && primaryRgb ? page.primaryColor : '#fbb431'
-    const to   = page.accentColor  && accentRgb  ? page.accentColor  : from
-    themeStyle['--shimmer-bg'] = `linear-gradient(90deg, ${from} 0%, ${to} 100%)`
-    // "brand" Button variant (navbar S'inscrire, etc.)
-    if (primaryRgb) themeStyle['--brand-cta'] = page.primaryColor!
-    themeStyle['--brand-cta-accent'] = to
-  }
+  // Admin colors → full brand palette for light AND dark mode, with text shades
+  // kept readable on each background (see lib/landingTheme.ts). Scoped to the
+  // `.landing-theme` wrapper; empty string = default Medianet palette.
+  const themeCss = buildLandingThemeCss(page.primaryColor, page.accentColor)
+
   // Wrap each section with edit-mode click handler + hover ring
   const wrapEditable = (id: string, node: JSX.Element | null) => {
     if (!node) return null
@@ -306,10 +267,10 @@ export default function LandingPage() {
       <div key={id} data-section={id}
         onClick={onSectionClick(id)}
         className={editMode
-          ? 'relative cursor-pointer outline outline-2 outline-transparent hover:outline-brand-500/60 hover:bg-brand-500/[0.03] transition-all'
+          ? 'group relative cursor-pointer outline outline-2 outline-transparent hover:outline-brand-500/60 hover:bg-brand-500/[0.03] transition-all'
           : ''}>
         {editMode && (
-          <span className="absolute top-2 left-2 z-10 hidden group-hover:inline-flex items-center gap-1 rounded-full bg-brand-500 text-white text-[10px] font-bold px-2 py-0.5 shadow-lg pointer-events-none">
+          <span className="absolute top-2 left-2 z-10 hidden group-hover:inline-flex items-center gap-1 rounded-full bg-brand-500 text-brand-contrast text-[10px] font-bold px-2 py-0.5 shadow-lg pointer-events-none">
 {id}
           </span>
         )}
@@ -319,9 +280,11 @@ export default function LandingPage() {
   }
 
   return (
-    <div className={`min-h-screen bg-background ${editMode ? 'pt-2' : ''}`} style={themeStyle as React.CSSProperties}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }}
+      className={`landing-theme min-h-screen bg-background ${editMode ? 'pt-2' : ''}`}>
+      {themeCss && <style>{themeCss}</style>}
       {editMode && (
-        <div className="sticky top-0 z-40 bg-brand-500 text-white text-center text-xs py-1 font-semibold">
+        <div className="sticky top-0 z-40 bg-brand-500 text-brand-contrast text-center text-xs py-1 font-semibold">
 Mode édition — clique une section pour l'éditer
         </div>
       )}
@@ -330,7 +293,7 @@ Mode édition — clique une section pour l'éditer
       {order.map((id) => wrapEditable(id, sections[id]))}
 
       <SiteFooter footerText={page.footerText} />
-    </div>
+    </motion.div>
   )
 }
 
@@ -481,7 +444,7 @@ function renderProcess(page: Landing, steps: ProcessStep[]) {
                   </div>
                 )}
                 <div className={`relative mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-accent shadow-lg shadow-brand-500/30 ring-4 ring-background ${s.imageUrl ? '-mt-10' : ''}`}>
-                  <Icon className="h-5 w-5 text-white" />
+                  <Icon className="h-5 w-5 text-brand-contrast" />
                 </div>
                 <h3 className="mb-2 font-semibold text-foreground">{s.title}</h3>
                 <p className="text-sm text-muted-foreground">{s.description}</p>
@@ -511,7 +474,7 @@ function renderTestimonials(page: Landing, testimonials: Testimonial[]) {
                   {t.photoUrl ? (
                     <img src={t.photoUrl} alt={t.authorName ?? ''} className="h-9 w-9 rounded-full object-cover" />
                   ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-accent text-xs font-bold text-white">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-accent text-xs font-bold text-brand-contrast">
                       {(t.authorName ?? '?').charAt(0).toUpperCase()}
                     </div>
                   )}
