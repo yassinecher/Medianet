@@ -18,6 +18,7 @@ import { ProgrammeCard } from '@/components/programmes/ProgrammeCard'
 import { Navbar } from '@/components/layout/Navbar'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { programmesApi, landingPageApi } from '@/lib/api'
+import { HeroSlideshow, CustomSectionView, PhotoCarousel, type CustomSection } from '@/components/landing/LandingMedia'
 import type { Programme } from '@/types'
 
 /** Parse #RRGGBB or #RGB into [r,g,b]. Returns null on invalid input. */
@@ -33,6 +34,21 @@ function hexToRgb(hex: string): [number, number, number] | null {
   return [r, g, b]
 }
 
+/** [r,g,b] → "h s% l%" (the format of the shadcn --primary / --ring variables). */
+function rgbToHslTriplet([r, g, b]: [number, number, number]): string {
+  const rn = r / 255, gn = g / 255, bn = b / 255
+  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn)
+  const l = (max + min) / 2
+  let h = 0, s = 0
+  if (max !== min) {
+    const d = max - min
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    h = max === rn ? (gn - bn) / d + (gn < bn ? 6 : 0) : max === gn ? (bn - rn) / d + 2 : (rn - gn) / d + 4
+    h /= 6
+  }
+  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`
+}
+
 // Map icon string name → Lucide component
 const ICONS: Record<string, React.ElementType> = {
   Target, Users, Globe2, Sparkles, Award, Rocket, Heart, Brain, Star, Zap,
@@ -41,7 +57,7 @@ const ICONS: Record<string, React.ElementType> = {
 
 interface Stat { label?: string; value?: number; suffix?: string }
 interface Feature { title?: string; description?: string; icon?: string; imageUrl?: string }
-interface ProcessStep { title?: string; description?: string; icon?: string }
+interface ProcessStep { title?: string; description?: string; icon?: string; imageUrl?: string }
 interface Testimonial { quote?: string; authorName?: string; authorRole?: string; photoUrl?: string }
 interface Faq { question?: string; answer?: string }
 interface Landing {
@@ -49,6 +65,7 @@ interface Landing {
   heroSubtitle?: string
   heroBadge?: string
   heroImageUrl?: string
+  heroImages?: string[]
   primaryCtaLabel?: string
   primaryCtaLink?: string
   secondaryCtaLabel?: string
@@ -71,8 +88,10 @@ interface Landing {
   ctaButtonLabel?: string
   ctaButtonLink?: string
   footerText?: string
+  logoUrl?: string
   primaryColor?: string
   accentColor?: string
+  customSections?: CustomSection[]
   showHero?: boolean
   showStats?: boolean
   showAbout?: boolean
@@ -85,6 +104,7 @@ interface Landing {
   programmesTitle?: string
   programmesSubtitle?: string
   programmesLimit?: number
+  programmesImages?: string[]
   sectionOrder?: string
 }
 
@@ -209,19 +229,27 @@ export default function LandingPage() {
   const testimonials = page.testimonials ?? []
   const faqs         = page.faqs         ?? []
 
+  // Hero particles are drawn on a canvas, so they need the literal color.
+  const particleColor = page.primaryColor && hexToRgb(page.primaryColor) ? page.primaryColor : '#00A3E0'
+
   // Visibility flags default to true unless explicitly false
   const visible = (flag: keyof Landing) => page[flag] !== false
   // Some sections are auto-hidden when empty even if the flag is on
   const sections: Record<string, JSX.Element | null> = {
-    hero:         visible('showHero')         ? renderHero(page) : null,
+    hero:         visible('showHero')         ? renderHero(page, particleColor) : null,
     stats:        visible('showStats')         && stats.length        > 0 ? renderStats(stats) : null,
     about:        visible('showAbout')         && (page.aboutBody || page.aboutTitle) ? renderAbout(page) : null,
     features:     visible('showFeatures')      && features.length     > 0 ? renderFeatures(features) : null,
     process:      visible('showProcess')       && processSteps.length > 0 ? renderProcess(page, processSteps) : null,
-    programmes:   visible('showProgrammes')    && programmes.length   > 0 ? renderProgrammes(programmes, page) : null,
+    programmes:   visible('showProgrammes')    && (programmes.length > 0 || (page.programmesImages?.length ?? 0) > 0) ? renderProgrammes(programmes, page) : null,
     testimonials: visible('showTestimonials')  && testimonials.length > 0 ? renderTestimonials(page, testimonials) : null,
     faq:          visible('showFaq')           && faqs.length         > 0 ? renderFaq(page, faqs) : null,
     cta:          visible('showCta')           && (page.ctaTitle || page.ctaButtonLabel) ? renderCta(page) : null,
+  }
+  // Admin-created sections live in the same order list as "custom:<id>"
+  for (const cs of page.customSections ?? []) {
+    if (!cs.id) continue
+    sections[`custom:${cs.id}`] = cs.visible === false ? null : <CustomSectionView section={cs} />
   }
 
   // Honor the admin's section order (with safety fallbacks for unknown ids)
@@ -235,31 +263,42 @@ export default function LandingPage() {
   // Convert the admin's `primaryColor` into a coherent brand-50..950 palette
   // by adjusting lightness. The tailwind config reads --brand-XXX so this
   // changes ALL existing text-brand-*/bg-brand-*/from-brand-* utilities at once.
-  const themeStyle: React.CSSProperties = {}
-  if (page.primaryColor) {
-    const rgb = hexToRgb(page.primaryColor)
-    if (rgb) {
-      const triplet = (r: number, g: number, b: number) => `${r} ${g} ${b}`
-      const adj = (delta: number) => {
-        const [r, g, b] = rgb.map((c) => Math.max(0, Math.min(255, Math.round(c + delta))))
-        return triplet(r, g, b)
-      }
-      Object.assign(themeStyle, {
-        '--brand-50':  adj(+180),
-        '--brand-100': adj(+150),
-        '--brand-200': adj(+110),
-        '--brand-300': adj(+70),
-        '--brand-400': adj(+35),
-        '--brand-500': triplet(rgb[0], rgb[1], rgb[2]),
-        '--brand-600': adj(-25),
-        '--brand-700': adj(-55),
-        '--brand-800': adj(-85),
-        '--brand-900': adj(-115),
-        '--brand-950': adj(-150),
-      })
+  const themeStyle: Record<string, string> = {}
+  const primaryRgb = page.primaryColor ? hexToRgb(page.primaryColor) : null
+  const accentRgb  = page.accentColor  ? hexToRgb(page.accentColor)  : null
+  if (primaryRgb) {
+    const triplet = (r: number, g: number, b: number) => `${r} ${g} ${b}`
+    const adj = (delta: number) => {
+      const [r, g, b] = primaryRgb.map((c) => Math.max(0, Math.min(255, Math.round(c + delta))))
+      return triplet(r, g, b)
     }
+    Object.assign(themeStyle, {
+      '--brand-50':  adj(+180),
+      '--brand-100': adj(+150),
+      '--brand-200': adj(+110),
+      '--brand-300': adj(+70),
+      '--brand-400': adj(+35),
+      '--brand-500': triplet(...primaryRgb),
+      '--brand-600': adj(-25),
+      '--brand-700': adj(-55),
+      '--brand-800': adj(-85),
+      '--brand-900': adj(-115),
+      '--brand-950': adj(-150),
+      // shadcn tokens (bg-primary buttons, focus rings) follow the brand too
+      '--primary': rgbToHslTriplet(primaryRgb),
+      '--ring':    rgbToHslTriplet(primaryRgb),
+    })
   }
-
+  if (accentRgb) themeStyle['--brand-accent'] = accentRgb.join(' ')
+  // Gradient used by the shimmer CTAs + programme cards (was hardcoded gold→cyan).
+  if (primaryRgb || accentRgb) {
+    const from = page.primaryColor && primaryRgb ? page.primaryColor : '#fbb431'
+    const to   = page.accentColor  && accentRgb  ? page.accentColor  : from
+    themeStyle['--shimmer-bg'] = `linear-gradient(90deg, ${from} 0%, ${to} 100%)`
+    // "brand" Button variant (navbar S'inscrire, etc.)
+    if (primaryRgb) themeStyle['--brand-cta'] = page.primaryColor!
+    themeStyle['--brand-cta-accent'] = to
+  }
   // Wrap each section with edit-mode click handler + hover ring
   const wrapEditable = (id: string, node: JSX.Element | null) => {
     if (!node) return null
@@ -280,7 +319,7 @@ export default function LandingPage() {
   }
 
   return (
-    <div className={`min-h-screen bg-background ${editMode ? 'pt-2' : ''}`} style={themeStyle}>
+    <div className={`min-h-screen bg-background ${editMode ? 'pt-2' : ''}`} style={themeStyle as React.CSSProperties}>
       {editMode && (
         <div className="sticky top-0 z-40 bg-brand-500 text-white text-center text-xs py-1 font-semibold">
 Mode édition — clique une section pour l'éditer
@@ -297,14 +336,14 @@ Mode édition — clique une section pour l'éditer
 
 // ── Section render helpers ──────────────────────────────────────────────────
 
-function renderHero(page: Landing) {
+function renderHero(page: Landing, particleColor: string) {
+  const heroPhotos = [page.heroImageUrl, ...(page.heroImages ?? [])].filter((u): u is string => !!u)
   return (
     <section className="relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden px-4 text-center">
-        <div className="absolute inset-0"><Particles quantity={90} color="#6272f6" /></div>
+        <div className="absolute inset-0"><Particles key={particleColor} quantity={90} color={particleColor} /></div>
         <div className="mesh-gradient absolute inset-0" />
-        {page.heroImageUrl ? (
-          <div className="absolute inset-0 opacity-20 dark:opacity-25 pointer-events-none"
-            style={{ backgroundImage: `url(${page.heroImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        {heroPhotos.length > 0 ? (
+          <HeroSlideshow images={heroPhotos} />
         ) : (
           <div className="absolute -right-40 top-1/2 -translate-y-1/2 opacity-20 md:opacity-40 pointer-events-none">
             <Globe />
@@ -381,7 +420,7 @@ function renderAbout(page: Landing) {
             <img src={page.aboutImageUrl} alt={page.aboutTitle ?? ''} className="h-full w-full object-cover" />
           </motion.div>
         ) : (
-          <div className="hidden md:block aspect-[4/3] rounded-2xl bg-gradient-to-br from-brand-500/20 via-purple-500/20 to-transparent border border-border" />
+          <div className="hidden md:block aspect-[4/3] rounded-2xl bg-gradient-to-br from-brand-500/20 via-brand-accent/20 to-transparent border border-border" />
         )}
       </div>
     </section>
@@ -436,7 +475,12 @@ function renderProcess(page: Landing, steps: ProcessStep[]) {
             const Icon = ICONS[s.icon ?? 'FileText'] ?? FileText
             return (
               <motion.div key={`step-${i}`} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }} className="relative text-center">
-                <div className="relative mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-purple-600 shadow-lg shadow-brand-500/30 ring-4 ring-background">
+                {s.imageUrl && (
+                  <div className="mb-4 aspect-[4/3] overflow-hidden rounded-xl border border-border shadow-md">
+                    <img src={s.imageUrl} alt={s.title ?? ''} className="h-full w-full object-cover" />
+                  </div>
+                )}
+                <div className={`relative mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-accent shadow-lg shadow-brand-500/30 ring-4 ring-background ${s.imageUrl ? '-mt-10' : ''}`}>
                   <Icon className="h-5 w-5 text-white" />
                 </div>
                 <h3 className="mb-2 font-semibold text-foreground">{s.title}</h3>
@@ -467,7 +511,7 @@ function renderTestimonials(page: Landing, testimonials: Testimonial[]) {
                   {t.photoUrl ? (
                     <img src={t.photoUrl} alt={t.authorName ?? ''} className="h-9 w-9 rounded-full object-cover" />
                   ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-purple-600 text-xs font-bold text-white">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-accent text-xs font-bold text-white">
                       {(t.authorName ?? '?').charAt(0).toUpperCase()}
                     </div>
                   )}
@@ -549,9 +593,14 @@ function renderProgrammes(programmes: Programme[], page?: Landing) {
             Voir tout <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {shown.map((p) => <ProgrammeCard key={p.id} programme={p} />)}
-        </div>
+        {(page?.programmesImages?.length ?? 0) > 0 && (
+          <PhotoCarousel className="mb-8" aspect="aspect-[16/9] md:aspect-[21/8]" images={page!.programmesImages!.map((url) => ({ url }))} />
+        )}
+        {shown.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {shown.map((p) => <ProgrammeCard key={p.id} programme={p} />)}
+          </div>
+        )}
       </div>
     </section>
   )

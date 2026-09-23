@@ -89,6 +89,16 @@ public class AuthController {
     }
 
     /**
+     * Current token version of the caller. The gateway calls this with the
+     * caller's own Bearer token and rejects requests whose JWT {@code tv} claim
+     * is older (roles/permissions changed since the token was minted).
+     */
+    @GetMapping("/token-version")
+    public ResponseEntity<java.util.Map<String, Integer>> tokenVersion(@RequestAttribute("userId") Long userId) {
+        return ResponseEntity.ok(java.util.Map.of("tv", authService.getTokenVersion(userId)));
+    }
+
+    /**
      * Live auth events stream (SSE): {@code permissions-changed},
      * {@code account-disabled}. Authenticated via the standard Bearer header
      * (clients use fetch-based SSE, not EventSource).

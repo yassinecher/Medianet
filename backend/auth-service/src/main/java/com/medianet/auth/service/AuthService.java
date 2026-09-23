@@ -547,6 +547,12 @@ public class AuthService {
         return toDto(user);
     }
 
+    /** Current token version of a user (see User.tokenVersion). */
+    @Transactional(readOnly = true)
+    public int getTokenVersion(Long userId) {
+        return userRepository.findTokenVersion(userId).orElse(0);
+    }
+
     /**
      * Re-issue a JWT from current DB state — used by live sessions after a
      * {@code permissions-changed} event so new roles/permissions take effect

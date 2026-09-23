@@ -35,6 +35,8 @@ public class JwtService {
         claims.put("permissions", new ArrayList<>(user.getAllPermissionSlugs()));
         claims.put("firstName",   user.getFirstName());
         claims.put("lastName",    user.getLastName());
+        // Revocation stamp — the gateway compares it with the current DB value.
+        claims.put("tv",          user.getTokenVersion() == null ? 0 : user.getTokenVersion());
 
         return Jwts.builder()
                 .claims(claims)

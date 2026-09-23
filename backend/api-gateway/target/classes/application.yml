@@ -15,23 +15,102 @@ spring:
           uri: lb://auth-service
           predicates:
             - Path=/api/auth/**
-        - id: session-service
-          uri: lb://session-service
+        - id: auth-service-organizations
+          uri: lb://auth-service
           predicates:
-            - Path=/api/sessions/**
+            - Path=/api/organizations/**
         - id: candidature-service
           uri: lb://candidature-service
           predicates:
             - Path=/api/candidatures/**
+        - id: programme-service
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/programmes/**
+        - id: programme-service-partners
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/partners/**
+        - id: programme-service-tasks
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/tasks/**
+        - id: programme-service-participants
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/participants/**
+        - id: programme-service-workshops
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/workshops/**
+        - id: programme-service-availability
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/availability/**
+        - id: programme-service-pitch
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/pitch/**
+        - id: programme-service-files
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/files/**
+        - id: programme-service-landing
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/landing-page/**
+        - id: programme-service-presets
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/session-presets/**
+        - id: programme-service-form-templates
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/form-templates/**
+        - id: programme-service-parcours-templates
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/parcours-templates/**
+        - id: programme-service-catalog
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/catalog/**
+        - id: programme-service-canva
+          uri: lb://programme-service
+          predicates:
+            - Path=/api/canva/**
+        - id: admin-ai-service
+          uri: lb://admin-ai-service
+          predicates:
+            - Path=/api/admin-ai/**
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**
+        # NOTE: ai-scoring-service (/api/ai/score) and ai-matching-service
+        # (/api/ai/match) were retired — superseded by admin-ai-service
+        # (/api/admin-ai/**). Routes removed so the gateway no longer depends on
+        # two services that are no longer built or deployed.
+        # Public MinIO objects — uploaded logos, galleries and pitch videos.
+        # Their public URL is built as <MINIO_PUBLIC_URL>/<bucket>/<key>, so the
+        # path starts with the bucket name. The bucket carries an anonymous
+        # s3:GetObject policy, so nothing is signed: the gateway just forwards
+        # the path through (no StripPrefix — MinIO needs the bucket prefix for
+        # path-style addressing). Keeps every public URL on the ONE API domain
+        # instead of requiring a separate reverse-proxy rule per server.
+        - id: minio-public
+          uri: ${MINIO_INTERNAL_URL:http://localhost:9000}
+          predicates:
+            - Path=/${MINIO_BUCKET:medianet}/**
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
       globalcors:
         cors-configurations:
           '[/**]':
-            allowedOriginPatterns:
-              - "http://localhost:4200"
-              - "http://localhost:4300"
-              - "http://localhost:*"
+            # JWT is sent in the Authorization header (not cookies), so a browser
+            # on another origin can't ride a user's session — allowing all origins
+            # is safe here. Override with GATEWAY_CORS_ORIGINS to restrict later.
+            allowedOriginPatterns: "${GATEWAY_CORS_ORIGINS:*}"
             allowedMethods:
               - GET
               - POST
@@ -41,6 +120,7 @@ spring:
               - OPTIONS
             allowedHeaders: "*"
             allowCredentials: true
+            maxAge: 3600
 
 eureka:
   client:

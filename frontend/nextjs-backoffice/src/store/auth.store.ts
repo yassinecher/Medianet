@@ -39,3 +39,18 @@ export const useAuthStore = create<AuthStore>()(
 )
 
 export const useUser = () => useAuthStore((s) => s.user)
+
+/**
+ * The back-office is reserved to ADMIN (same rule as the login page). Checked
+ * again after every token refresh so removing the role ends the session live.
+ */
+export const hasAdminAccess = (u: { role?: string; roles?: string[] } | null | undefined) =>
+  !!u && (u.role === 'ADMIN' || !!u.roles?.includes('ADMIN'))
+
+/** Log out with an explanation — used when an admin loses back-office access. */
+export function endAdminSession(message: string) {
+  useAuthStore.getState().logout()
+  if (typeof window === 'undefined') return
+  try { sessionStorage.setItem('bo-logout-reason', message) } catch {}
+  if (window.location.pathname !== '/login') window.location.href = '/login'
+}

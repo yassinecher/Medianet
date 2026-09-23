@@ -7,6 +7,7 @@ import {
   Eye, EyeOff, Palette, MessageSquareQuote, HelpCircle, ListChecks, Info,
   FileText, ClipboardCheck, Lightbulb, ArrowRight, Trophy, Search,
   Monitor, Tablet, Smartphone, Wand2, PanelRightOpen, PanelRightClose,
+  LayoutTemplate, Images, GalleryHorizontal, Image as ImageIcon,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { landingPageApi, adminAiApi } from '@/lib/api'
@@ -16,10 +17,27 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ImageUpload } from '@/components/upload/ImageUpload'
+import { ImageListEditor, type ListImage } from '@/components/upload/ImageListEditor'
+import { setBrandLogoUrl } from '@/components/brand/useBrandLogo'
 
 interface Stat { label?: string; value?: number; suffix?: string }
 interface Feature { title?: string; description?: string; icon?: string; imageUrl?: string }
-interface ProcessStep { title?: string; description?: string; icon?: string }
+interface ProcessStep { title?: string; description?: string; icon?: string; imageUrl?: string }
+type CustomLayout = 'text-image' | 'gallery' | 'carousel'
+interface CustomSection {
+  id?: string
+  layout?: CustomLayout
+  badge?: string
+  title?: string
+  subtitle?: string
+  body?: string
+  imagePosition?: 'left' | 'right'
+  background?: 'default' | 'muted' | 'dark'
+  ctaLabel?: string
+  ctaLink?: string
+  visible?: boolean
+  images?: ListImage[]
+}
 interface Testimonial { quote?: string; authorName?: string; authorRole?: string; photoUrl?: string }
 interface Faq { question?: string; answer?: string }
 
@@ -28,12 +46,14 @@ interface LandingPage {
   programmesTitle?: string
   programmesSubtitle?: string
   programmesLimit?: number
+  programmesImages?: string[]
   showProgrammes?: boolean
   // Hero
   heroTitle?: string
   heroSubtitle?: string
   heroBadge?: string
   heroImageUrl?: string
+  heroImages?: string[]
   primaryCtaLabel?: string
   primaryCtaLink?: string
   secondaryCtaLabel?: string
@@ -58,7 +78,10 @@ interface LandingPage {
   ctaButtonLabel?: string
   ctaButtonLink?: string
   footerText?: string
+  // Admin-created sections (placed in sectionOrder as "custom:<id>")
+  customSections?: CustomSection[]
   // Theme + visibility
+  logoUrl?: string
   primaryColor?: string
   accentColor?: string
   showHero?: boolean
@@ -89,6 +112,13 @@ const SECTION_META: Record<string, { id: string; label: string; icon: any; flag:
   cta:          { id: 'cta',          label: 'CTA final',     icon: Rocket,             flag: 'showCta' },
 }
 const ALL_SECTIONS = ['hero', 'stats', 'about', 'features', 'process', 'programmes', 'testimonials', 'faq', 'cta']
+
+const CUSTOM_LAYOUTS: Record<CustomLayout, { label: string; hint: string; icon: any }> = {
+  'text-image': { label: 'Texte + photo', hint: "Un bloc de texte à côté d'une photo (plusieurs photos = mini-carrousel)", icon: LayoutTemplate },
+  gallery:      { label: 'Grille de photos', hint: 'Mosaïque de photos, agrandissables au clic', icon: Images },
+  carousel:     { label: 'Carrousel de photos', hint: 'Photos défilantes avec flèches et légendes', icon: GalleryHorizontal },
+}
+const newSectionId = () => Math.random().toString(36).slice(2, 10)
 
 // ── Theme presets (one-click apply primary + accent colors) ───────────────────
 // The "default" preset uses empty strings → on save, the backend stores NULL,
@@ -254,6 +284,109 @@ function frontofficeBase(): string {
   return `${protocol}//${fo}`
 }
 
+/** Editor card for one admin-created section. */
+function CustomSectionEditor({ section: c, onChange, onRemove, onScroll }: {
+  section: CustomSection
+  onChange: (patch: Partial<CustomSection>) => void
+  onRemove: () => void
+  onScroll: (s: string) => void
+}) {
+  const layout = c.layout ?? 'text-image'
+  const L = CUSTOM_LAYOUTS[layout]
+  const HeaderIcon = L.icon
+  return (
+    <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section={`custom:${c.id}`}>
+      <h2 className="font-semibold text-foreground flex items-center gap-2">
+        <HeaderIcon className="h-4 w-4 text-brand-500" />{c.title || 'Section personnalisée'}
+        <span className="rounded bg-brand-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-brand-700 dark:text-brand-300">perso</span>
+        <span className="ml-auto flex gap-1.5">
+          <ScrollToPreviewButton section={`custom:${c.id}`} onScroll={onScroll} />
+          <button type="button" onClick={onRemove} title="Supprimer la section"
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[10px] font-bold text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
+            <Trash2 className="h-3 w-3" />Supprimer
+          </button>
+        </span>
+      </h2>
+
+      {/* Layout picker */}
+      <div className="grid gap-2 sm:grid-cols-3">
+        {(Object.entries(CUSTOM_LAYOUTS) as [CustomLayout, typeof L][]).map(([k, l]) => {
+          const LIcon = l.icon
+          return (
+            <button key={k} type="button" onClick={() => onChange({ layout: k })} title={l.hint}
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                layout === k ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300' : 'border-border bg-card text-muted-foreground hover:border-brand-400'}`}>
+              <LIcon className="h-4 w-4 shrink-0" />{l.label}
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-[10px] text-muted-foreground -mt-2">{L.hint}</p>
+
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Titre</label>
+          <Input value={c.title ?? ''} onChange={(e) => onChange({ title: e.target.value })} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Badge (optionnel)</label>
+          <Input value={c.badge ?? ''} placeholder="Nouveau" onChange={(e) => onChange({ badge: e.target.value })} />
+        </div>
+      </div>
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1 block">Sous-titre</label>
+        <Input value={c.subtitle ?? ''} onChange={(e) => onChange({ subtitle: e.target.value })} />
+      </div>
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1 block">Texte</label>
+        <textarea rows={4} value={c.body ?? ''} onChange={(e) => onChange({ body: e.target.value })}
+          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-y" />
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Fond de la section</label>
+          <select value={c.background ?? 'default'} onChange={(e) => onChange({ background: e.target.value as CustomSection['background'] })}
+            className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm">
+            <option value="default">Clair (par défaut)</option>
+            <option value="muted">Gris léger</option>
+            <option value="dark">Sombre</option>
+          </select>
+        </div>
+        {layout === 'text-image' && (
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Position de la photo</label>
+            <select value={c.imagePosition ?? 'right'} onChange={(e) => onChange({ imagePosition: e.target.value as 'left' | 'right' })}
+              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm">
+              <option value="right">À droite du texte</option>
+              <option value="left">À gauche du texte</option>
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Bouton — libellé (optionnel)</label>
+          <Input value={c.ctaLabel ?? ''} placeholder="En savoir plus" onChange={(e) => onChange({ ctaLabel: e.target.value })} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Bouton — lien</label>
+          <Input value={c.ctaLink ?? ''} placeholder="/programmes" onChange={(e) => onChange({ ctaLink: e.target.value })} />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
+          <ImageIcon className="h-3.5 w-3.5" />Photos ({(c.images ?? []).length})
+        </label>
+        <ImageListEditor folder="sections" captions searchQuery={c.title || 'startup incubator'}
+          images={c.images ?? []} onChange={(images) => onChange({ images })} />
+      </div>
+    </MagicCard>
+  )
+}
+
 export default function LandingPageEditor() {
   const [page, setPage] = useState<LandingPage>({})
   const [loading, setLoading] = useState(true)
@@ -332,12 +465,41 @@ export default function LandingPageEditor() {
     ({ question: '', answer: '' }))
 
   // ── Section ordering ────────────────────────────────────────────────────
+  const customSections = page.customSections ?? []
+  const validSectionIds = [...ALL_SECTIONS, ...customSections.filter((c) => c.id).map((c) => `custom:${c.id}`)]
   const sectionOrder: string[] = (() => {
-    const stored = (page.sectionOrder ?? '').split(',').map((x) => x.trim()).filter((x) => ALL_SECTIONS.includes(x))
+    const stored = (page.sectionOrder ?? '').split(',').map((x) => x.trim()).filter((x) => validSectionIds.includes(x))
     // Append any sections that the stored order forgot (e.g. after upgrades)
-    for (const s of ALL_SECTIONS) if (!stored.includes(s)) stored.push(s)
+    for (const s of validSectionIds) if (!stored.includes(s)) stored.push(s)
     return stored
   })()
+
+  // ── Custom sections ─────────────────────────────────────────────────────
+  const updateCustom = (id: string, patch: Partial<CustomSection>) => set('customSections',
+    customSections.map((c) => (c.id === id ? { ...c, ...patch } : c)))
+  const addCustomSection = (layout: CustomLayout) => {
+    const id = newSectionId()
+    const section: CustomSection = {
+      id, layout, visible: true, background: 'default', imagePosition: 'right',
+      title: layout === 'text-image' ? 'Nouvelle section' : 'Retour en images', images: [],
+    }
+    // Insert just before the final CTA so it lands inside the page, not after it.
+    const order = [...sectionOrder]
+    const ctaIdx = order.indexOf('cta')
+    order.splice(ctaIdx < 0 ? order.length : ctaIdx, 0, `custom:${id}`)
+    setPage((p) => ({ ...p, customSections: [...(p.customSections ?? []), section], sectionOrder: order.join(',') }))
+    setTimeout(() => {
+      document.querySelector(`[data-edit-section="custom:${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
+  }
+  const removeCustomSection = (id: string) => {
+    if (!confirm('Supprimer cette section ?')) return
+    setPage((p) => ({
+      ...p,
+      customSections: (p.customSections ?? []).filter((c) => c.id !== id),
+      sectionOrder: sectionOrder.filter((x) => x !== `custom:${id}`).join(','),
+    }))
+  }
   const moveSection = (id: string, dir: -1 | 1) => {
     const idx = sectionOrder.indexOf(id)
     const tgt = idx + dir
@@ -566,7 +728,33 @@ export default function LandingPageEditor() {
             Activez / désactivez chaque section et réorganisez l'ordre d'affichage. Les sections désactivées sont masquées sur la page publique.
           </p>
 
+          {/* Site logo */}
+          <div className="rounded-xl border border-border bg-muted/20 p-3">
+            <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">Logo du site (toutes les pages)</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex h-14 min-w-[160px] items-center justify-center rounded-lg border border-border bg-white px-3">
+                <img src={page.logoUrl || '/brand/medianet-incubator.svg'} alt="Logo" className="max-h-10 w-auto object-contain" />
+              </div>
+              {page.logoUrl && (
+                <Button type="button" variant="ghost" size="sm" className="gap-1.5"
+                  onClick={() => { set('logoUrl', ''); setBrandLogoUrl(null) }}>
+                  <RotateCcw className="h-3.5 w-3.5" />Logo Medianet Incubator par défaut
+                </Button>
+              )}
+            </div>
+            <div className="mt-2">
+              <ImageUpload value={page.logoUrl} folder="branding" previewHeight={50} compact enableSearch={false}
+                onChange={(url) => { set('logoUrl', url); setBrandLogoUrl(url) }} />
+            </div>
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              SVG ou PNG transparent recommandé. Remplace le logo du site public et de l'administration.
+            </p>
+          </div>
+
           {/* Theme colors */}
+          <p className="text-[10px] text-muted-foreground -mb-2">
+            La couleur primaire s'applique à tous les éléments de la page d'accueil (titres, boutons, cartes, icônes, dégradés) ; la couleur accent colore les dégradés.
+          </p>
           <div className="grid sm:grid-cols-2 gap-4 rounded-xl border border-border bg-muted/20 p-3">
             <div>
               <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">Couleur primaire</label>
@@ -593,15 +781,21 @@ export default function LandingPageEditor() {
           {/* Section list with toggle + reorder */}
           <div className="space-y-1.5">
             {sectionOrder.map((id, i) => {
-              const meta = SECTION_META[id]
+              const custom = id.startsWith('custom:') ? customSections.find((c) => `custom:${c.id}` === id) : undefined
+              const meta = custom
+                ? { label: custom.title || 'Section personnalisée', icon: CUSTOM_LAYOUTS[custom.layout ?? 'text-image']?.icon ?? LayoutTemplate }
+                : SECTION_META[id]
               if (!meta) return null
               const Icon = meta.icon
-              const visible = page[meta.flag] !== false  // default true if undefined
+              const visible = custom ? custom.visible !== false : page[SECTION_META[id].flag] !== false  // default true if undefined
               return (
                 <div key={id} className={`flex items-center gap-2 rounded-xl border bg-card p-2 transition-colors ${visible ? 'border-border' : 'border-dashed border-muted-foreground/30 opacity-60'}`}>
                   <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">#{i + 1}</span>
                   <Icon className="h-4 w-4 text-brand-500 shrink-0" />
-                  <span className="flex-1 text-sm font-semibold text-foreground">{meta.label}</span>
+                  <span className="flex-1 truncate text-sm font-semibold text-foreground">
+                    {meta.label}
+                    {custom && <span className="ml-2 rounded bg-brand-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-brand-700 dark:text-brand-300">perso</span>}
+                  </span>
                   <button type="button" onClick={() => moveSection(id, -1)} disabled={i === 0} title="Monter"
                     className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
                     <ChevronUp className="h-3 w-3" />
@@ -610,15 +804,40 @@ export default function LandingPageEditor() {
                     className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
                     <ChevronDown className="h-3 w-3" />
                   </button>
-                  <button type="button" onClick={() => toggleSection(meta.flag)} title={visible ? 'Masquer' : 'Afficher'}
+                  <button type="button" title={visible ? 'Masquer' : 'Afficher'}
+                    onClick={() => custom ? updateCustom(custom.id!, { visible: !visible }) : toggleSection(SECTION_META[id].flag)}
                     className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${visible
                       ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20'
                       : 'border-border bg-background text-muted-foreground hover:border-brand-400'}`}>
                     {visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                   </button>
+                  {custom && (
+                    <button type="button" onClick={() => removeCustomSection(custom.id!)} title="Supprimer la section"
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
               )
             })}
+          </div>
+
+          {/* Add a new section */}
+          <div className="rounded-xl border border-dashed border-brand-500/40 bg-brand-500/[0.03] p-3">
+            <p className="mb-2 text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <Plus className="h-3.5 w-3.5 text-brand-500" />Ajouter une nouvelle section
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {(Object.entries(CUSTOM_LAYOUTS) as [CustomLayout, typeof CUSTOM_LAYOUTS[CustomLayout]][]).map(([layout, l]) => {
+                const LIcon = l.icon
+                return (
+                  <button key={layout} type="button" onClick={() => addCustomSection(layout)} title={l.hint}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-xs font-semibold text-foreground transition-colors hover:border-brand-400 hover:bg-brand-500/5">
+                    <LIcon className="h-4 w-4 shrink-0 text-brand-500" />{l.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </MagicCard>
 
@@ -675,6 +894,15 @@ export default function LandingPageEditor() {
             <ImageUpload value={page.heroImageUrl} folder="hero" previewHeight={120}
               searchContext="hero" defaultQuery={page.heroTitle || 'tunisia startup incubator modern'}
               onChange={(url) => set('heroImageUrl', url)} />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Photos supplémentaires (diaporama en arrière-plan, change toutes les 6 s)
+            </label>
+            <ImageListEditor folder="hero" searchQuery={page.heroTitle || 'startup incubator team'}
+              images={(page.heroImages ?? []).map((url) => ({ url }))}
+              onChange={(imgs) => set('heroImages', imgs.map((i) => i.url ?? '').filter(Boolean))} />
           </div>
         </MagicCard>
 
@@ -900,6 +1128,12 @@ export default function LandingPageEditor() {
                       onChange={(e) => steps.update(i, { description: e.target.value })}
                       className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-none" />
                   </div>
+                  <div>
+                    <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Photo (optionnelle — affichée au-dessus de l'étape)</label>
+                    <ImageUpload value={s.imageUrl} folder="process" previewHeight={60} compact
+                      searchContext="feature" defaultQuery={s.title || 'startup team working'}
+                      onChange={(url) => steps.update(i, { imageUrl: url })} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -1069,9 +1303,17 @@ export default function LandingPageEditor() {
               <span>1</span><span>6 (défaut)</span><span>12</span>
             </div>
           </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Photos de la section (carrousel affiché au-dessus des cartes)
+            </label>
+            <ImageListEditor folder="programmes" searchQuery="startup incubator programme event"
+              images={(page.programmesImages ?? []).map((url) => ({ url }))}
+              onChange={(imgs) => set('programmesImages', imgs.map((i) => i.url ?? '').filter(Boolean))} />
+          </div>
           <p className="text-[10px] text-muted-foreground italic">
-Les cartes elles-mêmes sont générées automatiquement depuis les programmes ouverts.
-            Pour changer leur contenu, va dans <strong>Programmes</strong> dans la barre latérale.
+            Les cartes elles-mêmes sont générées automatiquement depuis les programmes ouverts. Chaque carte affiche la
+            bannière du programme (ou, à défaut, la première photo de sa galerie) — à modifier dans <strong>Programmes</strong> › fiche du programme.
           </p>
         </MagicCard>
 
@@ -1107,6 +1349,14 @@ Les cartes elles-mêmes sont générées automatiquement depuis les programmes o
             <Input value={page.footerText ?? ''} onChange={(e) => set('footerText', e.target.value)} />
           </div>
         </MagicCard>
+
+        {/* ── Admin-created sections ────────────────────────────────── */}
+        {customSections.map((c) => c.id && (
+          <CustomSectionEditor key={c.id} section={c}
+            onChange={(patch) => updateCustom(c.id!, patch)}
+            onRemove={() => removeCustomSection(c.id!)}
+            onScroll={scrollPreviewTo} />
+        ))}
 
         </div>
         {/* ── RIGHT: live preview pane ─────────────────────────────── */}

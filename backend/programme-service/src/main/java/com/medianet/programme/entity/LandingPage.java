@@ -38,6 +38,10 @@ public class LandingPage {
     @Column(columnDefinition = "TEXT")
     private String heroImageUrl; // background or hero image (optional)
 
+    /** Extra hero photos (JSON array of URLs) — cross-faded as a slideshow. */
+    @Column(columnDefinition = "TEXT")
+    private String heroImagesJson;
+
     @Builder.Default
     private String primaryCtaLabel = "Déposer ma candidature";
 
@@ -117,6 +121,10 @@ public class LandingPage {
     @Column(columnDefinition = "TEXT")
     private String programmesSubtitle;
 
+    /** Photos shown as a carousel above the programme cards (JSON array of URLs). */
+    @Column(columnDefinition = "TEXT")
+    private String programmesImagesJson;
+
     /** How many open programmes to fetch and display (default 6). */
     @Builder.Default
     private Integer programmesLimit = 6;
@@ -139,7 +147,15 @@ public class LandingPage {
     @Builder.Default
     private String footerText = "© 2026 Medianet Incubateur. Tous droits réservés.";
 
+    // ── Custom sections (admin-created, JSON array of LandingCustomSection) ──
+    @Column(columnDefinition = "TEXT")
+    private String customSectionsJson;
+
     // ── Theme ─────────────────────────────────────────────────────────────────
+    /** Site logo override (null = bundled Medianet Incubator logo). */
+    @Column(columnDefinition = "TEXT")
+    private String logoUrl;
+
     /** Primary brand color as hex (e.g. "#FF6A00"). Optional override. */
     private String primaryColor;
     /** Optional accent color for gradients. */
