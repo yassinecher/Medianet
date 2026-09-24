@@ -16,6 +16,9 @@
     --brand-800: 7 89 133;
     --brand-900: 12 74 110;
     --brand-950: 8 47 73;
+    /* Medianet gold (#FBB431) deepened so white labels stay readable on gradients.
+       Keep in sync with MEDIANET_ACCENT in lib/landingTheme.ts. */
+    --brand-accent: 204 134 4;
 
     /* Light: page a hair off-white so white cards lift; focus ring = brand blue. */
     --background: 204 26% 98%;

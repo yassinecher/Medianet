@@ -7,9 +7,16 @@ import { cn } from '@/lib/utils'
 import { Group, Segmented, TextField } from './fields'
 import type { LandingDoc } from './schema'
 
+/**
+ * The site's own palette when no color is chosen — mirrors MEDIANET_PRIMARY /
+ * MEDIANET_ACCENT in the front-office (lib/landingTheme.ts): Medianet cyan + gold.
+ */
+const MEDIANET_PRIMARY = '#00A3E0'
+const MEDIANET_ACCENT = '#FBB431'
+
 /** One-click color pairs (empty = back to the Medianet palette). */
 const THEME_PRESETS = [
-  { id: 'default',  label: 'Défaut Medianet', primary: '',        accent: '' },
+  { id: 'default',  label: 'Défaut Medianet (cyan + or)', primary: '', accent: '' },
   { id: 'sunset',   label: 'Sunset',   primary: '#FF6A00', accent: '#9333EA' },
   { id: 'ocean',    label: 'Ocean',    primary: '#0EA5E9', accent: '#14B8A6' },
   { id: 'forest',   label: 'Forest',   primary: '#16A34A', accent: '#CA8A04' },
@@ -26,17 +33,22 @@ const SITE_MODES = [
   { value: 'custom' as const,  label: 'Dédiées',         hint: 'Des couleurs différentes pour le reste du site public.' },
 ]
 
-/** Hex picker + text input; empty = default palette. */
+/** Hex picker + text input; empty = the Medianet default (shown in the swatch and placeholder). */
 function ColorField({ label, value, fallback, onChange }: {
   label: string; value?: string; fallback: string; onChange: (v: string) => void
 }) {
   return (
     <div className="space-y-1">
-      <span className="block text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+        {label}
+        {value
+          ? <button type="button" onClick={() => onChange('')} className="text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">Défaut</button>
+          : <span className="text-[11px]">Défaut Medianet</span>}
+      </span>
       <div className="flex gap-2">
         <input type="color" value={value || fallback} onChange={(e) => onChange(e.target.value)} aria-label={label}
           className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-input" />
-        <Input value={value ?? ''} placeholder="Défaut" onChange={(e) => onChange(e.target.value)} className="font-mono" />
+        <Input value={value ?? ''} placeholder={`Défaut (${fallback})`} onChange={(e) => onChange(e.target.value)} className="font-mono" />
       </div>
     </div>
   )
@@ -68,19 +80,20 @@ export function SiteSettingsPanel({ doc, set }: { doc: LandingDoc; set: (patch: 
         <div className="flex flex-wrap gap-1.5">
           {THEME_PRESETS.map((t) => {
             const active = (doc.primaryColor ?? '') === t.primary && (doc.accentColor ?? '') === t.accent
+            const isDefault = !t.primary
             return (
               <button key={t.id} type="button" title={t.label} onClick={() => set({ primaryColor: t.primary, accentColor: t.accent })}
-                className={cn('h-8 w-8 rounded-lg border-2 transition-transform hover:scale-105',
-                  active ? 'border-foreground' : 'border-transparent', !t.primary && 'border-dashed !border-border bg-card')}
-                style={t.primary ? { background: `linear-gradient(135deg, ${t.primary} 50%, ${t.accent} 50%)` } : undefined}>
-                {!t.primary && <span className="mx-auto block h-3 w-3 rounded-full bg-[#00A3E0]" />}
+                className={cn('relative h-8 w-8 overflow-hidden rounded-lg border-2 transition-transform hover:scale-105',
+                  active ? 'border-foreground' : 'border-transparent')}
+                style={{ background: `linear-gradient(135deg, ${t.primary || MEDIANET_PRIMARY} 50%, ${t.accent || MEDIANET_ACCENT} 50%)` }}>
+                {isDefault && <span className="absolute inset-x-0 bottom-0 bg-black/45 text-[8px] font-bold leading-3 text-white">M</span>}
               </button>
             )
           })}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <ColorField label="Couleur primaire" value={doc.primaryColor} fallback="#00A3E0" onChange={(v) => set({ primaryColor: v })} />
-          <ColorField label="Couleur accent (dégradés)" value={doc.accentColor} fallback="#9333EA" onChange={(v) => set({ accentColor: v })} />
+          <ColorField label="Couleur primaire" value={doc.primaryColor} fallback={MEDIANET_PRIMARY} onChange={(v) => set({ primaryColor: v })} />
+          <ColorField label="Couleur accent (dégradés)" value={doc.accentColor} fallback={MEDIANET_ACCENT} onChange={(v) => set({ accentColor: v })} />
         </div>
         <p className="text-[11px] text-muted-foreground">
           Titres, boutons, cartes, icônes et dégradés suivent ces couleurs ; les contrastes sont ajustés automatiquement en mode clair et sombre.
@@ -93,8 +106,8 @@ export function SiteSettingsPanel({ doc, set }: { doc: LandingDoc; set: (patch: 
         <p className="text-[11px] text-muted-foreground">{SITE_MODES.find((m) => m.value === mode)?.hint}</p>
         {mode === 'custom' && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <ColorField label="Couleur primaire du site" value={doc.sitePrimaryColor} fallback="#00A3E0" onChange={(v) => set({ sitePrimaryColor: v })} />
-            <ColorField label="Couleur accent du site" value={doc.siteAccentColor} fallback="#9333EA" onChange={(v) => set({ siteAccentColor: v })} />
+            <ColorField label="Couleur primaire du site" value={doc.sitePrimaryColor} fallback={MEDIANET_PRIMARY} onChange={(v) => set({ sitePrimaryColor: v })} />
+            <ColorField label="Couleur accent du site" value={doc.siteAccentColor} fallback={MEDIANET_ACCENT} onChange={(v) => set({ siteAccentColor: v })} />
           </div>
         )}
       </Group>

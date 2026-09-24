@@ -264,8 +264,12 @@ export default function LandingPageEditor() {
 
   return (
     <AdminLayout>
+      {/* lg+: the editor fills the admin content area exactly (no page scroll);
+          each column scrolls on its own and the preview gets all remaining height.
+          Smaller screens: normal stacked page. */}
+      <div className="flex flex-col lg:h-full">
       {/* ── Toolbar ─────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+      <div className="sticky top-0 z-30 -mx-4 mb-4 shrink-0 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
         <div className="flex flex-wrap items-center gap-2">
           <Home className="h-4 w-4 text-brand-500" />
           <h1 className="text-sm font-bold text-foreground">Page d’accueil</h1>
@@ -308,17 +312,17 @@ export default function LandingPageEditor() {
         </div>
       </div>
 
-      <div className={cn('grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]',
+      <div className={cn('grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[280px_minmax(0,1fr)] lg:grid-rows-1',
         previewOpen && 'xl:grid-cols-[270px_minmax(360px,0.85fr)_minmax(0,1.15fr)]')}>
         {/* ── Outline ─────────────────────────────────────────────── */}
-        <aside className="lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+        <aside className="lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           <BlockOutline blocks={doc.blocks} selectedId={selectedId} onSelect={select}
             onMove={move} onReorder={reorder} onToggle={toggle} onDuplicate={duplicate} onDelete={remove}
             onAdd={(afterId) => setPicker({ open: true, afterId })} />
         </aside>
 
         {/* ── Selected block / settings ───────────────────────────── */}
-        <main id="landing-block-form" className="min-w-0 scroll-mt-16 space-y-3">
+        <main id="landing-block-form" className="min-w-0 scroll-mt-16 space-y-3 lg:min-h-0 lg:overflow-y-auto lg:pb-2 lg:pr-1">
           {selectedId === SETTINGS_ID || !selected ? (
             <>
               <header>
@@ -367,11 +371,12 @@ export default function LandingPageEditor() {
 
         {/* ── Live preview ────────────────────────────────────────── */}
         {previewOpen && (
-          <div className="hidden xl:block xl:sticky xl:top-16 xl:h-[calc(100vh-5.5rem)] xl:self-start">
+          <div className="hidden min-h-0 xl:block">
             <PreviewPane doc={doc} selectedId={selectedId === SETTINGS_ID ? null : selectedId}
               focusKey={focusKey} onSelectBlock={select} />
           </div>
         )}
+      </div>
       </div>
 
       <BlockPicker open={picker.open} blocks={doc.blocks}

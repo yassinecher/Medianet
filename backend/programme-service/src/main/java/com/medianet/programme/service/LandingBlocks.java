@@ -269,10 +269,20 @@ public class LandingBlocks {
             if (!always && !hasContent) continue;
             LandingBlock b = newBlock(spec);
             fill(spec, b, legacy);
-            if ("features".equals(spec.type())) {
-                // The old page hardcoded this heading; it is now editable.
-                b.getData().putIfAbsent("title", "Tout ce dont vous avez besoin");
-                b.getData().putIfAbsent("subtitle", "Un écosystème complet pour chaque acteur de l'incubation");
+            // Headings the old page rendered as fallbacks when nothing was saved
+            // (hardcoded for features); blocks store them explicitly.
+            switch (spec.type()) {
+                case "features" -> {
+                    b.getData().putIfAbsent("title", "Tout ce dont vous avez besoin");
+                    b.getData().putIfAbsent("subtitle", "Un écosystème complet pour chaque acteur de l'incubation");
+                }
+                case "programmes" -> {
+                    b.getData().putIfAbsent("title", "Programmes ouverts");
+                    b.getData().putIfAbsent("subtitle", "Candidatez dès maintenant");
+                }
+                case "testimonials" -> b.getData().putIfAbsent("title", "Ils nous font confiance");
+                case "faq" -> b.getData().putIfAbsent("title", "Questions fréquentes");
+                default -> { }
             }
             b.setVisible(!Boolean.FALSE.equals(legacy.get(spec.showKey())));
             out.add(b);

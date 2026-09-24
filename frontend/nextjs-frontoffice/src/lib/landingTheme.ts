@@ -87,9 +87,13 @@ function accentFor(accent: RGB, mode: 'light' | 'dark'): RGB {
   return hslToRgb(ensureContrast(hsl, WHITE, 3, -2))
 }
 
-/** Best readable text color (white or near-black) on top of `bg`. */
+/**
+ * Text color on a brand fill (buttons, badges): WHITE — the Medianet look — unless
+ * the fill is so light that white becomes illegible (yellows, pastels), then near-black.
+ */
+const MIN_WHITE_ON_FILL = 2.2
 function onColor(bg: RGB): RGB {
-  return contrast([255, 255, 255], bg) >= contrast(DARK_TEXT, bg) ? [255, 255, 255] : DARK_TEXT
+  return contrast(WHITE, bg) >= MIN_WHITE_ON_FILL ? WHITE : DARK_TEXT
 }
 
 // Target lightness per shade (500 is the admin's own color, clamped per mode).
@@ -146,30 +150,67 @@ function modeCss(selector: string, m: ModeVars): string {
   return `${selector}{${Object.entries(v).map(([k, val]) => `${k}:${val}`).join(';')}}`
 }
 
+// ── The Medianet default palette ────────────────────────────────────────────
+// What the site shows when no custom color is chosen. KEEP IN SYNC with
+// globals.css (:root / .dark) and the `brand-accent` fallback in tailwind.config.ts.
+
+/** Medianet cyan (globals.css --brand-500) — shown as the default primary in the editor. */
+export const MEDIANET_PRIMARY = '#00A3E0'
+/** Medianet gold (logo + default CTA gradient) — shown as the default accent in the editor. */
+export const MEDIANET_ACCENT = '#FBB431'
+
+const DEFAULT_BRAND: Record<string, string> = {
+  '--brand-50': '240 249 255', '--brand-100': '224 242 254', '--brand-200': '186 230 253',
+  '--brand-300': '125 211 252', '--brand-400': '56 189 248', '--brand-500': '0 163 224',
+  '--brand-600': '0 132 199', '--brand-700': '3 105 161', '--brand-800': '7 89 133',
+  '--brand-900': '12 74 110', '--brand-950': '8 47 73',
+}
+
+/**
+ * Explicit Medianet defaults for a scoped element. Needed because the site-wide
+ * theme (html:root) may carry OTHER colors: an element left without overrides
+ * would inherit them instead of showing the default. `initial` makes the
+ * gradient/button variables fall back to the components' built-in Medianet
+ * gradients (gold → cyan).
+ */
+function defaultCss(lightSel: string, darkSel: string): string {
+  const common: Record<string, string> = {
+    ...DEFAULT_BRAND,
+    '--brand-contrast': '255 255 255',
+    '--shimmer-bg': 'initial', '--brand-cta': 'initial', '--brand-cta-accent': 'initial', '--banner-bg': 'initial',
+  }
+  const block = (sel: string, vars: Record<string, string>) =>
+    `${sel}{${Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(';')}}`
+  const gold = hexToRgb(MEDIANET_ACCENT)!
+  return block(lightSel, { ...common, '--brand-accent': triplet(accentFor(gold, 'light')),
+    '--primary': '199 100% 44%', '--primary-foreground': '0 0% 100%', '--ring': '199 100% 44%' })
+    + block(darkSel, { ...common, '--brand-accent': triplet(accentFor(gold, 'dark')),
+      '--primary': '199 100% 48%', '--primary-foreground': '210 45% 5%', '--ring': '199 100% 48%' })
+}
+
 /**
  * Theme CSS for two selectors (light + dark), or '' when no valid custom color
- * is set (the default Medianet palette from globals.css then applies unchanged).
+ * is set (the default Medianet palette from globals.css then applies). When only
+ * one of the two colors is set, the other one is the Medianet default.
  */
 export function buildThemeCss(primaryHex: string | null | undefined, accentHex: string | null | undefined,
                               lightSel: string, darkSel: string): string {
   const primary = hexToRgb(primaryHex)
   const accent = hexToRgb(accentHex)
   if (!primary && !accent) return ''
-  if (!primary) {
-    // Accent only: just recolor the gradients, keep the default brand scale.
-    const css = (sel: string, mode: 'light' | 'dark') => {
-      const a = accentFor(accent!, mode)
-      return `${sel}{--brand-accent:${triplet(a)};--brand-cta-accent:${toHex(a)};--shimmer-bg:linear-gradient(90deg, #fbb431 0%, ${toHex(a)} 100%)}`
-    }
-    return css(lightSel, 'light') + css(darkSel, 'dark')
-  }
-  return modeCss(lightSel, buildMode(primary, accent, 'light'))
-       + modeCss(darkSel, buildMode(primary, accent, 'dark'))
+  const p = primary ?? hexToRgb(MEDIANET_PRIMARY)!
+  const a = accent ?? hexToRgb(MEDIANET_ACCENT)!
+  return modeCss(lightSel, buildMode(p, a, 'light')) + modeCss(darkSel, buildMode(p, a, 'dark'))
 }
 
-/** Landing page wrapper (`.landing-theme`). */
+/**
+ * Landing page wrapper (`.landing-theme`). Always explicit: with no custom
+ * colors it RESETS to the Medianet defaults, so the landing (and the editor
+ * preview of a « Défaut » draft) never inherits the site-wide colors.
+ */
 export function buildLandingThemeCss(primaryHex?: string | null, accentHex?: string | null): string {
   return buildThemeCss(primaryHex, accentHex, '.landing-theme', '.dark .landing-theme')
+    || defaultCss('.landing-theme', '.dark .landing-theme')
 }
 
 export interface SiteThemeSettings {

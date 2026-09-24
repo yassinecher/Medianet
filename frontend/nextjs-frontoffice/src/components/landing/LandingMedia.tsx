@@ -156,7 +156,7 @@ export function MediaContent({ data: s }: { data: MediaData }) {
           {s.badge}
         </div>
       )}
-      {s.title && <h2 className="text-3xl font-bold text-foreground md:text-4xl">{s.title}</h2>}
+      {s.title && <h2 className="text-2xl font-bold text-foreground md:text-4xl">{s.title}</h2>}
       {s.subtitle && <p className="mt-2 text-muted-foreground">{s.subtitle}</p>}
     </>
   )
@@ -173,7 +173,7 @@ export function MediaContent({ data: s }: { data: MediaData }) {
   if (s.layout === 'gallery' || s.layout === 'carousel') {
     return (
       <div className="mx-auto max-w-5xl">
-        {(s.badge || s.title || s.subtitle || s.body) && <div className="mb-10 text-center">{heading}{body}</div>}
+        {(s.badge || s.title || s.subtitle || s.body) && <div className="mb-8 text-center md:mb-10">{heading}{body}</div>}
         {s.layout === 'carousel' ? <PhotoCarousel images={images} /> : <PhotoGallery images={images} />}
         {cta && <div className="text-center">{cta}</div>}
       </div>
@@ -192,7 +192,7 @@ export function MediaContent({ data: s }: { data: MediaData }) {
       : <div className="hidden aspect-[4/3] rounded-2xl border border-border bg-gradient-to-br from-brand-500/20 via-brand-accent/20 to-transparent md:block" />
   const imageLeft = s.imagePosition === 'left'
   return (
-    <div className="mx-auto grid max-w-5xl items-center gap-10 md:grid-cols-2">
+    <div className="mx-auto grid max-w-5xl items-center gap-8 md:grid-cols-2 md:gap-10">
       <motion.div initial={{ opacity: 0, x: imageLeft ? 20 : -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
         className={imageLeft ? 'md:order-2' : ''}>
         {heading}{body}{cta}

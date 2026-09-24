@@ -33,6 +33,28 @@ export default function LandingPage() {
   const [programmes, setProgrammes] = useState<Programme[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const editorOrigin = useRef<string | null>(null)
+  /** Editor preview: visible pane height (unscaled) — drives full-screen sections. */
+  const [previewVh, setPreviewVh] = useState<number | null>(null)
+  const pageRef = useRef<HTMLDivElement>(null)
+  const reportedHeight = useRef(0)
+
+  // Editor preview: report the page's real height so the editor sizes the iframe
+  // to fit it (its pane scrolls, with a normal scrollbar, instead of the iframe).
+  // Re-attached every render: the page element only exists once content arrived.
+  useEffect(() => {
+    if (!editMode || !pageRef.current || window.parent === window) return
+    const el = pageRef.current
+    const report = () => {
+      const height = Math.ceil(el.getBoundingClientRect().height)
+      if (height === reportedHeight.current) return
+      reportedHeight.current = height
+      window.parent.postMessage({ type: 'landing-preview-height', height }, editorOrigin.current ?? '*')
+    }
+    report()
+    const ro = new ResizeObserver(report)
+    ro.observe(el)
+    return () => ro.disconnect()
+  })
 
   // Logged-in visitors go to their dashboard (never inside the editor preview).
   useEffect(() => {
@@ -75,11 +97,19 @@ export default function LandingPage() {
       if (m.type === 'landing-preview' && m.doc?.blocks) {
         setBrandLogoUrl(m.doc.logoUrl, { persist: false })
         setDoc(m.doc)
+      } else if (m.type === 'landing-preview-viewport' && typeof m.height === 'number') {
+        setPreviewVh(m.height)
       } else if (m.type === 'select-block') {
         setSelectedId(m.id ?? null)
         if (m.scroll && m.id) {
-          requestAnimationFrame(() => document.querySelector(`[data-block="${CSS.escape(m.id)}"]`)
-            ?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+          requestAnimationFrame(() => {
+            const el = document.querySelector(`[data-block="${CSS.escape(m.id)}"]`)
+            if (!el) return
+            if (window.parent === window) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
+            // The iframe is as tall as the page: the EDITOR's pane scrolls, not us.
+            const top = el.getBoundingClientRect().top + window.scrollY
+            window.parent.postMessage({ type: 'landing-preview-scroll', top }, editorOrigin.current ?? '*')
+          })
         }
       }
     }
@@ -130,8 +160,11 @@ export default function LandingPage() {
   }
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }}
-      className="landing-theme min-h-screen bg-background">
+    <motion.div ref={pageRef} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }}
+      // In the preview the page must measure its CONTENT height: no min-h-screen
+      // (the iframe is sized from that height, which would then only ever grow).
+      className={cn('landing-theme bg-background', !editMode && 'min-h-screen')}
+      style={editMode && previewVh ? ({ '--landing-vh': `${previewVh}px` } as React.CSSProperties) : undefined}>
       {themeCss && <style>{themeCss}</style>}
       <Navbar />
 
