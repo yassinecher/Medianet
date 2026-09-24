@@ -1,0 +1,99 @@
+[
+  {
+    "id": "hero", "type": "hero", "visible": true,
+    "data": {
+      "badge": "Plateforme d'incubation propulsée par l'IA",
+      "title": "Incubez vos idées avec l'intelligence artificielle",
+      "subtitle": "Medianet Incubateur connecte les porteurs de projets aux meilleures opportunités d'accompagnement à travers une plateforme intelligente.",
+      "primaryCtaLabel": "Déposer ma candidature", "primaryCtaLink": "/register",
+      "secondaryCtaLabel": "Explorer les programmes", "secondaryCtaLink": "/programmes",
+      "images": []
+    }
+  },
+  {
+    "id": "stats", "type": "stats", "visible": true,
+    "data": {
+      "background": "muted",
+      "items": [
+        { "label": "Programmes actifs", "value": 12, "suffix": "+" },
+        { "label": "Startups incubées", "value": 150, "suffix": "+" },
+        { "label": "Taux de succès", "value": 87, "suffix": "%" },
+        { "label": "Mentors experts", "value": 40, "suffix": "+" }
+      ]
+    }
+  },
+  {
+    "id": "features", "type": "features", "visible": true,
+    "data": {
+      "title": "Tout ce dont vous avez besoin",
+      "subtitle": "Un écosystème complet pour chaque acteur de l'incubation",
+      "items": [
+        { "icon": "Target", "title": "Sélection IA", "description": "Notre algorithme IA évalue les candidatures selon des critères métier pondérés définis par chaque programme." },
+        { "icon": "Users", "title": "Matching intelligent", "description": "Mise en relation automatique entre porteurs de projets et mentors basée sur les compétences et le secteur." },
+        { "icon": "Globe2", "title": "Multi-programmes", "description": "Programmes simultanés avec phases, critères et jurys personnalisés pour chaque secteur." },
+        { "icon": "Sparkles", "title": "Suivi en temps réel", "description": "Notifications et tableaux de bord pour suivre votre candidature à chaque étape." }
+      ]
+    }
+  },
+  {
+    "id": "about", "type": "media", "visible": false,
+    "data": {
+      "layout": "text-image", "imagePosition": "right",
+      "badge": "Notre mission",
+      "title": "Accélérer l'innovation tunisienne",
+      "body": "Medianet Incubateur est l'écosystème de référence pour transformer une idée en entreprise. Depuis 2018, nous avons accompagné plus de 150 startups dans 12 secteurs en combinant mentorat humain, programmes structurés et un moteur IA de matching et d'évaluation.",
+      "images": []
+    }
+  },
+  {
+    "id": "process", "type": "process", "visible": false,
+    "data": {
+      "background": "muted",
+      "title": "Comment ça marche",
+      "subtitle": "4 étapes simples pour rejoindre un programme",
+      "items": [
+        { "icon": "FileText", "title": "1. Candidature", "description": "Remplissez le formulaire en ligne en 10 minutes. Pas de frais." },
+        { "icon": "ClipboardCheck", "title": "2. Évaluation IA", "description": "Notre IA évalue votre projet selon les critères pondérés du programme." },
+        { "icon": "Users", "title": "3. Entretien jury", "description": "Les meilleurs profils sont invités à pitcher devant un jury d'experts." },
+        { "icon": "Rocket", "title": "4. Accompagnement", "description": "Sélectionné ? Rejoignez le programme avec mentors, locaux et financements." }
+      ]
+    }
+  },
+  {
+    "id": "programmes", "type": "programmes", "visible": true,
+    "data": { "background": "muted", "title": "Programmes ouverts", "subtitle": "Candidatez dès maintenant", "limit": 6, "images": [] }
+  },
+  {
+    "id": "testimonials", "type": "testimonials", "visible": false,
+    "data": {
+      "title": "Ils nous font confiance",
+      "items": [
+        { "quote": "Medianet Incubateur a transformé notre idée en produit en 6 mois. Le mentorat et la communauté valent de l'or.", "authorName": "Asma B.", "authorRole": "Cofondatrice, FoodStart" },
+        { "quote": "Le matching avec les mentors est incroyablement pertinent. On a gagné 1 an de R&D.", "authorName": "Karim M.", "authorRole": "CEO, AgriTech Solutions" },
+        { "quote": "Un programme structuré, des deadlines claires, des feedbacks rapides. Exactement ce qu'il faut pour avancer.", "authorName": "Yasmine T.", "authorRole": "Fondatrice, MedConnect" }
+      ]
+    }
+  },
+  {
+    "id": "faq", "type": "faq", "visible": false,
+    "data": {
+      "background": "muted",
+      "title": "Questions fréquentes",
+      "items": [
+        { "question": "Combien coûte la candidature ?", "answer": "La candidature est entièrement gratuite. Aucune commission n'est prélevée sur le capital de votre startup." },
+        { "question": "À quelle phase de projet puis-je candidater ?", "answer": "Du simple concept au prototype fonctionnel. Chaque programme précise sa maturité cible (idéation, prototypage, traction…)." },
+        { "question": "Combien de temps dure un programme ?", "answer": "Selon le programme, entre 3 et 12 mois. Le détail est sur la page de chaque programme." },
+        { "question": "Qui sont les mentors ?", "answer": "Plus de 40 entrepreneurs, investisseurs et experts métiers actifs dans l'écosystème tunisien et nord-africain." }
+      ]
+    }
+  },
+  {
+    "id": "cta", "type": "cta", "visible": true,
+    "data": {
+      "background": "dark",
+      "title": "Prêt à lancer votre projet ?",
+      "subtitle": "Rejoignez des centaines de startups accompagnées par Medianet",
+      "buttonLabel": "Commencer maintenant", "buttonLink": "/register"
+    }
+  }
+]

@@ -1,1437 +1,382 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Home, Save, Loader2, Plus, Trash2, ChevronUp, ChevronDown, RotateCcw,
-  Sparkles, Target, Users, Globe2, Award, Rocket, Heart, Brain, Star, Zap,
-  Eye, EyeOff, Palette, MessageSquareQuote, HelpCircle, ListChecks, Info,
-  FileText, ClipboardCheck, Lightbulb, ArrowRight, Trophy, Search,
-  Monitor, Tablet, Smartphone, Wand2, PanelRightOpen, PanelRightClose,
-  LayoutTemplate, Images, GalleryHorizontal, Image as ImageIcon,
+  AlertTriangle, CheckCircle2, Copy, Eye, EyeOff, Home, Loader2, MoreHorizontal, PanelRightClose,
+  PanelRightOpen, RotateCcw, Send, Trash2, Undo2, Wand2, Crosshair,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { landingPageApi, adminAiApi } from '@/lib/api'
+import { adminAiApi, landingPageApi } from '@/lib/api'
 import { AdminLayout } from '@/components/layout/AdminLayout'
-import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ImageUpload } from '@/components/upload/ImageUpload'
-import { ImageListEditor, type ListImage } from '@/components/upload/ImageListEditor'
 import { setBrandLogoUrl } from '@/components/brand/useBrandLogo'
+import { BlockOutline, SETTINGS_ID } from '@/components/landing-editor/BlockOutline'
+import { BlockPicker } from '@/components/landing-editor/BlockPicker'
+import { BlockEditor } from '@/components/landing-editor/BlockEditor'
+import { SiteSettingsPanel } from '@/components/landing-editor/SiteSettingsPanel'
+import { PreviewPane } from '@/components/landing-editor/PreviewPane'
+import {
+  BLOCK_TYPES, blockTitle, cloneBlock, mapAiSuggestion, newBlockId,
+  type CatalogEntry, type LandingBlock, type LandingDoc,
+} from '@/components/landing-editor/schema'
+import { cn } from '@/lib/utils'
 
-interface Stat { label?: string; value?: number; suffix?: string }
-interface Feature { title?: string; description?: string; icon?: string; imageUrl?: string }
-interface ProcessStep { title?: string; description?: string; icon?: string; imageUrl?: string }
-type CustomLayout = 'text-image' | 'gallery' | 'carousel'
-interface CustomSection {
-  id?: string
-  layout?: CustomLayout
-  badge?: string
-  title?: string
-  subtitle?: string
-  body?: string
-  imagePosition?: 'left' | 'right'
-  background?: 'default' | 'muted' | 'dark'
-  ctaLabel?: string
-  ctaLink?: string
-  visible?: boolean
-  images?: ListImage[]
-}
-interface Testimonial { quote?: string; authorName?: string; authorRole?: string; photoUrl?: string }
-interface Faq { question?: string; answer?: string }
+type SaveState = 'idle' | 'pending' | 'saving' | 'error'
 
-interface LandingPage {
-  // Programmes carousel
-  programmesTitle?: string
-  programmesSubtitle?: string
-  programmesLimit?: number
-  programmesImages?: string[]
-  showProgrammes?: boolean
-  // Hero
-  heroTitle?: string
-  heroSubtitle?: string
-  heroBadge?: string
-  heroImageUrl?: string
-  heroImages?: string[]
-  primaryCtaLabel?: string
-  primaryCtaLink?: string
-  secondaryCtaLabel?: string
-  secondaryCtaLink?: string
-  // Sections
-  stats?: Stat[]
-  features?: Feature[]
-  aboutBadge?: string
-  aboutTitle?: string
-  aboutBody?: string
-  aboutImageUrl?: string
-  processTitle?: string
-  processSubtitle?: string
-  processSteps?: ProcessStep[]
-  testimonialsTitle?: string
-  testimonials?: Testimonial[]
-  faqTitle?: string
-  faqs?: Faq[]
-  // CTA + footer
-  ctaTitle?: string
-  ctaSubtitle?: string
-  ctaButtonLabel?: string
-  ctaButtonLink?: string
-  footerText?: string
-  // Admin-created sections (placed in sectionOrder as "custom:<id>")
-  customSections?: CustomSection[]
-  // Theme + visibility
-  logoUrl?: string
-  primaryColor?: string
-  accentColor?: string
-  /** Colors of the other front-office pages: default | same (as landing) | custom */
-  siteThemeMode?: 'default' | 'same' | 'custom'
-  sitePrimaryColor?: string
-  siteAccentColor?: string
-  showHero?: boolean
-  showStats?: boolean
-  showAbout?: boolean
-  showFeatures?: boolean
-  showProcess?: boolean
-  showTestimonials?: boolean
-  showFaq?: boolean
-  showCta?: boolean
-  sectionOrder?: string // CSV of section ids
-}
-
-const AVAILABLE_ICONS = [
-  'Sparkles', 'Target', 'Users', 'Globe2', 'Award', 'Rocket', 'Heart', 'Brain', 'Star', 'Zap',
-  'FileText', 'ClipboardCheck', 'Lightbulb', 'Trophy', 'Search',
-]
-
-const SECTION_META: Record<string, { id: string; label: string; icon: any; flag: keyof LandingPage }> = {
-  hero:         { id: 'hero',         label: 'Hero',          icon: Sparkles,           flag: 'showHero' },
-  stats:        { id: 'stats',        label: 'Chiffres',      icon: Award,              flag: 'showStats' },
-  about:        { id: 'about',        label: 'À propos',      icon: Info,               flag: 'showAbout' },
-  features:     { id: 'features',     label: 'Fonctionnalités', icon: Target,           flag: 'showFeatures' },
-  process:      { id: 'process',      label: 'Processus',     icon: ListChecks,         flag: 'showProcess' },
-  programmes:   { id: 'programmes',   label: 'Programmes',    icon: Rocket,             flag: 'showProgrammes' },
-  testimonials: { id: 'testimonials', label: 'Témoignages',   icon: MessageSquareQuote, flag: 'showTestimonials' },
-  faq:          { id: 'faq',          label: 'FAQ',           icon: HelpCircle,         flag: 'showFaq' },
-  cta:          { id: 'cta',          label: 'CTA final',     icon: Rocket,             flag: 'showCta' },
-}
-const ALL_SECTIONS = ['hero', 'stats', 'about', 'features', 'process', 'programmes', 'testimonials', 'faq', 'cta']
-
-const CUSTOM_LAYOUTS: Record<CustomLayout, { label: string; hint: string; icon: any }> = {
-  'text-image': { label: 'Texte + photo', hint: "Un bloc de texte à côté d'une photo (plusieurs photos = mini-carrousel)", icon: LayoutTemplate },
-  gallery:      { label: 'Grille de photos', hint: 'Mosaïque de photos, agrandissables au clic', icon: Images },
-  carousel:     { label: 'Carrousel de photos', hint: 'Photos défilantes avec flèches et légendes', icon: GalleryHorizontal },
-}
-const newSectionId = () => Math.random().toString(36).slice(2, 10)
-
-const SITE_THEME_MODES: { id: 'default' | 'same' | 'custom'; label: string; hint: string }[] = [
-  { id: 'default', label: 'Défaut Medianet',          hint: 'Les autres pages gardent les couleurs Medianet.' },
-  { id: 'same',    label: "Comme la page d'accueil",  hint: "Les couleurs ci-dessus s'appliquent à tout le site public." },
-  { id: 'custom',  label: 'Couleurs dédiées',         hint: 'Choisissez des couleurs différentes pour le reste du site.' },
-]
-
-/** Hex color field: native picker + text input. Empty value = default palette. */
-function ColorField({ label, value, fallback, onChange }: {
-  label: string; value?: string; fallback: string; onChange: (v: string) => void
-}) {
-  return (
-    <div>
-      <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">{label}</label>
-      <div className="flex gap-2">
-        <input type="color" value={value || fallback} onChange={(e) => onChange(e.target.value)}
-          className="h-10 w-12 rounded-lg border border-input cursor-pointer" />
-        <Input value={value ?? ''} placeholder="Défaut" onChange={(e) => onChange(e.target.value)} className="font-mono" />
-      </div>
-    </div>
-  )
-}
-
-// ── Theme presets (one-click apply primary + accent colors) ───────────────────
-// The "default" preset uses empty strings → on save, the backend stores NULL,
-// which makes the Tailwind config fallbacks (original blue palette) kick in.
-const THEME_PRESETS: Array<{ id: string; label: string; primary: string; accent: string; emoji: string }> = [
-  { id: 'default',  label: 'Défaut',   primary: '',        accent: '',        emoji: '' },
-  { id: 'sunset',   label: 'Sunset',   primary: '#FF6A00', accent: '#9333EA', emoji: '' },
-  { id: 'ocean',    label: 'Ocean',    primary: '#0EA5E9', accent: '#14B8A6', emoji: '' },
-  { id: 'forest',   label: 'Forest',   primary: '#16A34A', accent: '#CA8A04', emoji: '' },
-  { id: 'royal',    label: 'Royal',    primary: '#7C3AED', accent: '#F59E0B', emoji: '' },
-  { id: 'tunisia',  label: 'Tunisia',  primary: '#E70013', accent: '#1F2937', emoji: '' },
-  { id: 'minimal',  label: 'Minimal',  primary: '#111827', accent: '#6B7280', emoji: '◾' },
-  { id: 'rose',     label: 'Rose',     primary: '#E11D48', accent: '#F472B6', emoji: '' },
-  { id: 'midnight', label: 'Midnight', primary: '#1E40AF', accent: '#8B5CF6', emoji: '' },
-]
-
-// ── Device preview widths ─────────────────────────────────────────────────────
-const DEVICE_WIDTHS: Record<string, { label: string; w: number; icon: any }> = {
-  desktop: { label: 'Bureau',  w: 1280, icon: Monitor },
-  tablet:  { label: 'Tablette', w: 820, icon: Tablet },
-  mobile:  { label: 'Mobile',   w: 390, icon: Smartphone },
-}
+const fmtTime = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
 
 /**
- * Live-preview pane with scale-to-fit (like Chrome DevTools responsive mode).
- * The iframe renders at the DEVICE'S NATIVE width (1280/820/390) and we scale
- * it down with CSS transform so it fits whatever column width we have. That's
- * why the public site sees the full desktop layout even when the editor column
- * is only 700px wide.
+ * Landing page editor.
+ *
+ * Left: "Réglages du site" + the page's blocks (reorder, hide, duplicate, delete,
+ * add any block type — several of the same type are allowed). Middle: the
+ * selected block's form. Right: live preview of the working copy.
+ *
+ * Edits autosave to a server-side DRAFT; visitors only see them after
+ * « Publier ». « Annuler les modifications » drops the draft.
  */
-function PreviewPane({ url, bump, device, userZoom, onReload }: {
-  url: string
-  bump: number
-  device: keyof typeof DEVICE_WIDTHS
-  userZoom: number
-  onReload: () => void
-}) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [fitScale, setFitScale] = useState(1)
-  const deviceWidth = DEVICE_WIDTHS[device].w
-
-  // Watch the container width and compute fit-scale = container / device, capped at 1
-  useEffect(() => {
-    if (!containerRef.current) return
-    const el = containerRef.current
-    const compute = () => {
-      const cw = el.clientWidth - 16  // padding margin
-      setFitScale(Math.min(1, cw / deviceWidth))
-    }
-    compute()
-    const ro = new ResizeObserver(compute)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [deviceWidth])
-
-  // Effective scale = fit-to-container × user zoom (e.g. 1.5× to zoom in)
-  const scale = fitScale * userZoom
-
-  // Container height is whatever we get. We render the iframe at the unscaled
-  // height that, after scaling, fills the container vertically.
-  const containerHeight = 'calc(100vh - 160px)'
-  const iframeHeight = `calc((100vh - 160px) / ${scale || 1})`
-
-  return (
-    <div className="sticky top-[68px] space-y-2">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Eye className="h-3 w-3" />
-        Aperçu en direct · {DEVICE_WIDTHS[device].label} ({deviceWidth}px)
-        <span className="text-[10px] opacity-70">· {(scale * 100).toFixed(0)}%</span>
-        <button type="button" onClick={onReload}
-          className="ml-auto inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-[10px] hover:bg-accent transition-colors"
-          title="Recharger l'aperçu">
-          <RotateCcw className="h-2.5 w-2.5" />Recharger
-        </button>
-      </div>
-
-      {/* Outer container — fills available column space */}
-      <div ref={containerRef}
-        className="relative rounded-xl border border-border bg-muted/30 p-2 overflow-hidden"
-        style={{ height: containerHeight }}>
-        {/* Frame chrome — scrollable when zoomed past 100% fit, hidden otherwise */}
-        <div className="relative h-full w-full overflow-auto rounded-lg border border-border bg-card shadow-lg">
-          {/* The iframe is rendered at the DEVICE'S native size, then visually
-              scaled to fit the container width via CSS transform. */}
-          <iframe key={bump} src={url} title="Aperçu"
-            sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-            style={{
-              width: `${deviceWidth}px`,
-              height: iframeHeight,
-              transform: `scale(${scale})`,
-              transformOrigin: 'top left',
-              border: 0,
-              display: 'block',
-            }} />
-        </div>
-      </div>
-
-      <p className="text-[10px] text-muted-foreground italic">
-Échelle {Math.round(scale * 100)}% — le rendu reste fidèle à un écran {deviceWidth}px.
-        L'aperçu se recharge après chaque enregistrement.
-      </p>
-    </div>
-  )
-}
-
-/** Tiny "Voir" button — scrolls the preview iframe to a section. */
-function ScrollToPreviewButton({ section, onScroll }: { section: string; onScroll: (s: string) => void }) {
-  return (
-    <button type="button" onClick={() => onScroll(section)}
-      title="Voir cette section dans l'aperçu"
-      className="inline-flex items-center gap-1 rounded-md border border-brand-500/30 bg-brand-500/5 px-2 py-1 text-[10px] font-bold text-brand-700 dark:text-brand-300 hover:bg-brand-500/15 transition-colors">
-      <Eye className="h-3 w-3" />Voir
-    </button>
-  )
-}
-
-/** Small "Generate" button — opens a tiny prompt for an optional brief, then calls aiSuggest. */
-function AiButton({ section, suggest, label = 'IA' }: {
-  section: string
-  suggest: (section: string, brief?: string) => Promise<void>
-  label?: string
-}) {
-  const [loading, setLoading] = useState(false)
-  const onClick = async () => {
-    const brief = window.prompt(
-      `Brief facultatif pour générer "${section}" (laisser vide = défaut Medianet) :`,
-      ''
-    )
-    if (brief === null) return  // user cancelled
-    setLoading(true)
-    try { await suggest(section, brief.trim() || undefined) }
-    finally { setLoading(false) }
-  }
-  return (
-    <button type="button" onClick={onClick} disabled={loading}
-      title={`Générer ${section} avec l'IA`}
-      className="inline-flex items-center gap-1 rounded-md border border-purple-500/30 bg-gradient-to-r from-purple-500/10 to-brand-500/10 px-2 py-1 text-[10px] font-bold text-purple-700 dark:text-purple-300 hover:from-purple-500/20 hover:to-brand-500/20 transition-colors disabled:opacity-50">
-      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-{label}
-    </button>
-  )
-}
-
-/**
- * Base URL of the front-office — used for the live-preview iframe and the
- * "open in a new tab" link. Prefers the build-time env; otherwise DERIVES it
- * from the current admin host so the preview still works in production when the
- * env wasn't baked in. Crucially it keeps the SAME protocol (https) as the
- * back-office, so the iframe isn't blocked as mixed content (the old hardcoded
- * `http://localhost:3000` was unreachable + blocked on the deployed HTTPS site,
- * which made every landing edit look like it "didn't work").
- */
-function frontofficeBase(): string {
-  const env = process.env.NEXT_PUBLIC_FRONTOFFICE_URL
-  if (env) return env.replace(/\/+$/, '')
-  if (typeof window === 'undefined') return 'http://localhost:3000'
-  const { protocol, host } = window.location
-  let fo = host
-    .replace('incubatoradmin', 'incubator')   // medianetincubatoradmin.duckdns.org → medianetincubator…
-    .replace('backoffice', 'frontoffice')
-    .replace(/(^|\.)admin\./, '$1app.')        // admin.medianet.dz → app.medianet.dz
-  if (fo === host) fo = host.replace(/:3001$/, ':3000')   // dev: :3001 → :3000
-  return `${protocol}//${fo}`
-}
-
-/** Editor card for one admin-created section. */
-function CustomSectionEditor({ section: c, onChange, onRemove, onScroll }: {
-  section: CustomSection
-  onChange: (patch: Partial<CustomSection>) => void
-  onRemove: () => void
-  onScroll: (s: string) => void
-}) {
-  const layout = c.layout ?? 'text-image'
-  const L = CUSTOM_LAYOUTS[layout]
-  const HeaderIcon = L.icon
-  return (
-    <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section={`custom:${c.id}`}>
-      <h2 className="font-semibold text-foreground flex items-center gap-2">
-        <HeaderIcon className="h-4 w-4 text-brand-500" />{c.title || 'Section personnalisée'}
-        <span className="rounded bg-brand-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-brand-700 dark:text-brand-300">perso</span>
-        <span className="ml-auto flex gap-1.5">
-          <ScrollToPreviewButton section={`custom:${c.id}`} onScroll={onScroll} />
-          <button type="button" onClick={onRemove} title="Supprimer la section"
-            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[10px] font-bold text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
-            <Trash2 className="h-3 w-3" />Supprimer
-          </button>
-        </span>
-      </h2>
-
-      {/* Layout picker */}
-      <div className="grid gap-2 sm:grid-cols-3">
-        {(Object.entries(CUSTOM_LAYOUTS) as [CustomLayout, typeof L][]).map(([k, l]) => {
-          const LIcon = l.icon
-          return (
-            <button key={k} type="button" onClick={() => onChange({ layout: k })} title={l.hint}
-              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
-                layout === k ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300' : 'border-border bg-card text-muted-foreground hover:border-brand-400'}`}>
-              <LIcon className="h-4 w-4 shrink-0" />{l.label}
-            </button>
-          )
-        })}
-      </div>
-      <p className="text-[10px] text-muted-foreground -mt-2">{L.hint}</p>
-
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Titre</label>
-          <Input value={c.title ?? ''} onChange={(e) => onChange({ title: e.target.value })} />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Badge (optionnel)</label>
-          <Input value={c.badge ?? ''} placeholder="Nouveau" onChange={(e) => onChange({ badge: e.target.value })} />
-        </div>
-      </div>
-      <div>
-        <label className="text-xs font-medium text-muted-foreground mb-1 block">Sous-titre</label>
-        <Input value={c.subtitle ?? ''} onChange={(e) => onChange({ subtitle: e.target.value })} />
-      </div>
-      <div>
-        <label className="text-xs font-medium text-muted-foreground mb-1 block">Texte</label>
-        <textarea rows={4} value={c.body ?? ''} onChange={(e) => onChange({ body: e.target.value })}
-          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-y" />
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Fond de la section</label>
-          <select value={c.background ?? 'default'} onChange={(e) => onChange({ background: e.target.value as CustomSection['background'] })}
-            className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm">
-            <option value="default">Clair (par défaut)</option>
-            <option value="muted">Gris léger</option>
-            <option value="dark">Sombre</option>
-          </select>
-        </div>
-        {layout === 'text-image' && (
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Position de la photo</label>
-            <select value={c.imagePosition ?? 'right'} onChange={(e) => onChange({ imagePosition: e.target.value as 'left' | 'right' })}
-              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm">
-              <option value="right">À droite du texte</option>
-              <option value="left">À gauche du texte</option>
-            </select>
-          </div>
-        )}
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Bouton — libellé (optionnel)</label>
-          <Input value={c.ctaLabel ?? ''} placeholder="En savoir plus" onChange={(e) => onChange({ ctaLabel: e.target.value })} />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Bouton — lien</label>
-          <Input value={c.ctaLink ?? ''} placeholder="/programmes" onChange={(e) => onChange({ ctaLink: e.target.value })} />
-        </div>
-      </div>
-
-      <div>
-        <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
-          <ImageIcon className="h-3.5 w-3.5" />Photos ({(c.images ?? []).length})
-        </label>
-        <ImageListEditor folder="sections" captions searchQuery={c.title || 'startup incubator'}
-          images={c.images ?? []} onChange={(images) => onChange({ images })} />
-      </div>
-    </MagicCard>
-  )
-}
-
 export default function LandingPageEditor() {
-  const [page, setPage] = useState<LandingPage>({})
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving]   = useState(false)
-  // Live preview controls
+  const [doc, setDoc] = useState<LandingDoc | null>(null)
+  const [hasDraft, setHasDraft] = useState(false)
+  const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null)
+  const [publishedAt, setPublishedAt] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [publishing, setPublishing] = useState(false)
+  const [selectedId, setSelectedId] = useState<string>(SETTINGS_ID)
+  const [focusKey, setFocusKey] = useState(0)
+  const [picker, setPicker] = useState<{ open: boolean; afterId?: string }>({ open: false })
   const [previewOpen, setPreviewOpen] = useState(true)
-  const [device, setDevice] = useState<keyof typeof DEVICE_WIDTHS>('desktop')
-  const [previewBump, setPreviewBump] = useState(0)  // increment to force iframe reload
-  const [userZoom, setUserZoom] = useState(1)        // user-controlled zoom on top of fit-scale
-  const [autoSaveOn, setAutoSaveOn] = useState(true) // live preview = auto-save
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved'>('idle')
-  // ?edit=1 tells the frontoffice it's running inside the editor → enables click-to-edit overlay
-  const previewUrl = `${frontofficeBase()}/?edit=1&_=${previewBump}`
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [aiBusy, setAiBusy] = useState(false)
 
-  useEffect(() => {
-    landingPageApi.get()
-      .then((r) => setPage(r.data ?? {}))
-      .catch(() => toast.error('Impossible de charger la page'))
-      .finally(() => setLoading(false))
+  /** JSON of the last state the server has — autosave skips identical content. */
+  const savedJson = useRef<string>('')
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const applyServer = useCallback((r: { page: LandingDoc; hasDraft: boolean; draftUpdatedAt?: string; publishedAt?: string }) => {
+    const page = { ...r.page, blocks: r.page.blocks ?? [] }
+    savedJson.current = JSON.stringify(page)
+    setDoc(page)
+    setHasDraft(r.hasDraft)
+    setDraftUpdatedAt(r.draftUpdatedAt ?? null)
+    setPublishedAt(r.publishedAt ?? null)
+    setSaveState('idle')
   }, [])
 
-  const set = <K extends keyof LandingPage>(k: K, v: LandingPage[K]) => setPage((p) => ({ ...p, [k]: v }))
+  useEffect(() => {
+    landingPageApi.getDraft()
+      .then((r) => {
+        applyServer(r.data)
+        const first = r.data.page?.blocks?.[0]
+        if (first) setSelectedId(first.id)
+      })
+      .catch(() => toast.error('Impossible de charger la page d’accueil'))
+  }, [applyServer])
 
-  // ── Stats ────────────────────────────────────────────────────────────
-  const addStat = () => set('stats', [...(page.stats ?? []), { label: 'Nouveau', value: 0, suffix: '+' }])
-  const removeStat = (i: number) => set('stats', (page.stats ?? []).filter((_, idx) => idx !== i))
-  const updateStat = (i: number, patch: Partial<Stat>) => set('stats',
-    (page.stats ?? []).map((s, idx) => idx === i ? { ...s, ...patch } : s)
-  )
-  const moveStat = (i: number, dir: -1 | 1) => {
-    const next = [...(page.stats ?? [])]
-    const tgt = i + dir
-    if (tgt < 0 || tgt >= next.length) return
-    ;[next[i], next[tgt]] = [next[tgt], next[i]]
-    set('stats', next)
-  }
+  // ── Autosave to the draft ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!doc) return
+    const json = JSON.stringify(doc)
+    if (json === savedJson.current) return
+    setSaveState('pending')
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      setSaveState('saving')
+      try {
+        const r = await landingPageApi.saveDraft(doc)
+        savedJson.current = json
+        setHasDraft(r.data.hasDraft)
+        setDraftUpdatedAt(r.data.draftUpdatedAt ?? null)
+        setSaveState((s) => (s === 'saving' ? 'idle' : s))
+      } catch (err: any) {
+        setSaveState('error')
+        toast.error(err?.response?.data?.message ?? 'Brouillon non enregistré', { id: 'landing-save' })
+      }
+    }, 900)
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
+  }, [doc])
 
-  // ── Features ─────────────────────────────────────────────────────────
-  const addFeature = () => set('features', [...(page.features ?? []), { title: 'Nouvelle fonctionnalité', description: '', icon: 'Sparkles' }])
-  const removeFeature = (i: number) => set('features', (page.features ?? []).filter((_, idx) => idx !== i))
-  const updateFeature = (i: number, patch: Partial<Feature>) => set('features',
-    (page.features ?? []).map((f, idx) => idx === i ? { ...f, ...patch } : f)
-  )
-  const moveFeature = (i: number, dir: -1 | 1) => {
-    const next = [...(page.features ?? [])]
-    const tgt = i + dir
-    if (tgt < 0 || tgt >= next.length) return
-    ;[next[i], next[tgt]] = [next[tgt], next[i]]
-    set('features', next)
-  }
-
-  // ── Generic list helpers (DRY for the 3 new collections) ────────────────
-  function listOps<K extends 'processSteps' | 'testimonials' | 'faqs', T>(key: K, factory: () => T) {
-    const arr = (page[key] as unknown as T[]) ?? []
-    return {
-      arr,
-      add:    () => set(key, [...arr, factory()] as any),
-      remove: (i: number) => set(key, arr.filter((_, idx) => idx !== i) as any),
-      update: (i: number, patch: Partial<T>) => set(key,
-        arr.map((s, idx) => idx === i ? { ...(s as any), ...patch } : s) as any
-      ),
-      move:   (i: number, dir: -1 | 1) => {
-        const next = [...arr]
-        const tgt = i + dir
-        if (tgt < 0 || tgt >= next.length) return
-        ;[next[i], next[tgt]] = [next[tgt], next[i]]
-        set(key, next as any)
-      },
+  // Warn before leaving with an unsaved edit.
+  useEffect(() => {
+    const onUnload = (e: BeforeUnloadEvent) => {
+      if (saveState === 'pending' || saveState === 'saving' || saveState === 'error') { e.preventDefault(); e.returnValue = '' }
     }
-  }
-  const steps        = listOps<'processSteps', ProcessStep>('processSteps', () =>
-    ({ title: 'Nouvelle étape', description: '', icon: 'FileText' }))
-  const testimonials = listOps<'testimonials', Testimonial>('testimonials', () =>
-    ({ quote: '', authorName: '', authorRole: '', photoUrl: '' }))
-  const faqs         = listOps<'faqs', Faq>('faqs', () =>
-    ({ question: '', answer: '' }))
+    window.addEventListener('beforeunload', onUnload)
+    return () => window.removeEventListener('beforeunload', onUnload)
+  }, [saveState])
 
-  // ── Section ordering ────────────────────────────────────────────────────
-  const customSections = page.customSections ?? []
-  const validSectionIds = [...ALL_SECTIONS, ...customSections.filter((c) => c.id).map((c) => `custom:${c.id}`)]
-  const sectionOrder: string[] = (() => {
-    const stored = (page.sectionOrder ?? '').split(',').map((x) => x.trim()).filter((x) => validSectionIds.includes(x))
-    // Append any sections that the stored order forgot (e.g. after upgrades)
-    for (const s of validSectionIds) if (!stored.includes(s)) stored.push(s)
-    return stored
-  })()
-
-  // ── Custom sections ─────────────────────────────────────────────────────
-  const updateCustom = (id: string, patch: Partial<CustomSection>) => set('customSections',
-    customSections.map((c) => (c.id === id ? { ...c, ...patch } : c)))
-  const addCustomSection = (layout: CustomLayout) => {
-    const id = newSectionId()
-    const section: CustomSection = {
-      id, layout, visible: true, background: 'default', imagePosition: 'right',
-      title: layout === 'text-image' ? 'Nouvelle section' : 'Retour en images', images: [],
+  // ── Document / block operations ─────────────────────────────────────────
+  const setBlocks = (fn: (blocks: LandingBlock[]) => LandingBlock[]) =>
+    setDoc((d) => (d ? { ...d, blocks: fn(d.blocks) } : d))
+  const patchBlock = (id: string, patch: Record<string, any>) =>
+    setBlocks((bs) => bs.map((b) => (b.id === id ? { ...b, data: { ...b.data, ...patch } } : b)))
+  const select = useCallback((id: string) => {
+    setSelectedId(id)
+    setFocusKey((n) => n + 1)
+    // Stacked layout (< lg): the form sits below the outline — bring it into view.
+    if (window.innerWidth < 1024) {
+      requestAnimationFrame(() => document.getElementById('landing-block-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
     }
-    // Insert just before the final CTA so it lands inside the page, not after it.
-    const order = [...sectionOrder]
-    const ctaIdx = order.indexOf('cta')
-    order.splice(ctaIdx < 0 ? order.length : ctaIdx, 0, `custom:${id}`)
-    setPage((p) => ({ ...p, customSections: [...(p.customSections ?? []), section], sectionOrder: order.join(',') }))
-    setTimeout(() => {
-      document.querySelector(`[data-edit-section="custom:${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 100)
-  }
-  const removeCustomSection = (id: string) => {
-    if (!confirm('Supprimer cette section ?')) return
-    setPage((p) => ({
-      ...p,
-      customSections: (p.customSections ?? []).filter((c) => c.id !== id),
-      sectionOrder: sectionOrder.filter((x) => x !== `custom:${id}`).join(','),
-    }))
-  }
-  const moveSection = (id: string, dir: -1 | 1) => {
-    const idx = sectionOrder.indexOf(id)
-    const tgt = idx + dir
-    if (idx < 0 || tgt < 0 || tgt >= sectionOrder.length) return
-    const next = [...sectionOrder]
-    ;[next[idx], next[tgt]] = [next[tgt], next[idx]]
-    set('sectionOrder', next.join(','))
-  }
-  const toggleSection = (flag: keyof LandingPage) => set(flag, !page[flag] as any)
+  }, [])
 
-  const handleSave = async () => {
-    setSaving(true)
+  const addBlock = (entry: CatalogEntry) => {
+    const block: LandingBlock = { id: newBlockId(), type: entry.type, visible: true, data: entry.create() }
+    setBlocks((bs) => {
+      const at = picker.afterId ? bs.findIndex((b) => b.id === picker.afterId) + 1 : bs.length
+      return [...bs.slice(0, at), block, ...bs.slice(at)]
+    })
+    setPicker({ open: false })
+    select(block.id)
+    toast.success(`Bloc « ${entry.label} » ajouté`, { id: 'block-added' })
+  }
+  const duplicate = (id: string) => {
+    if (!doc) return
+    const i = doc.blocks.findIndex((b) => b.id === id)
+    if (i < 0) return
+    const copy = cloneBlock(doc.blocks[i])
+    setBlocks((bs) => {
+      const at = bs.findIndex((b) => b.id === id)
+      return [...bs.slice(0, at + 1), copy, ...bs.slice(at + 1)]
+    })
+    select(copy.id)
+    toast.success('Bloc dupliqué', { id: 'block-duplicated' })
+  }
+  const remove = (id: string) => {
+    if (!doc) return
+    const before = doc.blocks
+    const i = before.findIndex((b) => b.id === id)
+    if (i < 0) return
+    const name = blockTitle(before[i])
+    setBlocks((bs) => bs.filter((b) => b.id !== id))
+    if (selectedId === id) setSelectedId(before[i + 1]?.id ?? before[i - 1]?.id ?? SETTINGS_ID)
+    toast((t) => (
+      <span className="flex items-center gap-3 text-sm">
+        Bloc « {name} » supprimé
+        <button type="button" className="inline-flex items-center gap-1 rounded-md bg-brand-500/10 px-2 py-1 text-xs font-semibold text-brand-700 dark:text-brand-300"
+          onClick={() => { setBlocks(() => before); select(id); toast.dismiss(t.id) }}>
+          <Undo2 className="h-3 w-3" />Annuler
+        </button>
+      </span>
+    ), { id: 'block-removed', duration: 7000 })
+  }
+  const toggle = (id: string) => setBlocks((bs) => bs.map((b) => (b.id === id ? { ...b, visible: b.visible === false } : b)))
+  const move = (id: string, dir: -1 | 1) => setBlocks((bs) => {
+    const i = bs.findIndex((b) => b.id === id)
+    const t = i + dir
+    if (i < 0 || t < 0 || t >= bs.length) return bs
+    const next = [...bs]
+    ;[next[i], next[t]] = [next[t], next[i]]
+    return next
+  })
+  const reorder = (from: number, to: number) => setBlocks((bs) => {
+    const next = [...bs]
+    const [b] = next.splice(from, 1)
+    next.splice(to, 0, b)
+    return next
+  })
+
+  // ── Publish / discard / reset ───────────────────────────────────────────
+  const publish = async () => {
+    if (!doc) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    setPublishing(true)
     try {
-      const r = await landingPageApi.update(page)
-      setPage(r.data ?? page)
-      setPreviewBump((n) => n + 1)  // force iframe refresh
-      toast.success('Page d\'accueil mise à jour')
+      const r = await landingPageApi.publish(doc)
+      savedJson.current = JSON.stringify(doc)
+      setHasDraft(false)
+      setDraftUpdatedAt(null)
+      setPublishedAt(r.data.publishedAt ?? new Date().toISOString())
+      setSaveState('idle')
+      setBrandLogoUrl(r.data.logoUrl)
+      toast.success('Page d’accueil publiée — visible par tous les visiteurs')
     } catch (err: any) {
-      toast.error(err.response?.data?.message ?? 'Erreur')
-    } finally { setSaving(false) }
+      toast.error(err?.response?.data?.message ?? 'Publication échouée')
+    } finally { setPublishing(false) }
   }
-
-  const handleReset = async () => {
-    if (!confirm('Restaurer les valeurs par défaut ? Toutes les personnalisations seront perdues.')) return
+  const discard = async () => {
+    setMenuOpen(false)
+    if (!confirm('Annuler toutes les modifications non publiées et revenir à la version en ligne ?')) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    try {
+      const r = await landingPageApi.discardDraft()
+      applyServer(r.data)
+      setSelectedId((id) => (r.data.page.blocks.some((b: LandingBlock) => b.id === id) ? id : SETTINGS_ID))
+      toast.success('Modifications annulées')
+    } catch { toast.error('Erreur') }
+  }
+  const resetContent = async () => {
+    setMenuOpen(false)
+    if (!confirm('Remplacer tous les blocs par le contenu par défaut ? (logo, couleurs et pied de page sont conservés — rien n’est publié tant que vous ne cliquez pas sur « Publier »)')) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
     try {
       const r = await landingPageApi.reset()
-      setPage(r.data ?? {})
-      setPreviewBump((n) => n + 1)
-      toast.success('Page réinitialisée')
+      applyServer(r.data)
+      setSelectedId(r.data.page.blocks[0]?.id ?? SETTINGS_ID)
+      toast.success('Contenu par défaut chargé dans le brouillon')
     } catch { toast.error('Erreur') }
   }
 
-  // ── Debounced auto-save → live preview ──────────────────────────────────
-  // After 1.2s of inactivity since the last edit, push to the server and
-  // reload the iframe. Skips the initial load and respects autoSaveOn toggle.
-  const skipNextAutoSaveRef = useRef(true)
-  useEffect(() => {
-    if (loading) return
-    if (skipNextAutoSaveRef.current) { skipNextAutoSaveRef.current = false; return }
-    if (!autoSaveOn) return
-    setAutoSaveStatus('pending')
-    const t = setTimeout(async () => {
-      setAutoSaveStatus('saving')
-      try {
-        await landingPageApi.update(page)
-        setPreviewBump((n) => n + 1)
-        setAutoSaveStatus('saved')
-        setTimeout(() => setAutoSaveStatus('idle'), 1500)
-      } catch {
-        setAutoSaveStatus('idle')
-      }
-    }, 1200)
-    return () => clearTimeout(t)
-  // We deliberately depend on `page` only — that's the user-edited state
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page])
-
-  // ── Click-to-edit: iframe posts {type:'edit-section', section} → scroll editor ──
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      const data = e.data
-      if (!data || data.type !== 'edit-section' || !data.section) return
-      const el = document.querySelector(`[data-edit-section="${data.section}"]`) as HTMLElement | null
-      if (!el) return
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      // Flash animation
-      el.classList.add('ring-2', 'ring-brand-500', 'ring-offset-2')
-      setTimeout(() => el.classList.remove('ring-2', 'ring-brand-500', 'ring-offset-2'), 1500)
-    }
-    window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
-  }, [])
-
-  /** Tell the preview iframe to scroll to a given section. */
-  const scrollPreviewTo = (sectionId: string) => {
-    const iframe = document.querySelector('iframe[title="Aperçu"]') as HTMLIFrameElement | null
-    if (!iframe?.contentWindow) {
-      toast.error('Aperçu non disponible — active-le d\'abord')
-      return
-    }
-    iframe.contentWindow.postMessage({ type: 'scroll-to-section', section: sectionId }, '*')
-  }
-
-  /** Apply a theme preset (just sets primaryColor + accentColor in local state). */
-  const applyTheme = (themeId: string) => {
-    const t = THEME_PRESETS.find((x) => x.id === themeId)
-    if (!t) return
-    setPage((p) => ({ ...p, primaryColor: t.primary, accentColor: t.accent }))
-    toast.success(`Thème « ${t.label} » appliqué — n'oublie pas d'enregistrer`)
-  }
-
-  /** Call the AI to generate content for one section, then merge into the page. */
-  const aiSuggest = async (section: string, brief?: string) => {
-    const toastId = toast.loading(`Génération de "${section}"…`)
+  // ── AI generation for the selected block ────────────────────────────────
+  const generate = async (block: LandingBlock) => {
+    const section = BLOCK_TYPES[block.type].ai
+    if (!section) return
+    const brief = window.prompt('Brief facultatif (laisser vide = contenu par défaut Medianet) :', '')
+    if (brief === null) return
+    setAiBusy(true)
+    const id = toast.loading('Génération du contenu…')
     try {
-      const r = await adminAiApi.landingSuggest({ section, brief, locale: 'fr' })
-      if (r.data?.error) {
-        toast.error(r.data.error, { id: toastId })
-        return
-      }
-      setPage((p) => ({ ...p, ...r.data }))
-      toast.success('Contenu généré — relis et enregistre', { id: toastId })
+      const r = await adminAiApi.landingSuggest({ section, brief: brief.trim() || undefined, locale: 'fr' })
+      if (r.data?.error) { toast.error(r.data.error, { id }); return }
+      const patch = mapAiSuggestion(block.type, r.data ?? {})
+      if (Object.keys(patch).length === 0) { toast.error('Réponse IA inattendue', { id }); return }
+      patchBlock(block.id, patch)
+      toast.success('Contenu généré — relisez avant de publier', { id })
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Échec de la génération IA', { id: toastId })
-    }
+      toast.error(err?.response?.data?.message ?? 'Échec de la génération IA', { id })
+    } finally { setAiBusy(false) }
   }
 
-  if (loading) return (
-    <AdminLayout>
-      <div className="space-y-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}</div>
-    </AdminLayout>
-  )
+  if (!doc) {
+    return (
+      <AdminLayout>
+        <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+          <Skeleton className="h-[60vh] rounded-2xl" />
+          <Skeleton className="h-[60vh] rounded-2xl" />
+        </div>
+      </AdminLayout>
+    )
+  }
+
+  const selected = doc.blocks.find((b) => b.id === selectedId) ?? null
+  const dirty = hasDraft || saveState !== 'idle'
+  const canAi = !!selected && !!BLOCK_TYPES[selected.type].ai
+    && (selected.type !== 'media' || (selected.data.layout ?? 'text-image') === 'text-image')
+
+  const status = saveState === 'saving' ? { cls: 'border-brand-500/30 bg-brand-500/10 text-brand-700 dark:text-brand-300', icon: <Loader2 className="h-3 w-3 animate-spin" />, text: 'Enregistrement…' }
+    : saveState === 'pending' ? { cls: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300', icon: <Loader2 className="h-3 w-3 animate-spin" />, text: 'Modifications…' }
+    : saveState === 'error' ? { cls: 'border-destructive/40 bg-destructive/10 text-destructive', icon: <AlertTriangle className="h-3 w-3" />, text: 'Non enregistré' }
+    : hasDraft ? { cls: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300', icon: <AlertTriangle className="h-3 w-3" />, text: `Brouillon non publié${draftUpdatedAt ? ` · ${fmtTime(draftUpdatedAt)}` : ''}` }
+    : { cls: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300', icon: <CheckCircle2 className="h-3 w-3" />, text: `Publié${publishedAt ? ` · ${fmtTime(publishedAt)}` : ''}` }
+
+  const Icon = selected ? BLOCK_TYPES[selected.type].icon : null
+  const iconBtn = 'inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50'
 
   return (
     <AdminLayout>
-      {/* ── Top toolbar: themes + preview controls + save (sticky) ───────── */}
-      <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 mb-4 border-b border-border bg-background/95 backdrop-blur px-4 sm:px-6 py-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <Home className="h-4 w-4 text-brand-500" />
-            <span className="font-bold text-sm text-foreground">Éditeur de page d'accueil</span>
+      {/* ── Toolbar ─────────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-border bg-background/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <Home className="h-4 w-4 text-brand-500" />
+          <h1 className="text-sm font-bold text-foreground">Page d’accueil</h1>
+          <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold', status.cls)}>
+            {status.icon}{status.text}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" size="sm" className="hidden gap-1.5 xl:inline-flex" onClick={() => setPreviewOpen((v) => !v)}>
+              {previewOpen ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
+              {previewOpen ? 'Masquer l’aperçu' : 'Aperçu'}
+            </Button>
+            <div className="relative">
+              <Button variant="ghost" size="sm" onClick={() => setMenuOpen((v) => !v)} title="Plus d’actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+              {menuOpen && (
+                <div className="absolute right-0 top-full z-40 mt-1 w-72 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-xl"
+                  onMouseLeave={() => setMenuOpen(false)}>
+                  <button type="button" disabled={!hasDraft} onClick={discard}
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent">
+                    <Undo2 className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <span><span className="block font-semibold text-foreground">Annuler les modifications</span>
+                      <span className="text-muted-foreground">Revenir à la version publiée</span></span>
+                  </button>
+                  <button type="button" onClick={resetContent}
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-accent">
+                    <RotateCcw className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <span><span className="block font-semibold text-foreground">Contenu par défaut</span>
+                      <span className="text-muted-foreground">Recharger les blocs d’exemple dans le brouillon</span></span>
+                  </button>
+                </div>
+              )}
+            </div>
+            <Button size="sm" className="gap-1.5" onClick={publish} disabled={publishing || !dirty}
+              title={dirty ? 'Mettre en ligne le brouillon' : 'Aucune modification à publier'}>
+              {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              Publier
+            </Button>
           </div>
-
-          {/* Theme presets */}
-          <div className="flex items-center gap-1 ml-auto rounded-lg border border-border bg-card p-1">
-            <span className="px-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Thèmes</span>
-            {THEME_PRESETS.map((t) => {
-              const isDefault = !t.primary && !t.accent
-              return (
-                <button key={t.id} type="button" onClick={() => applyTheme(t.id)} title={t.label}
-                  className={`group flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent transition-colors ${
-                    isDefault ? 'border border-dashed border-border bg-card' : ''
-                  }`}
-                  style={isDefault ? undefined
-                                   : { background: `linear-gradient(135deg, ${t.primary} 50%, ${t.accent} 50%)` }}>
-                  {isDefault && <span className="h-3 w-3 rounded-full" style={{ background: '#6272f6' }} />}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Device toggle */}
-          <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
-            {Object.entries(DEVICE_WIDTHS).map(([k, d]) => {
-              const Icon = d.icon
-              return (
-                <button key={k} type="button" onClick={() => setDevice(k as any)} title={d.label}
-                  className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${device === k ? 'bg-brand-500/15 text-brand-600 dark:text-brand-400' : 'text-muted-foreground hover:text-foreground hover:bg-accent'}`}>
-                  <Icon className="h-3.5 w-3.5" />
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Zoom controls */}
-          <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
-            <button type="button" onClick={() => setUserZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
-              title="Zoom arrière" className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-              <span className="text-base font-bold leading-none">−</span>
-            </button>
-            <button type="button" onClick={() => setUserZoom(1)}
-              title="Réinitialiser le zoom" className="min-w-[42px] px-1.5 text-[10px] font-bold text-foreground tabular-nums hover:bg-accent rounded">
-              {Math.round(userZoom * 100)}%
-            </button>
-            <button type="button" onClick={() => setUserZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)))}
-              title="Zoom avant" className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-              <span className="text-base font-bold leading-none">+</span>
-            </button>
-          </div>
-
-          {/* Preview pane toggle */}
-          <Button variant="outline" size="sm" onClick={() => setPreviewOpen((v) => !v)} className="gap-1.5"
-            title={previewOpen ? 'Masquer l\'aperçu' : 'Afficher l\'aperçu'}>
-            {previewOpen ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{previewOpen ? 'Masquer' : 'Aperçu'}</span>
-          </Button>
-
-          {/* Auto-save status */}
-          <button type="button" onClick={() => setAutoSaveOn((v) => !v)}
-            title={autoSaveOn ? 'Désactiver la sauvegarde auto' : 'Activer la sauvegarde auto'}
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold transition-colors ${
-              autoSaveOn
-                ? autoSaveStatus === 'pending' ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                : autoSaveStatus === 'saving' ? 'border-brand-500/40 bg-brand-500/10 text-brand-700 dark:text-brand-300'
-                : autoSaveStatus === 'saved'  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                :                                'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
-                : 'border-border bg-card text-muted-foreground'
-            }`}>
-            {autoSaveStatus === 'saving' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-            {!autoSaveOn ? 'AUTO OFF' :
-              autoSaveStatus === 'pending' ? 'modifications…' :
-              autoSaveStatus === 'saving'  ? 'enregistrement…' :
-              autoSaveStatus === 'saved'   ? 'enregistré' :
-                                              'auto-save'}
-          </button>
-
-          {/* Reset */}
-          <Button variant="ghost" size="sm" onClick={handleReset} className="gap-1.5">
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">Réinitialiser</span>
-          </Button>
         </div>
       </div>
 
-      <div className={previewOpen ? 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}>
-        {/* ── LEFT: form ─────────────────────────────────────────────── */}
-        <div className="space-y-6 min-w-0">
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <p className="text-muted-foreground text-sm">Personnalisez ce que les visiteurs voient sur <code className="text-xs">/</code>.</p>
-          </div>
-          <div className="flex gap-2">
-            <a href={frontofficeBase()} target="_blank" rel="noopener noreferrer"
-              className="inline-flex h-9 items-center justify-center rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent transition-colors">
-              Aperçu →
-            </a>
-          </div>
-        </motion.div>
+      <div className={cn('grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]',
+        previewOpen && 'xl:grid-cols-[270px_minmax(360px,0.85fr)_minmax(0,1.15fr)]')}>
+        {/* ── Outline ─────────────────────────────────────────────── */}
+        <aside className="lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+          <BlockOutline blocks={doc.blocks} selectedId={selectedId} onSelect={select}
+            onMove={move} onReorder={reorder} onToggle={toggle} onDuplicate={duplicate} onDelete={remove}
+            onAdd={(afterId) => setPicker({ open: true, afterId })} />
+        </aside>
 
-        {/* ── Sections control panel: visibility + reorder + theme ──── */}
-        <MagicCard className="p-6 space-y-4">
-          <h2 className="font-semibold text-foreground flex items-center gap-2">
-            <Palette className="h-4 w-4 text-brand-500" />Sections &amp; thème
-          </h2>
-          <p className="text-xs text-muted-foreground -mt-2">
-            Activez / désactivez chaque section et réorganisez l'ordre d'affichage. Les sections désactivées sont masquées sur la page publique.
-          </p>
-
-          {/* Site logo */}
-          <div className="rounded-xl border border-border bg-muted/20 p-3">
-            <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">Logo du site (toutes les pages)</label>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex h-14 min-w-[160px] items-center justify-center rounded-lg border border-border bg-white px-3">
-                <img src={page.logoUrl || '/brand/medianet-incubator.svg'} alt="Logo" className="max-h-10 w-auto object-contain" />
-              </div>
-              {page.logoUrl && (
-                <Button type="button" variant="ghost" size="sm" className="gap-1.5"
-                  onClick={() => { set('logoUrl', ''); setBrandLogoUrl(null) }}>
-                  <RotateCcw className="h-3.5 w-3.5" />Logo Medianet Incubator par défaut
-                </Button>
-              )}
-            </div>
-            <div className="mt-2">
-              <ImageUpload value={page.logoUrl} folder="branding" previewHeight={50} compact enableSearch={false}
-                onChange={(url) => { set('logoUrl', url); setBrandLogoUrl(url) }} />
-            </div>
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              SVG ou PNG transparent recommandé. Remplace le logo du site public et de l'administration.
-            </p>
-          </div>
-
-          {/* Theme colors */}
-          <p className="text-[10px] text-muted-foreground -mb-2">
-            La couleur primaire s'applique à tous les éléments de la page d'accueil (titres, boutons, cartes, icônes, dégradés) ; la couleur accent colore les dégradés.
-          </p>
-          <div className="grid sm:grid-cols-2 gap-4 rounded-xl border border-border bg-muted/20 p-3">
-            <div>
-              <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">Couleur primaire</label>
-              <div className="flex gap-2">
-                <input type="color" value={page.primaryColor ?? '#FF6A00'}
-                  onChange={(e) => set('primaryColor', e.target.value)}
-                  className="h-10 w-12 rounded-lg border border-input cursor-pointer" />
-                <Input value={page.primaryColor ?? ''} placeholder="#FF6A00"
-                  onChange={(e) => set('primaryColor', e.target.value)} className="font-mono" />
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">Couleur accent (dégradé)</label>
-              <div className="flex gap-2">
-                <input type="color" value={page.accentColor ?? '#9333EA'}
-                  onChange={(e) => set('accentColor', e.target.value)}
-                  className="h-10 w-12 rounded-lg border border-input cursor-pointer" />
-                <Input value={page.accentColor ?? ''} placeholder="#9333EA"
-                  onChange={(e) => set('accentColor', e.target.value)} className="font-mono" />
-              </div>
-            </div>
-          </div>
-
-          {/* Colors of the rest of the front office */}
-          <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
-            <div>
-              <p className="text-[10px] font-medium text-muted-foreground uppercase">Couleurs du reste du site public</p>
-              <p className="text-[10px] text-muted-foreground">
-                Programmes, connexion, tableaux de bord, profil… Les contrastes sont ajustés automatiquement pour les modes clair et sombre.
-              </p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {SITE_THEME_MODES.map((m) => {
-                const active = (page.siteThemeMode ?? 'default') === m.id
-                return (
-                  <button key={m.id} type="button" onClick={() => set('siteThemeMode', m.id)} title={m.hint}
-                    className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold transition-colors ${
-                      active ? 'border-brand-500 bg-brand-500/10 text-brand-700 dark:text-brand-300'
-                             : 'border-border bg-card text-muted-foreground hover:border-brand-400'}`}>
-                    {m.label}
-                  </button>
-                )
-              })}
-            </div>
-            <p className="text-[10px] text-muted-foreground -mt-1">
-              {SITE_THEME_MODES.find((m) => m.id === (page.siteThemeMode ?? 'default'))?.hint}
-            </p>
-            {page.siteThemeMode === 'custom' && (
-              <div className="grid sm:grid-cols-2 gap-4">
-                <ColorField label="Couleur primaire du site" value={page.sitePrimaryColor} fallback="#00A3E0"
-                  onChange={(v) => set('sitePrimaryColor', v)} />
-                <ColorField label="Couleur accent du site" value={page.siteAccentColor} fallback="#9333EA"
-                  onChange={(v) => set('siteAccentColor', v)} />
-              </div>
-            )}
-          </div>
-
-          {/* Section list with toggle + reorder */}
-          <div className="space-y-1.5">
-            {sectionOrder.map((id, i) => {
-              const custom = id.startsWith('custom:') ? customSections.find((c) => `custom:${c.id}` === id) : undefined
-              const meta = custom
-                ? { label: custom.title || 'Section personnalisée', icon: CUSTOM_LAYOUTS[custom.layout ?? 'text-image']?.icon ?? LayoutTemplate }
-                : SECTION_META[id]
-              if (!meta) return null
-              const Icon = meta.icon
-              const visible = custom ? custom.visible !== false : page[SECTION_META[id].flag] !== false  // default true if undefined
-              return (
-                <div key={id} className={`flex items-center gap-2 rounded-xl border bg-card p-2 transition-colors ${visible ? 'border-border' : 'border-dashed border-muted-foreground/30 opacity-60'}`}>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">#{i + 1}</span>
-                  <Icon className="h-4 w-4 text-brand-500 shrink-0" />
-                  <span className="flex-1 truncate text-sm font-semibold text-foreground">
-                    {meta.label}
-                    {custom && <span className="ml-2 rounded bg-brand-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-brand-700 dark:text-brand-300">perso</span>}
-                  </span>
-                  <button type="button" onClick={() => moveSection(id, -1)} disabled={i === 0} title="Monter"
-                    className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                    <ChevronUp className="h-3 w-3" />
-                  </button>
-                  <button type="button" onClick={() => moveSection(id, 1)} disabled={i === sectionOrder.length - 1} title="Descendre"
-                    className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                  <button type="button" title={visible ? 'Masquer' : 'Afficher'}
-                    onClick={() => custom ? updateCustom(custom.id!, { visible: !visible }) : toggleSection(SECTION_META[id].flag)}
-                    className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${visible
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20'
-                      : 'border-border bg-background text-muted-foreground hover:border-brand-400'}`}>
-                    {visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                  </button>
-                  {custom && (
-                    <button type="button" onClick={() => removeCustomSection(custom.id!)} title="Supprimer la section"
-                      className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
-                      <Trash2 className="h-3 w-3" />
+        {/* ── Selected block / settings ───────────────────────────── */}
+        <main id="landing-block-form" className="min-w-0 scroll-mt-16 space-y-3">
+          {selectedId === SETTINGS_ID || !selected ? (
+            <>
+              <header>
+                <h2 className="text-base font-bold text-foreground">Réglages du site</h2>
+                <p className="text-xs text-muted-foreground">Logo, couleurs et pied de page, partagés par toute la page.</p>
+              </header>
+              <SiteSettingsPanel doc={doc} set={(patch) => setDoc((d) => (d ? { ...d, ...patch } : d))} />
+            </>
+          ) : (
+            <>
+              <header className="flex flex-wrap items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500/10 text-brand-600 dark:text-brand-400">
+                  {Icon && <Icon className="h-4 w-4" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-base font-bold text-foreground">{blockTitle(selected)}</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {BLOCK_TYPES[selected.type].label}
+                    {selected.visible === false && <span className="ml-1.5 font-semibold text-amber-600 dark:text-amber-400">· masqué pour les visiteurs</span>}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {canAi && (
+                    <button type="button" className={iconBtn} disabled={aiBusy} onClick={() => generate(selected)} title="Générer le contenu avec l’IA">
+                      {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}IA
                     </button>
                   )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Add a new section */}
-          <div className="rounded-xl border border-dashed border-brand-500/40 bg-brand-500/[0.03] p-3">
-            <p className="mb-2 text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <Plus className="h-3.5 w-3.5 text-brand-500" />Ajouter une nouvelle section
-            </p>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {(Object.entries(CUSTOM_LAYOUTS) as [CustomLayout, typeof CUSTOM_LAYOUTS[CustomLayout]][]).map(([layout, l]) => {
-                const LIcon = l.icon
-                return (
-                  <button key={layout} type="button" onClick={() => addCustomSection(layout)} title={l.hint}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-xs font-semibold text-foreground transition-colors hover:border-brand-400 hover:bg-brand-500/5">
-                    <LIcon className="h-4 w-4 shrink-0 text-brand-500" />{l.label}
+                  <button type="button" className={cn(iconBtn, 'hidden xl:inline-flex')} onClick={() => setFocusKey((n) => n + 1)} title="Afficher dans l’aperçu">
+                    <Crosshair className="h-3.5 w-3.5" />Voir
                   </button>
-                )
-              })}
-            </div>
-          </div>
-        </MagicCard>
-
-        {/* ── Hero ────────────────────────────────────────────────────── */}
-        <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section="hero">
-          <h2 className="font-semibold text-foreground flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-brand-500" />Section Hero
-            <span className="ml-auto flex gap-1.5">
-              <ScrollToPreviewButton section="hero" onScroll={scrollPreviewTo} />
-              <AiButton section="hero" suggest={aiSuggest} />
-            </span>
-          </h2>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Badge (au-dessus du titre)</label>
-            <Input value={page.heroBadge ?? ''} placeholder="Plateforme d'incubation propulsée par l'IA"
-              onChange={(e) => set('heroBadge', e.target.value)} />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Titre principal</label>
-            <Input value={page.heroTitle ?? ''} placeholder="Incubez vos idées avec l'intelligence artificielle"
-              onChange={(e) => set('heroTitle', e.target.value)} />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Sous-titre</label>
-            <textarea rows={2} value={page.heroSubtitle ?? ''}
-              onChange={(e) => set('heroSubtitle', e.target.value)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-none" />
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">CTA principal — Libellé</label>
-              <Input value={page.primaryCtaLabel ?? ''} onChange={(e) => set('primaryCtaLabel', e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">CTA principal — Lien</label>
-              <Input value={page.primaryCtaLink ?? ''} onChange={(e) => set('primaryCtaLink', e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">CTA secondaire — Libellé</label>
-              <Input value={page.secondaryCtaLabel ?? ''} onChange={(e) => set('secondaryCtaLabel', e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">CTA secondaire — Lien</label>
-              <Input value={page.secondaryCtaLink ?? ''} onChange={(e) => set('secondaryCtaLink', e.target.value)} />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Image héros (optionnelle — apparaît en arrière-plan)</label>
-            <ImageUpload value={page.heroImageUrl} folder="hero" previewHeight={120}
-              searchContext="hero" defaultQuery={page.heroTitle || 'tunisia startup incubator modern'}
-              onChange={(url) => set('heroImageUrl', url)} />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">
-              Photos supplémentaires (diaporama en arrière-plan, change toutes les 6 s)
-            </label>
-            <ImageListEditor folder="hero" searchQuery={page.heroTitle || 'startup incubator team'}
-              images={(page.heroImages ?? []).map((url) => ({ url }))}
-              onChange={(imgs) => set('heroImages', imgs.map((i) => i.url ?? '').filter(Boolean))} />
-          </div>
-        </MagicCard>
-
-        {/* ── Stats ───────────────────────────────────────────────────── */}
-        <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section="stats">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-foreground flex items-center gap-2">
-              <Award className="h-4 w-4 text-brand-500" />Chiffres clés
-            </h2>
-            <div className="flex items-center gap-1.5">
-              <ScrollToPreviewButton section="stats" onScroll={scrollPreviewTo} />
-              <AiButton section="stats" suggest={aiSuggest} />
-              <Button type="button" variant="outline" size="sm" onClick={addStat} className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />Ajouter
-              </Button>
-            </div>
-          </div>
-          {(page.stats ?? []).length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Aucune statistique. Ajoutez-en pour les afficher en bandeau animé.</p>
-          ) : (
-            <div className="space-y-2">
-              {(page.stats ?? []).map((s, i) => (
-                <div key={i} className="grid grid-cols-12 gap-3 items-end rounded-xl border border-border bg-muted/20 p-3">
-                  <div className="col-span-12 sm:col-span-5">
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">Libellé</label>
-                    <Input value={s.label ?? ''} onChange={(e) => updateStat(i, { label: e.target.value })} />
-                  </div>
-                  <div className="col-span-5 sm:col-span-3">
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">Valeur</label>
-                    <Input type="number" value={s.value ?? ''}
-                      onChange={(e) => updateStat(i, { value: e.target.value ? Number(e.target.value) : 0 })} />
-                  </div>
-                  <div className="col-span-3 sm:col-span-2">
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase block mb-1">Suffixe</label>
-                    <Input value={s.suffix ?? ''} placeholder="+" onChange={(e) => updateStat(i, { suffix: e.target.value })} />
-                  </div>
-                  <div className="col-span-4 sm:col-span-2 flex items-center justify-end gap-1">
-                    <button type="button" onClick={() => moveStat(i, -1)} disabled={i === 0} title="Monter"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => moveStat(i, 1)} disabled={i === (page.stats ?? []).length - 1} title="Descendre"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => removeStat(i)} title="Supprimer"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-destructive hover:text-destructive hover:bg-destructive/5 transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  <button type="button" className={iconBtn} onClick={() => toggle(selected.id)}>
+                    {selected.visible === false ? <><Eye className="h-3.5 w-3.5" />Afficher</> : <><EyeOff className="h-3.5 w-3.5" />Masquer</>}
+                  </button>
+                  <button type="button" className={iconBtn} onClick={() => duplicate(selected.id)}>
+                    <Copy className="h-3.5 w-3.5" />Dupliquer
+                  </button>
+                  <button type="button" className={cn(iconBtn, 'hover:border-destructive/50 hover:text-destructive')} onClick={() => remove(selected.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />Supprimer
+                  </button>
                 </div>
-              ))}
-            </div>
+              </header>
+              <BlockEditor key={selected.id} block={selected} onChange={(patch) => patchBlock(selected.id, patch)} />
+            </>
           )}
-        </MagicCard>
+        </main>
 
-        {/* ── Features ────────────────────────────────────────────────── */}
-        <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section="features">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-foreground flex items-center gap-2">
-              <Target className="h-4 w-4 text-brand-500" />Fonctionnalités mises en avant
-            </h2>
-            <div className="flex items-center gap-1.5">
-              <ScrollToPreviewButton section="features" onScroll={scrollPreviewTo} />
-              <AiButton section="features" suggest={aiSuggest} />
-              <Button type="button" variant="outline" size="sm" onClick={addFeature} className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />Ajouter
-              </Button>
-            </div>
-          </div>
-          {(page.features ?? []).length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Aucune fonctionnalité.</p>
-          ) : (
-            <div className="space-y-3">
-              {(page.features ?? []).map((f, i) => (
-                <div key={i} className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-bold text-brand-700 dark:text-brand-300">#{i + 1}</span>
-                    <div className="flex-1" />
-                    <button type="button" onClick={() => moveFeature(i, -1)} disabled={i === 0} title="Monter"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => moveFeature(i, 1)} disabled={i === (page.features ?? []).length - 1} title="Descendre"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => removeFeature(i)} title="Supprimer"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-destructive hover:text-destructive hover:bg-destructive/5 transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-medium text-muted-foreground uppercase">Titre</label>
-                      <Input value={f.title ?? ''} onChange={(e) => updateFeature(i, { title: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-medium text-muted-foreground uppercase">Icône</label>
-                      <select value={f.icon ?? 'Sparkles'} onChange={(e) => updateFeature(i, { icon: e.target.value })}
-                        className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm">
-                        {AVAILABLE_ICONS.map((ic) => <option key={ic} value={ic}>{ic}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase">Description</label>
-                    <textarea rows={2} value={f.description ?? ''}
-                      onChange={(e) => updateFeature(i, { description: e.target.value })}
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-none" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Image (remplace l'icône)</label>
-                    <ImageUpload value={f.imageUrl} folder="features" previewHeight={60} compact
-                      searchContext="feature" defaultQuery={f.title || 'startup business modern'}
-                      onChange={(url) => updateFeature(i, { imageUrl: url })} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </MagicCard>
-
-        {/* ── About ─────────────────────────────────────────────────── */}
-        <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section="about">
-          <h2 className="font-semibold text-foreground flex items-center gap-2">
-            <Info className="h-4 w-4 text-brand-500" />Section « À propos »
-            <span className="ml-auto flex gap-1.5">
-              <ScrollToPreviewButton section="about" onScroll={scrollPreviewTo} />
-              <AiButton section="about" suggest={aiSuggest} />
-            </span>
-          </h2>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Badge (au-dessus du titre)</label>
-              <Input value={page.aboutBadge ?? ''} placeholder="Notre mission"
-                onChange={(e) => set('aboutBadge', e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Titre</label>
-              <Input value={page.aboutTitle ?? ''} placeholder="Accélérer l'innovation tunisienne"
-                onChange={(e) => set('aboutTitle', e.target.value)} />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Corps du texte</label>
-            <textarea rows={5} value={page.aboutBody ?? ''}
-              onChange={(e) => set('aboutBody', e.target.value)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-y" />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Image (affichée à droite du texte)</label>
-            <ImageUpload value={page.aboutImageUrl} folder="about" previewHeight={140}
-              searchContext="feature" defaultQuery={page.aboutTitle || 'tunisia entrepreneurs teamwork office'}
-              onChange={(url) => set('aboutImageUrl', url)} />
-          </div>
-        </MagicCard>
-
-        {/* ── Process / Timeline ────────────────────────────────────── */}
-        <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section="process">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-foreground flex items-center gap-2">
-              <ListChecks className="h-4 w-4 text-brand-500" />Étapes du processus
-            </h2>
-            <div className="flex items-center gap-1.5">
-              <ScrollToPreviewButton section="process" onScroll={scrollPreviewTo} />
-              <AiButton section="process" suggest={aiSuggest} />
-              <Button type="button" variant="outline" size="sm" onClick={steps.add} className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />Ajouter
-              </Button>
-            </div>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Titre de la section</label>
-              <Input value={page.processTitle ?? ''} placeholder="Comment ça marche"
-                onChange={(e) => set('processTitle', e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Sous-titre</label>
-              <Input value={page.processSubtitle ?? ''} placeholder="4 étapes simples"
-                onChange={(e) => set('processSubtitle', e.target.value)} />
-            </div>
-          </div>
-          {steps.arr.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Aucune étape. Ajoutez-en pour décrire le parcours candidat.</p>
-          ) : (
-            <div className="space-y-3">
-              {steps.arr.map((s, i) => (
-                <div key={i} className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-bold text-brand-700 dark:text-brand-300">Étape {i + 1}</span>
-                    <div className="flex-1" />
-                    <button type="button" onClick={() => steps.move(i, -1)} disabled={i === 0}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => steps.move(i, 1)} disabled={i === steps.arr.length - 1}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => steps.remove(i)}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-destructive hover:text-destructive hover:bg-destructive/5 transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div className="grid sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-2">
-                      <label className="text-[10px] font-medium text-muted-foreground uppercase">Titre</label>
-                      <Input value={s.title ?? ''} onChange={(e) => steps.update(i, { title: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-medium text-muted-foreground uppercase">Icône</label>
-                      <select value={s.icon ?? 'FileText'} onChange={(e) => steps.update(i, { icon: e.target.value })}
-                        className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm">
-                        {AVAILABLE_ICONS.map((ic) => <option key={ic} value={ic}>{ic}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase">Description</label>
-                    <textarea rows={2} value={s.description ?? ''}
-                      onChange={(e) => steps.update(i, { description: e.target.value })}
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-none" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Photo (optionnelle — affichée au-dessus de l'étape)</label>
-                    <ImageUpload value={s.imageUrl} folder="process" previewHeight={60} compact
-                      searchContext="feature" defaultQuery={s.title || 'startup team working'}
-                      onChange={(url) => steps.update(i, { imageUrl: url })} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </MagicCard>
-
-        {/* ── Testimonials ──────────────────────────────────────────── */}
-        <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section="testimonials">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-foreground flex items-center gap-2">
-              <MessageSquareQuote className="h-4 w-4 text-brand-500" />Témoignages
-            </h2>
-            <div className="flex items-center gap-1.5">
-              <ScrollToPreviewButton section="testimonials" onScroll={scrollPreviewTo} />
-              <AiButton section="testimonials" suggest={aiSuggest} />
-              <Button type="button" variant="outline" size="sm" onClick={testimonials.add} className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />Ajouter
-              </Button>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Titre de la section</label>
-            <Input value={page.testimonialsTitle ?? ''} placeholder="Ils nous font confiance"
-              onChange={(e) => set('testimonialsTitle', e.target.value)} />
-          </div>
-          {testimonials.arr.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Aucun témoignage. Ajoutez-en pour gagner la confiance des visiteurs.</p>
-          ) : (
-            <div className="space-y-3">
-              {testimonials.arr.map((t, i) => (
-                <div key={i} className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-bold text-brand-700 dark:text-brand-300">#{i + 1}</span>
-                    <div className="flex-1" />
-                    <button type="button" onClick={() => testimonials.move(i, -1)} disabled={i === 0}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => testimonials.move(i, 1)} disabled={i === testimonials.arr.length - 1}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => testimonials.remove(i)}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-destructive hover:text-destructive hover:bg-destructive/5 transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase">Citation</label>
-                    <textarea rows={3} value={t.quote ?? ''}
-                      onChange={(e) => testimonials.update(i, { quote: e.target.value })}
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-none" />
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-medium text-muted-foreground uppercase">Nom</label>
-                      <Input value={t.authorName ?? ''} placeholder="Asma B."
-                        onChange={(e) => testimonials.update(i, { authorName: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-medium text-muted-foreground uppercase">Rôle</label>
-                      <Input value={t.authorRole ?? ''} placeholder="Cofondatrice, FoodStart"
-                        onChange={(e) => testimonials.update(i, { authorRole: e.target.value })} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Photo (optionnelle)</label>
-                    <ImageUpload value={t.photoUrl} folder="testimonials" previewHeight={50} compact
-                      searchContext="team" defaultQuery={t.authorName ? `${t.authorName} portrait professional` : 'professional portrait smiling person'}
-                      onChange={(url) => testimonials.update(i, { photoUrl: url })} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </MagicCard>
-
-        {/* ── FAQ ───────────────────────────────────────────────────── */}
-        <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section="faq">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-foreground flex items-center gap-2">
-              <HelpCircle className="h-4 w-4 text-brand-500" />Questions fréquentes
-            </h2>
-            <div className="flex items-center gap-1.5">
-              <ScrollToPreviewButton section="faq" onScroll={scrollPreviewTo} />
-              <AiButton section="faq" suggest={aiSuggest} />
-              <Button type="button" variant="outline" size="sm" onClick={faqs.add} className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />Ajouter
-              </Button>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Titre de la section</label>
-            <Input value={page.faqTitle ?? ''} placeholder="Questions fréquentes"
-              onChange={(e) => set('faqTitle', e.target.value)} />
-          </div>
-          {faqs.arr.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">Aucune question. Anticipez les hésitations des candidats.</p>
-          ) : (
-            <div className="space-y-3">
-              {faqs.arr.map((f, i) => (
-                <div key={i} className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-bold text-brand-700 dark:text-brand-300">Q{i + 1}</span>
-                    <div className="flex-1" />
-                    <button type="button" onClick={() => faqs.move(i, -1)} disabled={i === 0}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => faqs.move(i, 1)} disabled={i === faqs.arr.length - 1}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-brand-400 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" onClick={() => faqs.remove(i)}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-destructive hover:text-destructive hover:bg-destructive/5 transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase">Question</label>
-                    <Input value={f.question ?? ''} onChange={(e) => faqs.update(i, { question: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground uppercase">Réponse</label>
-                    <textarea rows={3} value={f.answer ?? ''}
-                      onChange={(e) => faqs.update(i, { answer: e.target.value })}
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-none" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </MagicCard>
-
-        {/* ── Programmes section ────────────────────────────────────── */}
-        <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section="programmes">
-          <h2 className="font-semibold text-foreground flex items-center gap-2">
-            <Rocket className="h-4 w-4 text-brand-500" />Section « Programmes ouverts »
-            <span className="ml-auto flex items-center gap-1.5">
-              <ScrollToPreviewButton section="programmes" onScroll={scrollPreviewTo} />
-              <span className="text-[10px] font-normal text-muted-foreground">
-                Dynamique
-              </span>
-            </span>
-          </h2>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Titre</label>
-              <Input value={page.programmesTitle ?? ''} placeholder="Programmes ouverts"
-                onChange={(e) => set('programmesTitle', e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Sous-titre</label>
-              <Input value={page.programmesSubtitle ?? ''} placeholder="Candidatez dès maintenant"
-                onChange={(e) => set('programmesSubtitle', e.target.value)} />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">
-              Nombre max de programmes à afficher ({page.programmesLimit ?? 6})
-            </label>
-            <input type="range" min={1} max={12} step={1}
-              value={page.programmesLimit ?? 6}
-              onChange={(e) => set('programmesLimit', Number(e.target.value))}
-              className="w-full accent-brand-500" />
-            <div className="flex justify-between text-[10px] text-muted-foreground">
-              <span>1</span><span>6 (défaut)</span><span>12</span>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">
-              Photos de la section (carrousel affiché au-dessus des cartes)
-            </label>
-            <ImageListEditor folder="programmes" searchQuery="startup incubator programme event"
-              images={(page.programmesImages ?? []).map((url) => ({ url }))}
-              onChange={(imgs) => set('programmesImages', imgs.map((i) => i.url ?? '').filter(Boolean))} />
-          </div>
-          <p className="text-[10px] text-muted-foreground italic">
-            Les cartes elles-mêmes sont générées automatiquement depuis les programmes ouverts. Chaque carte affiche la
-            bannière du programme (ou, à défaut, la première photo de sa galerie) — à modifier dans <strong>Programmes</strong> › fiche du programme.
-          </p>
-        </MagicCard>
-
-        {/* ── CTA band ──────────────────────────────────────────────── */}
-        <MagicCard className="p-6 space-y-4 scroll-mt-20 transition-shadow" data-edit-section="cta">
-          <h2 className="font-semibold text-foreground flex items-center gap-2">
-            <Rocket className="h-4 w-4 text-brand-500" />Bandeau d'appel à l'action (bas de page)
-            <span className="ml-auto flex gap-1.5">
-              <ScrollToPreviewButton section="cta" onScroll={scrollPreviewTo} />
-              <AiButton section="cta" suggest={aiSuggest} />
-            </span>
-          </h2>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Titre</label>
-            <Input value={page.ctaTitle ?? ''} onChange={(e) => set('ctaTitle', e.target.value)} />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Sous-titre</label>
-            <Input value={page.ctaSubtitle ?? ''} onChange={(e) => set('ctaSubtitle', e.target.value)} />
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Libellé du bouton</label>
-              <Input value={page.ctaButtonLabel ?? ''} onChange={(e) => set('ctaButtonLabel', e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Lien du bouton</label>
-              <Input value={page.ctaButtonLink ?? ''} onChange={(e) => set('ctaButtonLink', e.target.value)} />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Texte du pied de page</label>
-            <Input value={page.footerText ?? ''} onChange={(e) => set('footerText', e.target.value)} />
-          </div>
-        </MagicCard>
-
-        {/* ── Admin-created sections ────────────────────────────────── */}
-        {customSections.map((c) => c.id && (
-          <CustomSectionEditor key={c.id} section={c}
-            onChange={(patch) => updateCustom(c.id!, patch)}
-            onRemove={() => removeCustomSection(c.id!)}
-            onScroll={scrollPreviewTo} />
-        ))}
-
-        </div>
-        {/* ── RIGHT: live preview pane ─────────────────────────────── */}
+        {/* ── Live preview ────────────────────────────────────────── */}
         {previewOpen && (
-          <div className="hidden lg:block">
-            <PreviewPane
-              url={previewUrl}
-              bump={previewBump}
-              device={device}
-              userZoom={userZoom}
-              onReload={() => setPreviewBump((n) => n + 1)}
-            />
+          <div className="hidden xl:block xl:sticky xl:top-16 xl:h-[calc(100vh-5.5rem)] xl:self-start">
+            <PreviewPane doc={doc} selectedId={selectedId === SETTINGS_ID ? null : selectedId}
+              focusKey={focusKey} onSelectBlock={select} />
           </div>
         )}
       </div>
+
+      <BlockPicker open={picker.open} blocks={doc.blocks}
+        afterLabel={picker.afterId ? (() => { const b = doc.blocks.find((x) => x.id === picker.afterId); return b ? blockTitle(b) : undefined })() : undefined}
+        onPick={addBlock} onClose={() => setPicker({ open: false })} />
     </AdminLayout>
   )
 }
