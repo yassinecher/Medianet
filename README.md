@@ -72,7 +72,7 @@ changes.
 | **Pitch AI coach** | Video upload → self-hosted transcription (faster-whisper) + optional vision analysis (Ollama) → LLM scoring against the pitch rubric with actionable advice |
 | **RBAC** | Admin-defined roles, per-user permission grants/revokes, live permission refresh over SSE, permission-aware navigation and API guards |
 | **Admin AI assistant** | Tool-calling chat agent that can look up and act on programme/candidature/user data on the admin's behalf |
-| **Landing page CMS** | Every section of the public homepage (hero, stats, features, process, testimonials, FAQ, theme colors) is admin-editable with a live preview |
+| **Landing page CMS** | The public homepage is a list of typed blocks (hero, stats, features, text + photos, gallery, carousel, process, programmes, testimonials, FAQ, CTA) that admins add, duplicate, hide and reorder; edits autosave to a draft with an instant live preview and go public on « Publier ». Logo and site-wide theme colors are set there too |
 | **Notifications** | Role invitations with RSVP tracking, templated bulk mailing to a programme's roster, an in-app feed that highlights critical/unread items |
 | **File storage** | MinIO (S3-compatible) for logos, galleries, and pitch videos, served through the gateway on one public domain |
 

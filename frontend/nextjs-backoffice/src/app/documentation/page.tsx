@@ -59,7 +59,7 @@ const SECTIONS: SectionMeta[] = [
   { id: 'reports', label: 'Rapports', icon: BarChart3, group: 'Administration', keywords: 'rapport analytique statistique export données' },
   { id: 'organizations', label: 'Organisations & sociétés incubées', icon: Building2, group: 'Vitrine', keywords: 'organisation société incubée entreprise vitrine showcase public' },
   { id: 'partners', label: 'Partenaires', icon: Handshake, group: 'Vitrine', keywords: 'partenaire sponsor logo visibilité public' },
-  { id: 'landing', label: 'Page d’accueil', icon: Home, group: 'Vitrine', keywords: 'page accueil landing site public éditeur bannière' },
+  { id: 'landing', label: 'Page d’accueil', icon: Home, group: 'Vitrine', keywords: 'page accueil landing site public éditeur bannière blocs brouillon publier dupliquer' },
   { id: 'catalogs', label: 'Référentiels', icon: Tags, group: 'Administration', keywords: 'référentiel catalogue type session taxonomie ajout rapide liste' },
   { id: 'trash', label: 'Corbeille & sauvegarde', icon: Trash2, group: 'Administration', keywords: 'corbeille supprimé restaurer purge sauvegarde export backup' },
   { id: 'settings', label: 'Paramètres', icon: Settings, group: 'Administration', keywords: 'paramètre profil préférence mot de passe compte' },
@@ -848,7 +848,7 @@ function PartnersDoc() {
 function LandingDoc() {
   return (
     <Section id="landing" icon={Home} title="Page d’accueil" lead="L’éditeur de la vitrine : ce que voient les visiteurs en premier.">
-      <Shot active="Page d’accueil" path="/landing-page" caption="Modifiez bannière, textes et sections ; l’aperçu reflète le site public.">
+      <Shot active="Page d’accueil" path="/landing-page" caption="Blocs à gauche, formulaire du bloc au centre, aperçu en direct à droite.">
         <div className="rounded-lg border border-border bg-card p-2">
           <div className="mb-1.5 h-10 rounded bg-gradient-to-r from-brand-500/30 to-purple-500/30" />
           <Bar w="60%" /><div className="h-1" /><Bar w="85%" />
@@ -857,9 +857,10 @@ function LandingDoc() {
       </Shot>
       <Block title="Ce que vous pouvez faire">
         <CanDo items={[
-          <>Éditer la <b>bannière</b>, les <b>textes</b> et les <b>sections</b> de la page d’accueil publique.</>,
-          <>Mettre en avant les programmes, les chiffres clés et les appels à l’action.</>,
-          <>Les changements sont <b>publiés</b> sur le site public dès l’enregistrement.</>,
+          <>Composer la page avec des <b>blocs</b> : bannière, chiffres clés, points forts, texte + photo, galerie, carrousel, étapes, programmes, témoignages, FAQ, appel à l’action.</>,
+          <><b>Ajouter</b> n’importe quel bloc (même s’il existe déjà), le <b>dupliquer</b>, le <b>masquer</b>, le supprimer (annulable) et réordonner par glisser-déposer.</>,
+          <>Régler le <b>logo</b>, les <b>couleurs</b> (page d’accueil et reste du site) et le pied de page dans « Réglages du site ».</>,
+          <>Les modifications sont enregistrées automatiquement en <b>brouillon</b> ; les visiteurs ne les voient qu’après <b>Publier</b>. « Annuler les modifications » revient à la version en ligne.</>,
         ]} />
       </Block>
     </Section>

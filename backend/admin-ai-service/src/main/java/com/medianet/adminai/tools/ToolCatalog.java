@@ -116,7 +116,9 @@ public final class ToolCatalog {
                 Map.of("type", "object", "properties", Map.of())),
 
             tool("get_landing_page",
-                "Read the current landing page content (hero, stats, features, footer). " +
+                "Read the published landing page: `blocks` (ordered [{id, type, visible, data}], types: hero, stats, " +
+                "features, media, process, programmes, testimonials, faq, cta — a type may appear several times) " +
+                "plus site settings (logoUrl, primaryColor, accentColor, footerText). " +
                 "Call this BEFORE update_landing_page so you know the existing shape and don't overwrite fields.",
                 Map.of("type", "object", "properties", Map.of())),
 
@@ -321,6 +323,8 @@ public final class ToolCatalog {
                 "}. " +
                 "IMPORTANT: features is an ARRAY (not feature1ImageUrl/feature2ImageUrl). " +
                 "To replace all 4 feature images, send a `features` array with 4 objects each having an `imageUrl`. " +
+                "These flat fields update the FIRST block of each type (created if missing). " +
+                "To add, duplicate, reorder or hide blocks, send `blocks`: the FULL ordered list from get_landing_page, modified. " +
                 "Always call get_landing_page first if you need the current content to preserve other fields.",
                 Map.of(
                     "type", "object",

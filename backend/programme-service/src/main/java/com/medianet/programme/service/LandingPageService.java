@@ -2,280 +2,312 @@ package com.medianet.programme.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.medianet.programme.dto.LandingCustomSection;
+import com.medianet.programme.dto.LandingBlock;
+import com.medianet.programme.dto.LandingDraftDto;
 import com.medianet.programme.dto.LandingPageDto;
-import com.medianet.programme.entity.LandingFaq;
-import com.medianet.programme.entity.LandingFeature;
 import com.medianet.programme.entity.LandingPage;
-import com.medianet.programme.entity.LandingProcessStep;
-import com.medianet.programme.entity.LandingStat;
-import com.medianet.programme.entity.LandingTestimonial;
 import com.medianet.programme.repository.LandingPageRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 
+/**
+ * Landing page CMS: a published page (what visitors see) and an optional draft
+ * (the admin's working copy), both made of typed blocks + site settings.
+ *
+ * <ul>
+ *   <li>The public page is served from an in-memory copy, refreshed on every
+ *       write; its {@code version} feeds the HTTP ETag, so unchanged pages cost
+ *       a 304 and no database access.</li>
+ *   <li>The editor autosaves to the draft; "Publier" promotes it.</li>
+ *   <li>{@link #patchPublished} keeps the flat legacy patch format working for
+ *       the admin AI agent ({@code update_landing_page}) and its undo.</li>
+ * </ul>
+ */
 @Service
-@RequiredArgsConstructor
-@Transactional
 @Slf4j
 public class LandingPageService {
 
-    private final LandingPageRepository repository;
-    private final ObjectMapper objectMapper;
-
     private static final Long SINGLETON_ID = 1L;
+    private static final int MAX_JSON = 1_000_000;
 
-    /** Return the single landing-page row, creating it with defaults on first call. */
-    @Transactional
-    public LandingPageDto get() {
-        LandingPage page = repository.findById(SINGLETON_ID)
-                .orElseGet(this::seedDefaults);
-        return toDto(page);
+    private final LandingPageRepository repository;
+    private final LandingBlocks blocks;
+    private final LegacyLandingMigration legacy;
+    private final ObjectMapper mapper;
+    private final TransactionTemplate tx;
+    private final TransactionTemplate readTx;
+
+    /** Published page as served to visitors; replaced (never mutated) on write. */
+    private volatile LandingPageDto publishedCache;
+    /** Set once the singleton row exists with blocks (created or migrated). */
+    private volatile boolean initialized;
+
+    public LandingPageService(LandingPageRepository repository, LandingBlocks blocks,
+                              LegacyLandingMigration legacy, ObjectMapper mapper,
+                              PlatformTransactionManager txManager) {
+        this.repository = repository;
+        this.blocks = blocks;
+        this.legacy = legacy;
+        this.mapper = mapper;
+        this.tx = new TransactionTemplate(txManager);
+        this.readTx = new TransactionTemplate(txManager);
+        this.readTx.setReadOnly(true);
     }
 
-    @Transactional
-    public LandingPageDto update(LandingPageDto req) {
-        LandingPage p = repository.findById(SINGLETON_ID).orElseGet(this::seedDefaults);
+    // ── Public ───────────────────────────────────────────────────────────────
 
-        if (req.getHeroTitle()         != null) p.setHeroTitle(req.getHeroTitle());
-        if (req.getHeroSubtitle()      != null) p.setHeroSubtitle(req.getHeroSubtitle());
-        if (req.getHeroBadge()         != null) p.setHeroBadge(req.getHeroBadge());
-        if (req.getHeroImageUrl()      != null) p.setHeroImageUrl(req.getHeroImageUrl());
-        if (req.getHeroImages()        != null) p.setHeroImagesJson(toJson(nonBlank(req.getHeroImages())));
-        if (req.getCustomSections()    != null) p.setCustomSectionsJson(toJson(req.getCustomSections()));
-        if (req.getLogoUrl()           != null) p.setLogoUrl(req.getLogoUrl().isBlank() ? null : req.getLogoUrl());
+    public LandingPageDto getPublished() {
+        LandingPageDto cached = publishedCache;
+        if (cached != null) return cached;
+        ensureInitialized();
+        LandingPageDto dto = readTx.execute(s -> published(load()));
+        cache(dto);
+        return dto;
+    }
 
-        if (req.getPrimaryCtaLabel()   != null) p.setPrimaryCtaLabel(req.getPrimaryCtaLabel());
-        if (req.getPrimaryCtaLink()    != null) p.setPrimaryCtaLink(req.getPrimaryCtaLink());
-        if (req.getSecondaryCtaLabel() != null) p.setSecondaryCtaLabel(req.getSecondaryCtaLabel());
-        if (req.getSecondaryCtaLink()  != null) p.setSecondaryCtaLink(req.getSecondaryCtaLink());
+    // ── Editor (draft / publish) ─────────────────────────────────────────────
 
-        if (req.getStats()    != null) p.setStats(new ArrayList<>(req.getStats()));
-        if (req.getFeatures() != null) p.setFeatures(new ArrayList<>(req.getFeatures()));
+    public LandingDraftDto getDraft() {
+        ensureInitialized();
+        return readTx.execute(s -> draftView(load()));
+    }
 
-        // About
-        if (req.getAboutBadge()    != null) p.setAboutBadge(req.getAboutBadge());
-        if (req.getAboutTitle()    != null) p.setAboutTitle(req.getAboutTitle());
-        if (req.getAboutBody()     != null) p.setAboutBody(req.getAboutBody());
-        if (req.getAboutImageUrl() != null) p.setAboutImageUrl(req.getAboutImageUrl());
+    /** Autosave: replace the draft with {@code doc} (blocks + settings). */
+    public LandingDraftDto saveDraft(LandingPageDto doc) {
+        LandingPageDto clean = clean(doc);
+        ensureInitialized();
+        return tx.execute(s -> {
+            LandingPage p = load();
+            p.setDraftJson(json(clean));
+            p.setDraftUpdatedAt(LocalDateTime.now());
+            return draftView(repository.save(p));
+        });
+    }
 
-        // Process
-        if (req.getProcessTitle()    != null) p.setProcessTitle(req.getProcessTitle());
-        if (req.getProcessSubtitle() != null) p.setProcessSubtitle(req.getProcessSubtitle());
-        if (req.getProcessSteps()    != null) p.setProcessSteps(new ArrayList<>(req.getProcessSteps()));
+    /** Publish {@code doc} if given, else the stored draft (no draft → no-op). */
+    public LandingPageDto publish(LandingPageDto doc) {
+        LandingPageDto clean = doc == null ? null : clean(doc);
+        ensureInitialized();
+        LandingPageDto published = tx.execute(s -> {
+            LandingPage p = load();
+            LandingPageDto source = clean != null ? clean
+                    : p.getDraftJson() != null ? parse(p.getDraftJson()) : null;
+            if (source != null) writePublished(p, source);
+            p.setDraftJson(null);
+            p.setDraftUpdatedAt(null);
+            return published(repository.save(p));
+        });
+        cache(published);
+        return published;
+    }
 
-        // Testimonials
-        if (req.getTestimonialsTitle() != null) p.setTestimonialsTitle(req.getTestimonialsTitle());
-        if (req.getTestimonials()      != null) p.setTestimonials(new ArrayList<>(req.getTestimonials()));
+    /** Drop the draft; the editor falls back to the published page. */
+    public LandingDraftDto discardDraft() {
+        ensureInitialized();
+        return tx.execute(s -> {
+            LandingPage p = load();
+            p.setDraftJson(null);
+            p.setDraftUpdatedAt(null);
+            return draftView(repository.save(p));
+        });
+    }
 
-        // FAQ
-        if (req.getFaqTitle() != null) p.setFaqTitle(req.getFaqTitle());
-        if (req.getFaqs()     != null) p.setFaqs(new ArrayList<>(req.getFaqs()));
+    /** Replace the draft's blocks with the default content (logo, colors and footer kept). */
+    public LandingDraftDto resetDraft() {
+        ensureInitialized();
+        return tx.execute(s -> {
+            LandingPage p = load();
+            LandingPageDto base = p.getDraftJson() != null ? parse(p.getDraftJson()) : published(p);
+            base.setBlocks(blocks.defaults());
+            p.setDraftJson(json(clean(base)));
+            p.setDraftUpdatedAt(LocalDateTime.now());
+            return draftView(repository.save(p));
+        });
+    }
 
-        if (req.getCtaTitle()       != null) p.setCtaTitle(req.getCtaTitle());
-        if (req.getCtaSubtitle()    != null) p.setCtaSubtitle(req.getCtaSubtitle());
-        if (req.getCtaButtonLabel() != null) p.setCtaButtonLabel(req.getCtaButtonLabel());
-        if (req.getCtaButtonLink()  != null) p.setCtaButtonLink(req.getCtaButtonLink());
-        if (req.getFooterText()     != null) p.setFooterText(req.getFooterText());
-
-        // Theme + visibility
-        // Empty string → null = "clear back to the Tailwind default palette".
-        // Non-empty hex → store as-is (admin chose a custom color).
-        if (req.getPrimaryColor() != null) p.setPrimaryColor(req.getPrimaryColor().isBlank() ? null : req.getPrimaryColor());
-        if (req.getAccentColor()  != null) p.setAccentColor(req.getAccentColor().isBlank()  ? null : req.getAccentColor());
-        if (req.getSiteThemeMode() != null) {
-            String mode = req.getSiteThemeMode().trim().toLowerCase();
-            if (!List.of("default", "same", "custom").contains(mode)) {
-                throw new IllegalArgumentException("siteThemeMode invalide : " + req.getSiteThemeMode());
+    /**
+     * Direct update of the PUBLISHED page from a partial document: {@code blocks},
+     * site settings and/or legacy flat fields ({@code heroTitle}, {@code stats}, …).
+     * Used by the admin AI agent. When a draft exists the same settings/legacy
+     * changes are applied to it too, so publishing it later doesn't undo them.
+     */
+    public LandingPageDto patchPublished(Map<String, Object> patch) {
+        ensureInitialized();
+        LandingPageDto published = tx.execute(s -> {
+            LandingPage p = load();
+            writePublished(p, applyPatch(published(p), patch, true));
+            if (p.getDraftJson() != null) {
+                p.setDraftJson(json(applyPatch(parse(p.getDraftJson()), patch, false)));
             }
-            p.setSiteThemeMode(mode);
-        }
-        if (req.getSitePrimaryColor() != null) p.setSitePrimaryColor(req.getSitePrimaryColor().isBlank() ? null : req.getSitePrimaryColor());
-        if (req.getSiteAccentColor()  != null) p.setSiteAccentColor(req.getSiteAccentColor().isBlank()  ? null : req.getSiteAccentColor());
-        if (req.getShowHero()        != null) p.setShowHero(req.getShowHero());
-        if (req.getShowStats()       != null) p.setShowStats(req.getShowStats());
-        if (req.getShowAbout()       != null) p.setShowAbout(req.getShowAbout());
-        if (req.getShowFeatures()    != null) p.setShowFeatures(req.getShowFeatures());
-        if (req.getShowProcess()     != null) p.setShowProcess(req.getShowProcess());
-        if (req.getShowTestimonials()!= null) p.setShowTestimonials(req.getShowTestimonials());
-        if (req.getShowFaq()         != null) p.setShowFaq(req.getShowFaq());
-        if (req.getShowCta()         != null) p.setShowCta(req.getShowCta());
-        if (req.getShowProgrammes()  != null) p.setShowProgrammes(req.getShowProgrammes());
-        if (req.getProgrammesTitle()    != null) p.setProgrammesTitle(req.getProgrammesTitle());
-        if (req.getProgrammesSubtitle() != null) p.setProgrammesSubtitle(req.getProgrammesSubtitle());
-        if (req.getProgrammesLimit()    != null) p.setProgrammesLimit(req.getProgrammesLimit());
-        if (req.getProgrammesImages()   != null) p.setProgrammesImagesJson(toJson(nonBlank(req.getProgrammesImages())));
-        if (req.getSectionOrder()    != null) p.setSectionOrder(req.getSectionOrder());
-
-        return toDto(repository.save(p));
+            return published(repository.save(p));
+        });
+        cache(published);
+        return published;
     }
 
-    /** Wipe customisations and reseed with defaults. */
-    @Transactional
-    public LandingPageDto reset() {
-        repository.deleteAll();
-        return toDto(seedDefaults());
-    }
+    // ── Internals ────────────────────────────────────────────────────────────
 
-    // ── Internal ──────────────────────────────────────────────────────────────
-
-    private LandingPage seedDefaults() {
-        LandingPage p = LandingPage.builder()
-                .id(SINGLETON_ID)
-                .heroBadge("Plateforme d'incubation propulsée par l'IA")
-                .stats(new ArrayList<>(List.of(
-                        LandingStat.builder().label("Programmes actifs").value(12).suffix("+").build(),
-                        LandingStat.builder().label("Startups incubées").value(150).suffix("+").build(),
-                        LandingStat.builder().label("Taux de succès").value(87).suffix("%").build(),
-                        LandingStat.builder().label("Mentors experts").value(40).suffix("+").build()
-                )))
-                .features(new ArrayList<>(List.of(
-                        LandingFeature.builder().icon("Target")
-                                .title("Sélection IA")
-                                .description("Notre algorithme IA évalue les candidatures selon des critères métier pondérés définis par chaque programme.").build(),
-                        LandingFeature.builder().icon("Users")
-                                .title("Matching intelligent")
-                                .description("Mise en relation automatique entre porteurs de projets et mentors basée sur les compétences et le secteur.").build(),
-                        LandingFeature.builder().icon("Globe2")
-                                .title("Multi-programmes")
-                                .description("Programmes simultanés avec phases, critères et jurys personnalisés pour chaque secteur.").build(),
-                        LandingFeature.builder().icon("Sparkles")
-                                .title("Suivi en temps réel")
-                                .description("Notifications et tableaux de bord pour suivre votre candidature à chaque étape.").build()
-                )))
-                .aboutBadge("Notre mission")
-                .aboutTitle("Accélérer l'innovation tunisienne")
-                .aboutBody("Medianet Incubateur est l'écosystème de référence pour transformer une idée " +
-                        "en entreprise. Depuis 2018, nous avons accompagné plus de 150 startups dans 12 " +
-                        "secteurs en combinant mentorat humain, programmes structurés et un moteur IA " +
-                        "de matching et d'évaluation.")
-                .processTitle("Comment ça marche")
-                .processSubtitle("4 étapes simples pour rejoindre un programme")
-                .processSteps(new ArrayList<>(List.of(
-                        LandingProcessStep.builder().icon("FileText")
-                                .title("1. Candidature")
-                                .description("Remplissez le formulaire en ligne en 10 minutes. Pas de frais.").build(),
-                        LandingProcessStep.builder().icon("ClipboardCheck")
-                                .title("2. Évaluation IA")
-                                .description("Notre IA évalue votre projet selon les critères pondérés du programme.").build(),
-                        LandingProcessStep.builder().icon("Users")
-                                .title("3. Entretien jury")
-                                .description("Les meilleurs profils sont invités à pitcher devant un jury d'experts.").build(),
-                        LandingProcessStep.builder().icon("Rocket")
-                                .title("4. Accompagnement")
-                                .description("Sélectionné ? Rejoignez le programme avec mentors, locaux et financements.").build()
-                )))
-                .testimonialsTitle("Ils nous font confiance")
-                .testimonials(new ArrayList<>(List.of(
-                        LandingTestimonial.builder()
-                                .quote("Medianet Incubateur a transformé notre idée en produit en 6 mois. Le mentorat et la communauté valent de l'or.")
-                                .authorName("Asma B.")
-                                .authorRole("Cofondatrice, FoodStart").build(),
-                        LandingTestimonial.builder()
-                                .quote("Le matching avec les mentors est incroyablement pertinent. On a gagné 1 an de R&D.")
-                                .authorName("Karim M.")
-                                .authorRole("CEO, AgriTech Solutions").build(),
-                        LandingTestimonial.builder()
-                                .quote("Un programme structuré, des deadlines claires, des feedbacks rapides. Exactement ce qu'il faut pour avancer.")
-                                .authorName("Yasmine T.")
-                                .authorRole("Fondatrice, MedConnect").build()
-                )))
-                .faqTitle("Questions fréquentes")
-                .faqs(new ArrayList<>(List.of(
-                        LandingFaq.builder()
-                                .question("Combien coûte la candidature ?")
-                                .answer("La candidature est entièrement gratuite. Aucune commission n'est prélevée sur le capital de votre startup.").build(),
-                        LandingFaq.builder()
-                                .question("À quelle phase de projet puis-je candidater ?")
-                                .answer("Du simple concept au prototype fonctionnel. Chaque programme précise sa maturité cible (idéation, prototypage, traction…).").build(),
-                        LandingFaq.builder()
-                                .question("Combien de temps dure un programme ?")
-                                .answer("Selon le programme, entre 3 et 12 mois. Le détail est sur la page de chaque programme.").build(),
-                        LandingFaq.builder()
-                                .question("Qui sont les mentors ?")
-                                .answer("Plus de 40 entrepreneurs, investisseurs et experts métiers actifs dans l'écosystème tunisien et nord-africain.").build()
-                )))
-                .build();
-        return repository.save(p);
-    }
-
-    private static List<String> nonBlank(List<String> urls) {
-        return urls.stream().filter(u -> u != null && !u.isBlank()).toList();
-    }
-
-    private String toJson(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Contenu de section invalide", e);
+    /**
+     * Create (fresh install) or migrate (pre-blocks database) the singleton row,
+     * once per process. The legacy read runs OUTSIDE any transaction: on
+     * PostgreSQL a failing query (e.g. an old table that doesn't exist) would
+     * otherwise abort the surrounding transaction.
+     */
+    private void ensureInitialized() {
+        if (initialized) return;
+        synchronized (this) {
+            if (initialized) return;
+            LandingPage existing = repository.findById(SINGLETON_ID).orElse(null);
+            if (existing == null || existing.getBlocksJson() == null) {
+                Map<String, Object> old = existing == null ? null : legacy.read();
+                List<LandingBlock> initial = blocks.sanitize(old != null ? blocks.fromLegacy(old) : blocks.defaults());
+                tx.executeWithoutResult(s -> {
+                    LandingPage p = repository.findById(SINGLETON_ID)
+                            .orElseGet(() -> LandingPage.builder().id(SINGLETON_ID).build());
+                    if (p.getBlocksJson() != null) return; // another instance won the race
+                    p.setBlocksJson(json(initial));
+                    if (p.getSiteThemeMode() == null) p.setSiteThemeMode("default");
+                    if (p.getFooterText() == null) p.setFooterText("© 2026 Medianet Incubateur. Tous droits réservés.");
+                    p.setContentVersion(p.getContentVersion() == null ? 1L : p.getContentVersion() + 1);
+                    p.setPublishedAt(LocalDateTime.now());
+                    repository.save(p);
+                });
+                log.info("Landing page initialized with {} blocks ({})", initial.size(),
+                        old != null ? "migrated from the legacy sections" : "default content");
+            }
+            initialized = true;
         }
     }
 
-    private <T> List<T> fromJson(String json, TypeReference<List<T>> type) {
-        if (json == null || json.isBlank()) return new ArrayList<>();
-        try {
-            return objectMapper.readValue(json, type);
-        } catch (Exception e) {
-            log.warn("Unreadable landing-page JSON column, ignoring: {}", e.getMessage());
-            return new ArrayList<>();
-        }
+    /** The singleton row (always present after {@link #ensureInitialized()}). */
+    private LandingPage load() {
+        return repository.findById(SINGLETON_ID)
+                .orElseThrow(() -> new IllegalStateException("landing_page row missing"));
     }
 
-    private LandingPageDto toDto(LandingPage p) {
+    private LandingPageDto published(LandingPage p) {
         return LandingPageDto.builder()
-                .heroTitle(p.getHeroTitle())
-                .heroSubtitle(p.getHeroSubtitle())
-                .heroBadge(p.getHeroBadge())
-                .heroImageUrl(p.getHeroImageUrl())
-                .heroImages(fromJson(p.getHeroImagesJson(), new TypeReference<List<String>>() {}))
-                .customSections(fromJson(p.getCustomSectionsJson(), new TypeReference<List<LandingCustomSection>>() {}))
+                .blocks(parseBlocks(p.getBlocksJson()))
                 .logoUrl(p.getLogoUrl())
-                .primaryCtaLabel(p.getPrimaryCtaLabel())
-                .primaryCtaLink(p.getPrimaryCtaLink())
-                .secondaryCtaLabel(p.getSecondaryCtaLabel())
-                .secondaryCtaLink(p.getSecondaryCtaLink())
-                .stats(new ArrayList<>(p.getStats() != null ? p.getStats() : List.of()))
-                .features(new ArrayList<>(p.getFeatures() != null ? p.getFeatures() : List.of()))
-                .aboutBadge(p.getAboutBadge())
-                .aboutTitle(p.getAboutTitle())
-                .aboutBody(p.getAboutBody())
-                .aboutImageUrl(p.getAboutImageUrl())
-                .processTitle(p.getProcessTitle())
-                .processSubtitle(p.getProcessSubtitle())
-                .processSteps(new ArrayList<>(p.getProcessSteps() != null ? p.getProcessSteps() : List.of()))
-                .testimonialsTitle(p.getTestimonialsTitle())
-                .testimonials(new ArrayList<>(p.getTestimonials() != null ? p.getTestimonials() : List.of()))
-                .faqTitle(p.getFaqTitle())
-                .faqs(new ArrayList<>(p.getFaqs() != null ? p.getFaqs() : List.of()))
-                .ctaTitle(p.getCtaTitle())
-                .ctaSubtitle(p.getCtaSubtitle())
-                .ctaButtonLabel(p.getCtaButtonLabel())
-                .ctaButtonLink(p.getCtaButtonLink())
-                .footerText(p.getFooterText())
                 .primaryColor(p.getPrimaryColor())
                 .accentColor(p.getAccentColor())
                 .siteThemeMode(p.getSiteThemeMode() == null ? "default" : p.getSiteThemeMode())
                 .sitePrimaryColor(p.getSitePrimaryColor())
                 .siteAccentColor(p.getSiteAccentColor())
-                .showHero(p.getShowHero())
-                .showStats(p.getShowStats())
-                .showAbout(p.getShowAbout())
-                .showFeatures(p.getShowFeatures())
-                .showProcess(p.getShowProcess())
-                .showTestimonials(p.getShowTestimonials())
-                .showFaq(p.getShowFaq())
-                .showCta(p.getShowCta())
-                .showProgrammes(p.getShowProgrammes())
-                .programmesTitle(p.getProgrammesTitle())
-                .programmesSubtitle(p.getProgrammesSubtitle())
-                .programmesLimit(p.getProgrammesLimit())
-                .programmesImages(fromJson(p.getProgrammesImagesJson(), new TypeReference<List<String>>() {}))
-                .sectionOrder(p.getSectionOrder())
+                .footerText(p.getFooterText())
+                .version(p.getContentVersion() == null ? 0L : p.getContentVersion())
+                .publishedAt(p.getPublishedAt())
                 .build();
+    }
+
+    private LandingDraftDto draftView(LandingPage p) {
+        boolean hasDraft = p.getDraftJson() != null;
+        return LandingDraftDto.builder()
+                .page(hasDraft ? parse(p.getDraftJson()) : published(p))
+                .hasDraft(hasDraft)
+                .draftUpdatedAt(p.getDraftUpdatedAt())
+                .publishedAt(p.getPublishedAt())
+                .build();
+    }
+
+    private void writePublished(LandingPage p, LandingPageDto doc) {
+        p.setBlocksJson(json(doc.getBlocks()));
+        p.setLogoUrl(doc.getLogoUrl());
+        p.setPrimaryColor(doc.getPrimaryColor());
+        p.setAccentColor(doc.getAccentColor());
+        p.setSiteThemeMode(doc.getSiteThemeMode());
+        p.setSitePrimaryColor(doc.getSitePrimaryColor());
+        p.setSiteAccentColor(doc.getSiteAccentColor());
+        p.setFooterText(doc.getFooterText());
+        p.setContentVersion(p.getContentVersion() == null ? 1L : p.getContentVersion() + 1);
+        p.setPublishedAt(LocalDateTime.now());
+    }
+
+    /** Validate + normalize a full document coming from the editor. */
+    private LandingPageDto clean(LandingPageDto doc) {
+        LandingPageDto out = LandingPageDto.builder()
+                .blocks(blocks.sanitize(doc.getBlocks()))
+                .logoUrl(blocks.cleanUrl(doc.getLogoUrl()))
+                .primaryColor(blocks.cleanColor(doc.getPrimaryColor()))
+                .accentColor(blocks.cleanColor(doc.getAccentColor()))
+                .siteThemeMode(blocks.cleanThemeMode(doc.getSiteThemeMode()))
+                .sitePrimaryColor(blocks.cleanColor(doc.getSitePrimaryColor()))
+                .siteAccentColor(blocks.cleanColor(doc.getSiteAccentColor()))
+                .footerText(blank(doc.getFooterText()))
+                .build();
+        if (json(out).length() > MAX_JSON) {
+            throw new IllegalArgumentException("La page est trop volumineuse (limite ~1 Mo).");
+        }
+        return out;
+    }
+
+    /** Apply a partial document (blocks / settings / legacy flat fields) to {@code doc}. */
+    private LandingPageDto applyPatch(LandingPageDto doc, Map<String, Object> patch, boolean allowBlocks) {
+        if (allowBlocks && patch.get("blocks") instanceof List<?> list) {
+            doc.setBlocks(mapper.convertValue(list, new TypeReference<List<LandingBlock>>() {}));
+        }
+        setIfPresent(patch, "logoUrl", doc::setLogoUrl);
+        setIfPresent(patch, "primaryColor", doc::setPrimaryColor);
+        setIfPresent(patch, "accentColor", doc::setAccentColor);
+        setIfPresent(patch, "siteThemeMode", doc::setSiteThemeMode);
+        setIfPresent(patch, "sitePrimaryColor", doc::setSitePrimaryColor);
+        setIfPresent(patch, "siteAccentColor", doc::setSiteAccentColor);
+        setIfPresent(patch, "footerText", doc::setFooterText);
+        if (blocks.hasLegacyFields(patch)) {
+            List<LandingBlock> list = new ArrayList<>(doc.getBlocks() == null ? List.of() : doc.getBlocks());
+            blocks.applyLegacyPatch(list, patch);
+            doc.setBlocks(list);
+        }
+        return clean(doc);
+    }
+
+    private static void setIfPresent(Map<String, Object> patch, String key, Consumer<String> setter) {
+        if (patch.containsKey(key)) setter.accept(patch.get(key) == null ? null : String.valueOf(patch.get(key)));
+    }
+
+    private static String blank(String v) {
+        return v == null || v.isBlank() ? null : v;
+    }
+
+    /** Keep the newest published copy in memory (a slower concurrent reader can't regress it). */
+    private synchronized void cache(LandingPageDto dto) {
+        LandingPageDto current = publishedCache;
+        if (current == null || dto.getVersion() >= current.getVersion()) publishedCache = dto;
+    }
+
+    private String json(Object value) {
+        try {
+            return mapper.writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Contenu de page invalide", e);
+        }
+    }
+
+    private LandingPageDto parse(String json) {
+        try {
+            LandingPageDto d = mapper.readValue(json, LandingPageDto.class);
+            if (d.getBlocks() == null) d.setBlocks(new ArrayList<>());
+            return d;
+        } catch (Exception e) {
+            log.warn("Unreadable landing draft, ignoring it: {}", e.getMessage());
+            return LandingPageDto.builder().blocks(blocks.defaults()).build();
+        }
+    }
+
+    private List<LandingBlock> parseBlocks(String json) {
+        try {
+            return mapper.readValue(json, new TypeReference<List<LandingBlock>>() {});
+        } catch (Exception e) {
+            log.warn("Unreadable landing blocks, serving defaults: {}", e.getMessage());
+            return blocks.defaults();
+        }
     }
 }

@@ -1,100 +1,37 @@
 package com.medianet.programme.dto;
 
-import com.medianet.programme.entity.LandingFaq;
-import com.medianet.programme.entity.LandingFeature;
-import com.medianet.programme.entity.LandingProcessStep;
-import com.medianet.programme.entity.LandingStat;
-import com.medianet.programme.entity.LandingTestimonial;
-import lombok.*;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/** The landing-page document: ordered blocks + site-wide settings. */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class LandingPageDto {
 
-    // Hero
-    private String heroTitle;
-    private String heroSubtitle;
-    private String heroBadge;
-    private String heroImageUrl;
-    /** Additional hero photos (slideshow). */
-    private List<String> heroImages;
-
-    private String primaryCtaLabel;
-    private String primaryCtaLink;
-    private String secondaryCtaLabel;
-    private String secondaryCtaLink;
-
-    // Stats
     @Builder.Default
-    private List<LandingStat>    stats    = new ArrayList<>();
+    private List<LandingBlock> blocks = new ArrayList<>();
 
-    // Features
-    @Builder.Default
-    private List<LandingFeature> features = new ArrayList<>();
-
-    // About
-    private String aboutBadge;
-    private String aboutTitle;
-    private String aboutBody;
-    private String aboutImageUrl;
-
-    // Process
-    private String processTitle;
-    private String processSubtitle;
-    @Builder.Default
-    private List<LandingProcessStep> processSteps = new ArrayList<>();
-
-    // Testimonials
-    private String testimonialsTitle;
-    @Builder.Default
-    private List<LandingTestimonial> testimonials = new ArrayList<>();
-
-    // FAQ
-    private String faqTitle;
-    @Builder.Default
-    private List<LandingFaq> faqs = new ArrayList<>();
-
-    // Open programmes carousel
-    private String  programmesTitle;
-    private String  programmesSubtitle;
-    private Integer programmesLimit;
-    private List<String> programmesImages;
-
-    // Final CTA + footer
-    private String ctaTitle;
-    private String ctaSubtitle;
-    private String ctaButtonLabel;
-    private String ctaButtonLink;
-    private String footerText;
-
-    // Admin-created sections
-    private List<LandingCustomSection> customSections;
-
-    // Theme
+    // ── Site settings ────────────────────────────────────────────────────────
     private String logoUrl;
     private String primaryColor;
     private String accentColor;
-    /** "default" | "same" | "custom" — colors applied to the other front-office pages. */
+    /** "default" | "same" | "custom" — colors of the other front-office pages. */
     private String siteThemeMode;
     private String sitePrimaryColor;
     private String siteAccentColor;
+    private String footerText;
 
-    // Visibility flags
-    private Boolean showHero;
-    private Boolean showStats;
-    private Boolean showAbout;
-    private Boolean showFeatures;
-    private Boolean showProcess;
-    private Boolean showTestimonials;
-    private Boolean showFaq;
-    private Boolean showCta;
-    private Boolean showProgrammes;
-
-    /** CSV of section ids in render order. */
-    private String sectionOrder;
+    // ── Read-only metadata ───────────────────────────────────────────────────
+    private Long version;
+    private LocalDateTime publishedAt;
 }

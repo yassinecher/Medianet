@@ -16,10 +16,14 @@ function readStored(): string | null {
   try { return localStorage.getItem(STORAGE_KEY) || null } catch { return null }
 }
 
-/** Push a new logo to every mounted logo immediately (editor live update). */
-export function setBrandLogoUrl(url: string | null | undefined) {
+/**
+ * Push a new logo to every mounted logo immediately. `persist: false` (editor
+ * preview of an unpublished logo) skips the localStorage cache so the draft logo
+ * never leaks into normal visits.
+ */
+export function setBrandLogoUrl(url: string | null | undefined, { persist = true }: { persist?: boolean } = {}) {
   cached = url || null
-  try {
+  if (persist) try {
     if (cached) localStorage.setItem(STORAGE_KEY, cached)
     else localStorage.removeItem(STORAGE_KEY)
   } catch {}

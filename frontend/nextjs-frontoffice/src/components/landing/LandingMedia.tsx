@@ -1,46 +1,35 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { ArrowRight, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export interface LandingImage { url?: string; caption?: string }
-export interface CustomSection {
-  id?: string
-  layout?: 'text-image' | 'gallery' | 'carousel'
-  badge?: string
-  title?: string
-  subtitle?: string
-  body?: string
-  imagePosition?: 'left' | 'right'
-  background?: 'default' | 'muted' | 'dark'
-  ctaLabel?: string
-  ctaLink?: string
-  visible?: boolean
-  images?: LandingImage[]
-}
+import type { LandingImage, MediaData } from '@/lib/landingBlocks'
 
 /** Cross-fading background slideshow for the hero (one photo = static). */
 export function HeroSlideshow({ images, interval = 6000 }: { images: string[]; interval?: number }) {
   const [i, setI] = useState(0)
+  const reduceMotion = useReducedMotion()
   useEffect(() => {
-    if (images.length < 2) return
+    if (images.length < 2 || reduceMotion) return
     const t = setInterval(() => setI((n) => (n + 1) % images.length), interval)
     return () => clearInterval(t)
-  }, [images.length, interval])
+  }, [images.length, interval, reduceMotion])
+  if (images.length === 0) return null
+  const src = images[i % images.length]
   return (
     <div className="pointer-events-none absolute inset-0">
       <AnimatePresence initial={false}>
         {/* framer animates the OUTER opacity (0→1); the photo's own strength is
             set on the inner div — putting both on one element let the animation
             override it, showing the photo at 100% behind the text. */}
-        <motion.div key={images[i]}
+        <motion.div key={src}
           initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 1.2 }}
           className="absolute inset-0">
           <div className="absolute inset-0 opacity-30 dark:opacity-25"
-            style={{ backgroundImage: `url(${images[i]})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+            style={{ backgroundImage: `url(${src})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
         </motion.div>
       </AnimatePresence>
       {/* Keep the headline and paragraph readable over any photo, in both modes */}
@@ -54,12 +43,13 @@ export function PhotoCarousel({ images, className, aspect = 'aspect-[16/9]' }: {
   const photos = images.filter((p) => p.url)
   const [i, setI] = useState(0)
   const [paused, setPaused] = useState(false)
+  const reduceMotion = useReducedMotion()
   const n = photos.length
   useEffect(() => {
-    if (n < 2 || paused) return
+    if (n < 2 || paused || reduceMotion) return
     const t = setInterval(() => setI((x) => (x + 1) % n), 5000)
     return () => clearInterval(t)
-  }, [n, paused])
+  }, [n, paused, reduceMotion])
   if (n === 0) return null
   const cur = photos[Math.min(i, n - 1)]
   const go = (d: number) => setI((x) => (x + d + n) % n)
@@ -124,7 +114,7 @@ export function PhotoGallery({ images }: { images: LandingImage[] }) {
           <motion.button key={`${p.url}-${k}`} type="button" onClick={() => setOpen(k)}
             initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: k * 0.05 }}
             className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted text-left">
-            <img src={p.url} alt={p.caption ?? ''} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <img src={p.url} alt={p.caption ?? ''} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
             {p.caption && (
               <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-8 text-xs font-medium text-white">
                 {p.caption}
@@ -152,16 +142,13 @@ export function PhotoGallery({ images }: { images: LandingImage[] }) {
   )
 }
 
-const BG: Record<string, string> = {
-  default: '',
-  muted: 'bg-muted/30',
-  dark: 'bg-slate-950 text-white',
-}
-
-/** Renders one admin-created section (text + photo, photo grid, or carousel). */
-export function CustomSectionView({ section: s }: { section: CustomSection }) {
-  const dark = s.background === 'dark'
+/**
+ * Content of a "media" block (text + photo, photo grid, or carousel). The
+ * section wrapper (spacing, background) comes from the block shell.
+ */
+export function MediaContent({ data: s }: { data: MediaData }) {
   const images = (s.images ?? []).filter((p) => p.url)
+  if (!s.title && !s.body && !s.subtitle && images.length === 0) return null
   const heading = (
     <>
       {s.badge && (
@@ -169,12 +156,12 @@ export function CustomSectionView({ section: s }: { section: CustomSection }) {
           {s.badge}
         </div>
       )}
-      {s.title && <h2 className={cn('text-3xl font-bold md:text-4xl', dark ? 'text-white' : 'text-foreground')}>{s.title}</h2>}
-      {s.subtitle && <p className={cn('mt-2', dark ? 'text-slate-400' : 'text-muted-foreground')}>{s.subtitle}</p>}
+      {s.title && <h2 className="text-3xl font-bold text-foreground md:text-4xl">{s.title}</h2>}
+      {s.subtitle && <p className="mt-2 text-muted-foreground">{s.subtitle}</p>}
     </>
   )
   const body = s.body && (
-    <p className={cn('mt-4 whitespace-pre-line leading-relaxed', dark ? 'text-slate-300' : 'text-muted-foreground')}>{s.body}</p>
+    <p className="mt-4 whitespace-pre-line leading-relaxed text-muted-foreground">{s.body}</p>
   )
   const cta = s.ctaLabel && (
     <Link href={s.ctaLink || '/register'}
@@ -185,13 +172,11 @@ export function CustomSectionView({ section: s }: { section: CustomSection }) {
 
   if (s.layout === 'gallery' || s.layout === 'carousel') {
     return (
-      <section className={cn('px-4 py-20', BG[s.background ?? 'default'])}>
-        <div className="mx-auto max-w-5xl">
-          <div className="mb-10 text-center">{heading}{body}</div>
-          {s.layout === 'carousel' ? <PhotoCarousel images={images} /> : <PhotoGallery images={images} />}
-          {cta && <div className="text-center">{cta}</div>}
-        </div>
-      </section>
+      <div className="mx-auto max-w-5xl">
+        {(s.badge || s.title || s.subtitle || s.body) && <div className="mb-10 text-center">{heading}{body}</div>}
+        {s.layout === 'carousel' ? <PhotoCarousel images={images} /> : <PhotoGallery images={images} />}
+        {cta && <div className="text-center">{cta}</div>}
+      </div>
     )
   }
 
@@ -201,23 +186,21 @@ export function CustomSectionView({ section: s }: { section: CustomSection }) {
     : images.length === 1
       ? (
         <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-border shadow-xl">
-          <img src={images[0].url} alt={images[0].caption ?? s.title ?? ''} className="h-full w-full object-cover" />
+          <img src={images[0].url} alt={images[0].caption ?? s.title ?? ''} loading="lazy" className="h-full w-full object-cover" />
         </div>
       )
       : <div className="hidden aspect-[4/3] rounded-2xl border border-border bg-gradient-to-br from-brand-500/20 via-brand-accent/20 to-transparent md:block" />
   const imageLeft = s.imagePosition === 'left'
   return (
-    <section className={cn('px-4 py-20', BG[s.background ?? 'default'])}>
-      <div className="mx-auto grid max-w-5xl items-center gap-10 md:grid-cols-2">
-        <motion.div initial={{ opacity: 0, x: imageLeft ? 20 : -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
-          className={imageLeft ? 'md:order-2' : ''}>
-          {heading}{body}{cta}
-        </motion.div>
-        <motion.div initial={{ opacity: 0, x: imageLeft ? -20 : 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
-          className={imageLeft ? 'md:order-1' : ''}>
-          {media}
-        </motion.div>
-      </div>
-    </section>
+    <div className="mx-auto grid max-w-5xl items-center gap-10 md:grid-cols-2">
+      <motion.div initial={{ opacity: 0, x: imageLeft ? 20 : -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
+        className={imageLeft ? 'md:order-2' : ''}>
+        {heading}{body}{cta}
+      </motion.div>
+      <motion.div initial={{ opacity: 0, x: imageLeft ? -20 : 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
+        className={imageLeft ? 'md:order-1' : ''}>
+        {media}
+      </motion.div>
+    </div>
   )
 }

@@ -558,10 +558,18 @@ export const reportsApi = {
 }
 
 /** Landing page admin API */
+/**
+ * Landing page CMS. The editor works on a server-side DRAFT (autosaved) and
+ * publishes it explicitly; `get` is the published page visitors see.
+ */
 export const landingPageApi = {
-  get:    () => api.get('/api/landing-page'),
-  update: (data: unknown) => api.put('/api/landing-page', data),
-  reset:  () => api.post('/api/landing-page/reset'),
+  get:          () => api.get('/api/landing-page'),
+  getDraft:     () => api.get('/api/landing-page/draft'),
+  saveDraft:    (doc: unknown) => api.put('/api/landing-page/draft', doc),
+  discardDraft: () => api.delete('/api/landing-page/draft'),
+  publish:      (doc?: unknown) => api.post('/api/landing-page/publish', doc),
+  /** Default blocks into the draft (logo, colors and footer kept). */
+  reset:        () => api.post('/api/landing-page/reset'),
 }
 
 export const candidaturesApi = {
