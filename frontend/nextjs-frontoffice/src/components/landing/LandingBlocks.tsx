@@ -65,7 +65,8 @@ export function BlockView({ block, programmes }: { block: LandingBlock; programm
   if (block.type === 'hero') return content // full-bleed, own background
   const bg: BlockBackground = d.background ?? DEFAULT_BG[block.type] ?? 'default'
   return (
-    <section className={cn('px-4 py-20', BG_CLASS[bg], block.type === 'stats' && 'border-y border-border py-16')}>
+    // Vertical rhythm: compact on phones (48px), roomy from md (80px).
+    <section className={cn('px-4 py-12 md:py-20', BG_CLASS[bg], block.type === 'stats' && 'border-y border-border py-10 md:py-16')}>
       {content}
     </section>
   )
@@ -88,8 +89,8 @@ export function blockHasContent(block: LandingBlock, programmes: Programme[]): b
 function Heading({ title, subtitle, className }: { title?: string; subtitle?: string; className?: string }) {
   if (!has(title) && !has(subtitle)) return null
   return (
-    <div className={cn('mb-12 text-center', className)}>
-      {has(title) && <h2 className="text-3xl font-bold text-foreground">{title}</h2>}
+    <div className={cn('mb-8 text-center md:mb-12', className)}>
+      {has(title) && <h2 className="text-2xl font-bold text-foreground md:text-3xl">{title}</h2>}
       {has(subtitle) && <p className="mt-2 text-muted-foreground">{subtitle}</p>}
     </div>
   )
@@ -99,13 +100,15 @@ function HeroBlock({ d }: { d: HeroData }) {
   if (!has(d.title) && !has(d.subtitle) && !has(d.badge)) return null
   const photos = (d.images ?? []).filter(Boolean)
   return (
-    <section className="relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden px-4 text-center">
+    // --landing-vh: set by the editor preview (its iframe is as tall as the page, so
+    // 100vh would grow with it); visitors get the real viewport height.
+    <section className="relative flex min-h-[calc(var(--landing-vh,100vh)_-_4rem)] flex-col items-center justify-center overflow-hidden px-4 text-center">
       <div className="absolute inset-0"><Particles quantity={90} /></div>
       <div className="mesh-gradient absolute inset-0" />
       {photos.length > 0 ? (
         <HeroSlideshow images={photos} />
       ) : (
-        <div className="pointer-events-none absolute -right-40 top-1/2 -translate-y-1/2 opacity-20 md:opacity-40">
+        <div className="pointer-events-none absolute -right-40 top-1/2 hidden -translate-y-1/2 opacity-40 md:block">
           <Globe />
         </div>
       )}
@@ -116,9 +119,9 @@ function HeroBlock({ d }: { d: HeroData }) {
           </div>
         )}
         {has(d.title) && (
-          <h1 className="mb-6 text-5xl font-bold leading-tight tracking-tight text-foreground md:text-7xl">{d.title}</h1>
+          <h1 className="mb-5 text-4xl font-bold leading-tight tracking-tight text-foreground sm:text-5xl md:mb-6 md:text-7xl">{d.title}</h1>
         )}
-        {has(d.subtitle) && <p className="mx-auto mb-10 max-w-2xl text-lg text-muted-foreground">{d.subtitle}</p>}
+        {has(d.subtitle) && <p className="mx-auto mb-8 max-w-2xl text-base text-muted-foreground sm:text-lg md:mb-10">{d.subtitle}</p>}
         <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           {has(d.primaryCtaLabel) && (
             <Link href={d.primaryCtaLink || '/register'}>
@@ -144,11 +147,11 @@ function StatsBlock({ d }: { d: StatsData }) {
   if (items.length === 0) return null
   return (
     <div className="mx-auto max-w-5xl">
-      <Heading title={d.title} subtitle={d.subtitle} className="mb-10" />
+      <Heading title={d.title} subtitle={d.subtitle} className="mb-8 md:mb-10" />
       <div className={cn('grid grid-cols-2 gap-8', items.length >= 4 ? 'md:grid-cols-4' : items.length === 3 ? 'md:grid-cols-3' : '')}>
         {items.map((s, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }} className="text-center">
-            <p className="text-4xl font-bold text-brand-600 dark:text-brand-400">
+            <p className="text-3xl font-bold text-brand-600 dark:text-brand-400 md:text-4xl">
               <NumberTicker value={Number(s.value) || 0} suffix={s.suffix} />
             </p>
             <p className="mt-1 text-sm text-muted-foreground">{s.label}</p>
@@ -227,9 +230,9 @@ function ProgrammesBlock({ d, programmes }: { d: ProgrammesData; programmes: Pro
   if (shown.length === 0 && images.length === 0) return null
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-10 flex items-center justify-between gap-4">
+      <div className="mb-8 flex items-center justify-between gap-4 md:mb-10">
         <div>
-          {has(d.title) && <h2 className="text-3xl font-bold text-foreground">{d.title}</h2>}
+          {has(d.title) && <h2 className="text-2xl font-bold text-foreground md:text-3xl">{d.title}</h2>}
           {has(d.subtitle) && <p className="text-muted-foreground">{d.subtitle}</p>}
         </div>
         <Link href="/programmes" className="flex shrink-0 items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
@@ -286,7 +289,7 @@ function FaqBlock({ d }: { d: FaqData }) {
   if (items.length === 0) return null
   return (
     <div className="mx-auto max-w-3xl">
-      <Heading title={d.title} subtitle={d.subtitle} className="mb-10" />
+      <Heading title={d.title} subtitle={d.subtitle} className="mb-8 md:mb-10" />
       <div className="space-y-2">
         {items.map((f, i) => <FaqItem key={i} q={f.question ?? ''} a={f.answer ?? ''} />)}
       </div>
@@ -314,10 +317,10 @@ function CtaBlock({ d }: { d: CtaData }) {
   if (!has(d.title) && !has(d.buttonLabel)) return null
   return (
     <div className="mx-auto max-w-2xl text-center">
-      {has(d.title) && <h2 className="text-3xl font-bold text-foreground">{d.title}</h2>}
+      {has(d.title) && <h2 className="text-2xl font-bold text-foreground md:text-3xl">{d.title}</h2>}
       {has(d.subtitle) && <p className="mt-3 text-muted-foreground">{d.subtitle}</p>}
       {has(d.buttonLabel) && (
-        <div className="mt-8 flex justify-center gap-4">
+        <div className="mt-6 flex justify-center gap-4 md:mt-8">
           <Link href={d.buttonLink || '/register'}>
             <ShimmerButton className="px-8 py-4 font-semibold">{d.buttonLabel}</ShimmerButton>
           </Link>

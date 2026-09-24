@@ -34,6 +34,11 @@ export function frontofficeBase(): string {
  * Live preview: the front-office landing in an iframe (`?edit=1`), fed with the
  * editor's working copy over postMessage on every change — instant, no save or
  * reload. Clicking a block in the preview selects it in the editor.
+ *
+ * Layout: the iframe is rendered at the device's real width and the page's FULL
+ * height (reported by the preview), then scaled down to fit the column. So the
+ * page never scrolls inside the iframe — where its scrollbar would be scaled to
+ * a sliver — the pane itself scrolls, with a normal scrollbar.
  */
 export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
   doc: LandingDoc
@@ -43,9 +48,10 @@ export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
   onSelectBlock: (id: string) => void
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const scrollerRef = useRef<HTMLDivElement>(null)
   const [device, setDevice] = useState<Device>('desktop')
-  const [fit, setFit] = useState(1)
+  const [box, setBox] = useState({ w: 0, h: 0 })          // visible area of the pane (px)
+  const [pageHeight, setPageHeight] = useState<number | null>(null) // unscaled page height
   const [reloadKey, setReloadKey] = useState(0)
   const docRef = useRef(doc)
   docRef.current = doc
@@ -57,9 +63,28 @@ export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
     try { return new URL(base).origin } catch { return '*' }
   }, [base])
 
+  const deviceWidth = DEVICES[device].w
+  // Scale so the device width fits the pane (never enlarge).
+  const fit = box.w > 0 ? Math.min(1, box.w / deviceWidth) : 1
+  // The "screen height" the page believes it has = the visible pane height, unscaled —
+  // so a full-height hero fills exactly what the admin sees, like on a real screen.
+  const viewportHeight = box.h > 0 ? Math.round(box.h / fit) : 800
+  const frameHeight = Math.max(pageHeight ?? viewportHeight, viewportHeight)
+
   const post = useCallback((msg: unknown) => {
     iframeRef.current?.contentWindow?.postMessage(msg, targetOrigin)
   }, [targetOrigin])
+
+  // Track the pane's visible size (scrollbar gutter is reserved, so the width is stable).
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const measure = () => setBox({ w: el.clientWidth, h: el.clientHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   // Messages FROM the preview: only trust our own iframe.
   useEffect(() => {
@@ -67,15 +92,22 @@ export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
       if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) return
       const m = e.data
       if (m?.type === 'landing-preview-ready') {
+        post({ type: 'landing-preview-viewport', height: viewportHeight })
         post({ type: 'landing-preview', doc: docRef.current })
         if (selectedRef.current) post({ type: 'select-block', id: selectedRef.current, scroll: true })
+      } else if (m?.type === 'landing-preview-height' && typeof m.height === 'number') {
+        setPageHeight(Math.ceil(m.height))
+      } else if (m?.type === 'landing-preview-scroll' && typeof m.top === 'number') {
+        const y = m.top * fit - 8
+        // First block(s): go to the very top so the site header stays in view.
+        scrollerRef.current?.scrollTo({ top: y < 48 ? 0 : y, behavior: 'smooth' })
       } else if (m?.type === 'edit-section' && typeof m.section === 'string') {
         onSelectBlock(m.section)
       }
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
-  }, [post, onSelectBlock])
+  }, [post, onSelectBlock, fit, viewportHeight])
 
   // Push the working copy (lightly debounced while typing).
   useEffect(() => {
@@ -87,20 +119,12 @@ export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
     post({ type: 'select-block', id: selectedId, scroll: true })
   }, [selectedId, focusKey, post])
 
-  // Render the iframe at the device's real width, scaled down to fit the column.
-  const deviceWidth = DEVICES[device].w
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const compute = () => setFit(Math.min(1, (el.clientWidth - 2) / deviceWidth))
-    compute()
-    const ro = new ResizeObserver(compute)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [deviceWidth])
+    post({ type: 'landing-preview-viewport', height: viewportHeight })
+  }, [viewportHeight, post])
 
   return (
-    <div className="flex h-full flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="flex items-center gap-1.5">
         <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
           {(Object.entries(DEVICES) as [Device, (typeof DEVICES)[Device]][]).map(([k, d]) => (
@@ -121,13 +145,19 @@ export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
           <ExternalLink className="h-3 w-3" />Site
         </a>
       </div>
-      <div ref={containerRef} className="relative flex-1 overflow-hidden rounded-xl border border-border bg-muted/30">
-        <div className="h-full overflow-hidden">
+
+      {/* The pane scrolls (normal scrollbar); the scaled page is a fixed-size box inside. */}
+      <div ref={scrollerRef}
+        className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-muted/30 [scrollbar-gutter:stable]">
+        <div className="relative mx-auto overflow-hidden bg-background shadow-sm"
+          style={{ width: deviceWidth * fit, height: frameHeight * fit }}>
           <iframe key={reloadKey} ref={iframeRef} src={`${base}/?edit=1`} title="Aperçu de la page d’accueil"
+            scrolling="no"
             sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
             style={{
-              width: `${deviceWidth}px`,
-              height: `${100 / fit}%`,
+              position: 'absolute', top: 0, left: 0,
+              width: deviceWidth,
+              height: frameHeight,
               transform: `scale(${fit})`,
               transformOrigin: 'top left',
               border: 0,

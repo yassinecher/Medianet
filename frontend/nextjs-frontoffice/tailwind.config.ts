@@ -40,8 +40,8 @@ const config: Config = {
           950: 'rgb(var(--brand-950,  27  29  78) / <alpha-value>)',
         },
         // Secondary gradient color — overridable from the landing editor
-        // ("couleur accent"); defaults to the original purple.
-        'brand-accent': 'rgb(var(--brand-accent, 147 51 234) / <alpha-value>)',
+        // ("couleur accent"); defaults to the Medianet gold (globals.css).
+        'brand-accent': 'rgb(var(--brand-accent, 204 134 4) / <alpha-value>)',
         // Readable text ON a brand fill (white, or near-black for light brand colors).
         'brand-contrast': 'rgb(var(--brand-contrast, 255 255 255) / <alpha-value>)',
       },
