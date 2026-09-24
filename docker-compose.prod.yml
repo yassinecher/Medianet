@@ -383,7 +383,9 @@ services:
       start_period: 90s
 
   minio:
-    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-04-22T22-12-26Z}
+    # quay.io: MinIO no longer publishes minio/minio or minio/mc on Docker Hub
+    # (both repositories return 404 there), which broke the deploy's pull step.
+    image: quay.io/minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-04-22T22-12-26Z}
     container_name: medianet-minio
     ports:
       - "9000:9000"          # S3 API — uploaded images load from http://SERVER_IP:9000
@@ -402,7 +404,7 @@ services:
       retries: 5
 
   minio-setup:
-    image: minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-04-16T18-13-26Z}
+    image: quay.io/minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-04-16T18-13-26Z}
     container_name: medianet-minio-setup
     depends_on:
       minio: { condition: service_healthy }
