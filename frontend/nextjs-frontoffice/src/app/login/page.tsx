@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { authApi } from '@/lib/api'
-import { useAuthStore, frontofficeRolesOf } from '@/store/auth.store'
+import { useAuthStore, frontofficeRolesOf, needsCompletion } from '@/store/auth.store'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { BorderBeam } from '@/components/magicui/border-beam'
@@ -31,7 +31,7 @@ export default function LoginPage() {
 
   // Shared post-auth handling for both email/password and Google: gate the
   // frontoffice, store the session, redirect.
-  const finishAuth = (data: any) => {
+  const finishAuth = (data: any, viaGoogle = false) => {
     // ADMIN-only accounts are pushed to the backoffice; mixed accounts keep
     // their non-admin roles for the frontoffice.
     const fo = frontofficeRolesOf({ ...data, role: data.role, roles: data.roles ?? [] } as any)
@@ -41,12 +41,14 @@ export default function LoginPage() {
     }
     setAuth(data, data.token)
     toast.success(`Bienvenue, ${data.firstName} !`)
-    router.push('/dashboard')
+    // Google sign-ups skip the form: send them to complete what's missing (phone).
+    const target = viaGoogle && needsCompletion(data) ? '/account?complete=1' : '/dashboard'
+    router.push(target)
     // Safety net: the App Router client transition occasionally stalls, leaving
     // the login button spinning after the success toast. If we're still on /login
     // shortly after, force a hard navigation so login never gets stuck.
     window.setTimeout(() => {
-      if (window.location.pathname.startsWith('/login')) window.location.assign('/dashboard')
+      if (window.location.pathname.startsWith('/login')) window.location.assign(target)
     }, 1200)
     return true
   }
@@ -67,7 +69,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const { data } = await authApi.google(idToken)
-      if (!finishAuth(data)) setLoading(false)
+      if (!finishAuth(data, true)) setLoading(false)
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'Connexion Google échouée')
       setLoading(false)
@@ -93,7 +95,12 @@ export default function LoginPage() {
               onChange={(e) => setForm({ ...form, email: e.target.value })} required autoComplete="email" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Mot de passe</label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Mot de passe</label>
+              <Link href="/forgot-password" className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">
+                Mot de passe oublié ?
+              </Link>
+            </div>
             <div className="relative">
               <Input type={showPwd ? 'text' : 'password'} placeholder="••••••••" value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })} required

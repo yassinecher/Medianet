@@ -4,6 +4,7 @@ import com.medianet.auth.dto.*;
 import com.medianet.auth.security.JwtService;
 import com.medianet.auth.service.AuthEventService;
 import com.medianet.auth.service.AuthService;
+import com.medianet.auth.service.PasswordResetService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +24,7 @@ public class AuthController {
     private final AuthService      authService;
     private final JwtService       jwtService;
     private final AuthEventService authEventService;
+    private final PasswordResetService passwordResetService;
 
     // ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,23 @@ public class AuthController {
     @PostMapping("/google")
     public ResponseEntity<AuthResponse> google(@RequestBody GoogleLoginRequest request) {
         return ResponseEntity.ok(authService.loginWithGoogle(request.token()));
+    }
+
+    // ── « Mot de passe oublié » (public) ────────────────────────────────────
+
+    /** Always the same answer, whether or not the address has an account. */
+    @PostMapping("/password/forgot")
+    public ResponseEntity<Map<String, String>> forgotPassword(@RequestBody Map<String, String> body) {
+        passwordResetService.requestReset(body.get("email"));
+        return ResponseEntity.ok(Map.of("message",
+                "Si un compte existe pour cette adresse, un email vient de vous être envoyé."));
+    }
+
+    /** Body: {@code { "token": "<from the email>", "password": "<new>" }}. */
+    @PostMapping("/password/reset")
+    public ResponseEntity<Map<String, Object>> resetPassword(@RequestBody Map<String, String> body) {
+        boolean admin = passwordResetService.resetPassword(body.get("token"), body.get("password"));
+        return ResponseEntity.ok(Map.of("ok", true, "admin", admin));
     }
 
     // ── Org-member token invitations (public — the token is the authorization) ──

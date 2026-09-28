@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 // Redirect admins to backoffice
-const PUBLIC = ['/', '/login', '/register', '/programmes', '/a-propos', '/partenaires', '/societes-incubees']
+const PUBLIC = ['/', '/login', '/register', '/forgot-password', '/reset-password',
+  '/programmes', '/a-propos', '/partenaires', '/societes-incubees']
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl

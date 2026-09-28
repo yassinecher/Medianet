@@ -17,6 +17,14 @@ export function frontofficeRolesOf(user: User | null | undefined): FrontofficeRo
   return FRONTOFFICE_ROLES.filter((r) => all.has(r))
 }
 
+/**
+ * A porteur account still missing its phone number — the sign-up form requires
+ * it, but a Google sign-up skips that form. Such users are sent to /account.
+ */
+export function needsCompletion(user: User | null | undefined): boolean {
+  return frontofficeRolesOf(user).includes('PORTEUR') && !(user?.phone ?? '').trim()
+}
+
 /** Effective permission slugs (e.g. "candidatures:read") carried on the user. */
 export function permsOf(user: User | null | undefined): string[] {
   if (!user) return []

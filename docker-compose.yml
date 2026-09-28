@@ -286,6 +286,8 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-medianet}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-medianet2024}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Links in emails (password reset, org invitations) point to the front office.
+      FRONTOFFICE_URL: ${FRONTEND_URL:-http://localhost:3000}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-medianet}

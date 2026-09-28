@@ -117,6 +117,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       # Google Sign-In — the PUBLIC OAuth client id (no secret). Empty = feature off.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      # Links in emails (password reset, org invitations) point to the front office.
+      FRONTOFFICE_URL: ${FRONTEND_URL:-https://app.medianet.dz}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-medianet}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-medianet2024}

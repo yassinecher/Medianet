@@ -68,6 +68,14 @@ public class User {
      */
     private Integer tokenVersion;
 
+    /**
+     * FALSE for accounts created through Google Sign-In: their stored password is
+     * a random value nobody knows, so they may SET one without giving a current
+     * password (account page) or through « Mot de passe oublié ». NULL/TRUE = the
+     * user chose their password. Nullable so ddl-auto:update can add the column.
+     */
+    private Boolean passwordSet;
+
     private LocalDateTime createdAt;
 
     // ── Role-specific profiles (optional, only present if role is assigned) ──

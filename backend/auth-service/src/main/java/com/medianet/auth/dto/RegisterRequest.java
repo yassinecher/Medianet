@@ -21,6 +21,9 @@ public class RegisterRequest {
     @NotBlank
     private String password;
 
+    /** Phone number asked by the sign-up form — stored on the porteur profile. */
+    private String phone;
+
     /** Primary role (e.g. "PORTEUR"). Kept for simple registration flow. */
     private String role;
 

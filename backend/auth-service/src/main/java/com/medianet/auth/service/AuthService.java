@@ -62,6 +62,10 @@ public class AuthService {
 
         // Auto-create role profile placeholders
         ensureProfiles(user, roles);
+        // The sign-up form asks for a phone number — it used to be dropped here.
+        if (request.getPhone() != null && !request.getPhone().isBlank()) {
+            attachPhone(user, "PORTEUR", request.getPhone().trim());
+        }
         // Every porteur owns an organisation (their startup) from day one.
         ensurePorteurOrganization(user);
 
@@ -278,6 +282,7 @@ public class AuthService {
                 .directPermissions(new HashSet<>())
                 .active(true)
                 .authProvider("GOOGLE")
+                .passwordSet(false) // random password — they can SET one (account page / reset link)
                 .build();
         userRepository.save(user);
         ensureProfiles(user, user.getRoles());
@@ -520,17 +525,21 @@ public class AuthService {
     public UserDto updateProfile(Long userId, UpdateProfileRequest request) {
         User user = findUser(userId);
         if (request.getNewPassword() != null && !request.getNewPassword().isBlank()) {
-            if (request.getCurrentPassword() == null ||
-                    !passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            // A Google-created account has no password it knows: it may SET one
+            // (it is authenticated); everyone else must confirm the current one.
+            if (hasPassword(user) && (request.getCurrentPassword() == null ||
+                    !passwordEncoder.matches(request.getCurrentPassword(), user.getPassword()))) {
                 throw new IllegalArgumentException("Mot de passe actuel incorrect");
             }
             if (request.getNewPassword().length() < 8) {
                 throw new IllegalArgumentException("Le nouveau mot de passe doit contenir au moins 8 caractères");
             }
             user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            user.setPasswordSet(true);
         }
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
+        if (request.getPhone() != null) setPhone(user, request.getPhone().trim());
         userRepository.save(user);
         return toDto(user);
     }
@@ -677,7 +686,33 @@ public class AuthService {
                 .roles(user.getRoleNames())
                 .permissions(user.getAllPermissionSlugs())
                 .role(user.getPrimaryRole())
+                .authProvider(user.getAuthProvider())
+                .hasPassword(hasPassword(user))
+                .phone(phoneOf(user))
                 .build();
+    }
+
+    private static boolean hasPassword(User user) {
+        return !Boolean.FALSE.equals(user.getPasswordSet());
+    }
+
+    /** The account's phone: porteur profile first, then admin profile. */
+    private static String phoneOf(User user) {
+        String p = user.getPorteurProfile() != null ? user.getPorteurProfile().getPhoneNumber() : null;
+        if ((p == null || p.isBlank()) && user.getAdminProfile() != null) p = user.getAdminProfile().getPhoneNumber();
+        return p == null || p.isBlank() ? null : p;
+    }
+
+    /** Store the phone on the profile that has a phone field (porteur, else admin). */
+    private void setPhone(User user, String phone) {
+        String value = phone.isBlank() ? null : phone;
+        porteurProfileRepository.findByUserId(user.getId()).ifPresentOrElse(p -> {
+            p.setPhoneNumber(value);
+            porteurProfileRepository.save(p);
+        }, () -> adminProfileRepository.findByUserId(user.getId()).ifPresent(p -> {
+            p.setPhoneNumber(value);
+            adminProfileRepository.save(p);
+        }));
     }
 
     UserDto toDto(User user) {
@@ -691,6 +726,9 @@ public class AuthService {
                 .allPermissions(user.getAllPermissionSlugs())
                 .role(user.getPrimaryRole())
                 .active(user.isActive())
+                .authProvider(user.getAuthProvider())
+                .hasPassword(hasPassword(user))
+                .phone(phoneOf(user))
                 .createdAt(user.getCreatedAt())
                 .adminProfile(user.getAdminProfile()   != null ? toAdminDto(user.getAdminProfile())   : null)
                 .mentorProfile(user.getMentorProfile() != null ? toMentorDto(user.getMentorProfile()) : null)

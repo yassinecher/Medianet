@@ -7,4 +7,6 @@ public class UpdateProfileRequest {
     @NotBlank private String lastName;
     private String currentPassword;
     private String newPassword;
+    /** Optional — stored on the porteur (or admin) profile. */
+    private String phone;
 }

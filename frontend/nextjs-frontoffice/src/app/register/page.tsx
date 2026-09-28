@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Check, Eye, EyeOff, Loader2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { authApi } from '@/lib/api'
-import { useAuthStore } from '@/store/auth.store'
+import { useAuthStore, needsCompletion } from '@/store/auth.store'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { BorderBeam } from '@/components/magicui/border-beam'
@@ -56,6 +56,12 @@ export default function RegisterPage() {
     try {
       const { data } = await authApi.google(idToken)
       setAuth(data, data.token)
+      // Google skips the form: complete what's missing (phone) before the dashboard.
+      if (needsCompletion(data)) {
+        toast.success(`Bienvenue, ${data.firstName} ! Complétez votre profil.`)
+        router.push('/account?complete=1')
+        return
+      }
       toast.success(`Bienvenue, ${data.firstName} !`)
       router.push('/dashboard')
     } catch (err: any) {

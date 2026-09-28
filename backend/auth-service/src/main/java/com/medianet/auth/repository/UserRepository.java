@@ -14,6 +14,9 @@ import java.util.Optional;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
+
+    /** Case-insensitive lookup (Google lowercases addresses; people type them freely). */
+    Optional<User> findFirstByEmailIgnoreCase(String email);
     boolean existsByEmail(String email);
 
     /** Find users that have a specific role (by role name string) */

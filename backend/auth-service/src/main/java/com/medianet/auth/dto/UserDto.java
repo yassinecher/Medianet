@@ -24,6 +24,12 @@ public class UserDto {
     private String role;
 
     private boolean active;
+    /** "GOOGLE" when the account signs in with Google; null for email/password only. */
+    private String  authProvider;
+    /** False for Google-created accounts that never chose a password. */
+    private boolean hasPassword;
+    /** Phone number from the role profile (porteur / admin), if any. */
+    private String  phone;
     private LocalDateTime createdAt;
 
     // ── Role-specific profiles (null when role is not assigned) ──────────────

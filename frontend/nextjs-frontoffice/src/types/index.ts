@@ -14,6 +14,10 @@ export interface User {
   /** Effective permission slugs from a refreshed UserDto */
   allPermissions?: string[]
   phone?: string
+  /** "GOOGLE" when the account signs in with Google. */
+  authProvider?: string
+  /** False for Google-created accounts that never chose a password. */
+  hasPassword?: boolean
 }
 
 export type ProgrammeStatus = 'DRAFT' | 'OPEN' | 'IN_PROGRESS' | 'EVALUATION' | 'CLOSED' | 'CANCELLED'

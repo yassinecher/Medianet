@@ -122,13 +122,21 @@ export const authApi = {
   me: () => api.get('/api/auth/me'),
   /** Re-issue the JWT with fresh roles/permissions (same payload as login). */
   refresh: () => api.post('/api/auth/refresh'),
-  /** Update first/last name + optionally change password (requires currentPassword). */
+  /**
+   * Update first/last name and phone; optionally set/change the password.
+   * currentPassword is required unless the account has none yet (Google sign-up).
+   */
   updateProfile: (data: {
     firstName: string
     lastName: string
+    phone?: string
     currentPassword?: string
     newPassword?: string
   }) => api.put('/api/auth/profile', data),
+  /** « Mot de passe oublié » — always succeeds (doesn't reveal whether the email exists). */
+  forgotPassword: (email: string) => api.post('/api/auth/password/forgot', { email }),
+  /** Set a new password from the emailed link → { ok, admin }. */
+  resetPassword: (token: string, password: string) => api.post('/api/auth/password/reset', { token, password }),
   /** Self-service porteur profile (bio, company, social links, avatar, headline…). */
   updatePorteurProfile: (data: {
     company?: string

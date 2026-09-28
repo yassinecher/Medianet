@@ -45,6 +45,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/register-from-invitation").permitAll()
                 .requestMatchers("/api/auth/google").permitAll()
                 .requestMatchers("/api/auth/validate").permitAll()
+                // « Mot de passe oublié »: request a link / set a password from it.
+                .requestMatchers("/api/auth/password/forgot", "/api/auth/password/reset").permitAll()
                 .requestMatchers("/api/auth/org-invitations/**").permitAll()
                 // Public « Sociétés incubées » showcase (trimmed org profiles).
                 .requestMatchers("/api/organizations/public").permitAll()

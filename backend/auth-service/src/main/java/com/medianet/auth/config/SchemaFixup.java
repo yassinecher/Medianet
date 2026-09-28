@@ -25,6 +25,20 @@ public class SchemaFixup implements CommandLineRunner {
     @Override
     public void run(String... args) {
         dropConstraint("organizations", "organizations_org_type_check");
+        markGoogleAccountsWithoutPassword();
+    }
+
+    /**
+     * Accounts created with Google before users.password_set existed hold a random
+     * password: flag them so they can set one. Only touches NULL rows, once.
+     */
+    private void markGoogleAccountsWithoutPassword() {
+        try {
+            int n = jdbc.update("UPDATE users SET password_set = false WHERE password_set IS NULL AND auth_provider = 'GOOGLE'");
+            if (n > 0) log.info("SchemaFixup: flagged {} Google account(s) as having no chosen password", n);
+        } catch (Exception e) {
+            log.warn("SchemaFixup: could not backfill users.password_set: {}", e.getMessage());
+        }
     }
 
     private void dropConstraint(String table, String constraint) {

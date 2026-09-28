@@ -51,7 +51,7 @@ public class TokenVersionFilter implements GlobalFilter, Ordered {
     /** Paths a stale token may still call: re-issuing it, and the live events stream. */
     private static final List<String> EXEMPT = List.of(
             "/api/auth/refresh", "/api/auth/token-version", "/api/auth/events/",
-            "/api/auth/login", "/api/auth/register", "/api/auth/google");
+            "/api/auth/login", "/api/auth/register", "/api/auth/google", "/api/auth/password/");
 
     private record Cached(int version, long at) {}
 

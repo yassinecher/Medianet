@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { BorderBeam } from '@/components/magicui/border-beam'
 import { MedianetLogo } from '@/components/brand/MedianetLogo'
+import { frontofficeBase } from '@/lib/frontoffice'
 
 export default function AdminLoginPage() {
   const router = useRouter()
@@ -17,6 +18,10 @@ export default function AdminLoginPage() {
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
+  // Derived from the browser's host — computed after mount (the server render
+  // can't know it, and React keeps a server-rendered href on hydration).
+  const [foBase, setFoBase] = useState('')
+  useEffect(() => { setFoBase(frontofficeBase()) }, [])
 
   // Explain a forced logout (e.g. the ADMIN role was removed during the session).
   useEffect(() => {
@@ -111,9 +116,16 @@ export default function AdminLoginPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                Mot de passe
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Mot de passe
+                </label>
+                {/* The reset pages live on the public site (one flow for every account). */}
+                <a href={`${foBase}/forgot-password`}
+                  className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">
+                  Mot de passe oublié ?
+                </a>
+              </div>
               <div className="relative">
                 <Input
                   type={showPwd ? 'text' : 'password'}
