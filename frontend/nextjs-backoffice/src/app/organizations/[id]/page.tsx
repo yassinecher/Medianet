@@ -151,7 +151,7 @@ export default function AdminOrganizationDetailPage() {
             <div className="-mt-9 flex items-end gap-4">
               {org.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={org.logoUrl} alt={org.name} className="h-[72px] w-[72px] rounded-2xl object-cover border-4 border-card bg-card shadow-md" />
+                <img src={org.logoUrl} alt={org.name} className="h-[72px] w-[72px] rounded-2xl object-contain border-4 border-card bg-white shadow-md" />
               ) : (
                 <div className="flex h-[72px] w-[72px] items-center justify-center rounded-2xl border-4 border-card bg-muted shadow-md"><Building2 className="h-8 w-8 text-muted-foreground" /></div>
               )}

@@ -105,7 +105,7 @@ export default function ProgrammesPage() {
                       <Link href={`/programmes/${p.id}`}>
                         <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>
                       </Link>
-                      <Link href={`/programmes/${p.id}`}>
+                      <Link href={`/programmes/${p.id}?tab=info&edit=1`} title="Modifier le programme">
                         <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
                       </Link>
                       {can('programmes:delete') && (

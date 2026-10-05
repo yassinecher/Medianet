@@ -111,7 +111,8 @@ export default function OrganizationProfilePage() {
         sector: orgDraft.sector || undefined, city: orgDraft.city || undefined,
         country: orgDraft.country || undefined, address: orgDraft.address || undefined,
         website: orgDraft.website || undefined, description: orgDraft.description || undefined,
-        logoUrl: orgDraft.logoUrl || undefined, contactEmail: orgDraft.contactEmail || undefined,
+        logoUrl: orgDraft.logoUrl ?? '', // '' = logo removed
+        contactEmail: orgDraft.contactEmail || undefined,
         contactPhone: orgDraft.contactPhone || undefined,
         foundedYear: orgDraft.foundedYear ? Number(orgDraft.foundedYear) : undefined,
         employeeCount: orgDraft.employeeCount || undefined,
@@ -199,7 +200,7 @@ export default function OrganizationProfilePage() {
                 <div className="-mt-10 flex items-end gap-4">
                   {org.logoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={org.logoUrl} alt={org.name} className="h-20 w-20 rounded-2xl object-cover border-4 border-card shadow-md bg-card" />
+                    <img src={org.logoUrl} alt={org.name} className="h-20 w-20 rounded-2xl object-contain border-4 border-card shadow-md bg-white" />
                   ) : (
                     <div className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-card bg-muted shadow-md">
                       <Building2 className="h-9 w-9 text-muted-foreground" />

@@ -136,18 +136,20 @@ public class ProgrammeService {
         if (req.getMaxApplications()     != null) p.setMaxApplications(req.getMaxApplications());
         if (req.getSectors()             != null) p.setSectors(req.getSectors());
         if (req.getEligibleOrgTypes()    != null) p.setEligibleOrgTypes(req.getEligibleOrgTypes());
-        if (req.getTagline()             != null) p.setTagline(req.getTagline());
-        if (req.getLogoUrl()             != null) p.setLogoUrl(req.getLogoUrl());
-        if (req.getBannerImageUrl()      != null) p.setBannerImageUrl(req.getBannerImageUrl());
-        if (req.getLocation()            != null) p.setLocation(req.getLocation());
-        if (req.getApplicationUrl()      != null) p.setApplicationUrl(req.getApplicationUrl());
-        if (req.getExpertCount()         != null) p.setExpertCount(req.getExpertCount());
-        if (req.getTrainingSessionsCount()!= null) p.setTrainingSessionsCount(req.getTrainingSessionsCount());
-        if (req.getMentoringHoursPerMonth()!= null) p.setMentoringHoursPerMonth(req.getMentoringHoursPerMonth());
-        if (req.getMaxStartups()         != null) p.setMaxStartups(req.getMaxStartups());
+        // Presentation fields: null = untouched, "" / 0 = cleared by the admin.
+        if (req.getTagline()             != null) p.setTagline(blankToNull(req.getTagline()));
+        if (req.getLogoUrl()             != null) p.setLogoUrl(blankToNull(req.getLogoUrl()));
+        if (req.getBannerImageUrl()      != null) p.setBannerImageUrl(blankToNull(req.getBannerImageUrl()));
+        if (req.getLocation()            != null) p.setLocation(blankToNull(req.getLocation()));
+        if (req.getApplicationUrl()      != null) p.setApplicationUrl(blankToNull(req.getApplicationUrl()));
+        if (req.getExpertCount()         != null) p.setExpertCount(positiveOrNull(req.getExpertCount()));
+        if (req.getTrainingSessionsCount()!= null) p.setTrainingSessionsCount(positiveOrNull(req.getTrainingSessionsCount()));
+        if (req.getMentoringHoursPerMonth()!= null) p.setMentoringHoursPerMonth(positiveOrNull(req.getMentoringHoursPerMonth()));
+        if (req.getMaxStartups()         != null) p.setMaxStartups(positiveOrNull(req.getMaxStartups()));
         if (req.getObjectives()          != null) p.setObjectives(req.getObjectives());
         if (req.getBenefits()            != null) p.setBenefits(req.getBenefits());
         if (req.getGalleryUrls()         != null) p.setGalleryUrls(req.getGalleryUrls());
+        if (req.getPageJson()            != null) p.setPageJson(ProgrammePageJson.normalize(req.getPageJson()));
         Programme saved = programmeRepository.save(p);
         notifyContributorsOfCriticalChange(saved, oldStatus, oldStart, oldEnd, oldDeadline);
         return toDto(saved);
@@ -183,6 +185,9 @@ public class ProgrammeService {
                 + String.join("\n- ", changes);
         contributorNotifier.notifyCriticalChange(p, "update", summary);
     }
+
+    private static String blankToNull(String s) { return s == null || s.isBlank() ? null : s.trim(); }
+    private static Integer positiveOrNull(Integer n) { return n == null || n <= 0 ? null : n; }
 
     private static String statusLabel(ProgrammeStatus s) { return s == null ? "—" : s.name(); }
     private static String dateStr(java.time.LocalDate d) { return d == null ? "—" : d.toString(); }
@@ -483,6 +488,7 @@ public class ProgrammeService {
                 .objectives(p.getObjectives() != null ? new ArrayList<>(p.getObjectives()) : new ArrayList<>())
                 .benefits(p.getBenefits() != null ? new ArrayList<>(p.getBenefits()) : new ArrayList<>())
                 .galleryUrls(p.getGalleryUrls() != null ? new ArrayList<>(p.getGalleryUrls()) : new ArrayList<>())
+                .pageJson(p.getPageJson())
                 .acceptingApplications(isAccepting(p))
                 .candidatureSessionId(cs != null ? cs.getId() : null)
                 .candidatureDeadline(cs != null ? (cs.getEndDate() != null ? cs.getEndDate() : cs.getStartDate()) : null)

@@ -91,8 +91,12 @@ export function PhotoCarousel({ images, className, aspect = 'aspect-[16/9]' }: {
   )
 }
 
-/** Photo grid; clicking a photo opens it full-screen (arrow keys / Esc). */
-export function PhotoGallery({ images }: { images: LandingImage[] }) {
+/**
+ * Photo grid; clicking a photo opens it full-screen (arrow keys / Esc).
+ * `mosaic` (3+ photos): the first photo is large and the last tiles widen so
+ * every row is full — no lonely photo at the end.
+ */
+export function PhotoGallery({ images, mosaic = false }: { images: LandingImage[]; mosaic?: boolean }) {
   const photos = images.filter((p) => p.url)
   const [open, setOpen] = useState<number | null>(null)
   const n = photos.length
@@ -107,13 +111,22 @@ export function PhotoGallery({ images }: { images: LandingImage[] }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, n])
   if (n === 0) return null
+  const bento = mosaic && n >= 3
+  // 4-column grid: the first photo takes 2×2 cells; widen the last tiles until
+  // the cell count is a multiple of 4 (each widened tile adds one cell).
+  const widen = bento ? (4 - ((4 + n - 1) % 4)) % 4 : 0
   return (
     <>
-      <div className={cn('grid gap-3', n === 1 ? 'grid-cols-1' : n === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+      <div className={cn('grid gap-3',
+        bento ? 'grid-cols-2 auto-rows-[150px] md:grid-cols-4 md:auto-rows-[190px]'
+          : n === 1 ? 'grid-cols-1' : n === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
         {photos.map((p, k) => (
           <motion.button key={`${p.url}-${k}`} type="button" onClick={() => setOpen(k)}
             initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: k * 0.05 }}
-            className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted text-left">
+            className={cn('group relative overflow-hidden rounded-xl border border-border bg-muted text-left',
+              !bento && 'aspect-[4/3]',
+              bento && k === 0 && 'col-span-2 row-span-2',
+              bento && k > 0 && k >= n - widen && 'col-span-2')}>
             <img src={p.url} alt={p.caption ?? ''} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
             {p.caption && (
               <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-8 text-xs font-medium text-white">

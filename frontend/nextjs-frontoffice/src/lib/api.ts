@@ -168,6 +168,15 @@ export const filesApi = {
     )
     return (r.data?.url ?? r.data) as string
   },
+  /**
+   * Import an image from a pasted link (Google Drive / Dropbox share links work):
+   * the server downloads and stores a copy. Returns the stored URL. Rejects with
+   * 400 (unusable link) or 422 (the remote site refused the server).
+   */
+  importUrl: async (url: string, folder = 'avatars') => {
+    const r = await api.post<{ url: string }>('/api/files/import', { url, folder })
+    return r.data.url
+  },
   /** Upload a pitch video (up to 250 MB). Returns { url, filename }. */
   uploadVideo: async (file: File, folder = 'pitch-videos', onProgress?: (pct: number) => void) => {
     const fd = new FormData()

@@ -40,6 +40,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    /** Image-link import: 422 when the remote site refused us (not a 5xx — proxies
+     *  may rewrite those), 400 when the link itself is unusable. */
+    @ExceptionHandler(com.medianet.programme.storage.RemoteImageException.class)
+    public ResponseEntity<Map<String, Object>> handleRemoteImage(com.medianet.programme.storage.RemoteImageException ex) {
+        return error(ex.isRemoteRefused() ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
         return error(HttpStatus.BAD_REQUEST, ex.getMessage());

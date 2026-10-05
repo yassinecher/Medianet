@@ -65,7 +65,8 @@ export function ImageListEditor({ images, onChange, folder = 'landing', captions
             <div key={`${img.url}-${i}`} className="overflow-hidden rounded-lg border border-border bg-card">
               <div className="group relative aspect-[4/3] bg-muted">
                 {img.url && <img src={img.url} alt="" className="h-full w-full object-cover" />}
-                <div className="absolute inset-x-0 top-0 flex justify-between p-1 opacity-0 transition-opacity group-hover:opacity-100">
+                {/* Always visible on touch screens (no hover there). */}
+                <div className="absolute inset-x-0 top-0 flex justify-between p-1 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
                   <span className="flex gap-1">
                     <button type="button" onClick={() => move(i, -1)} disabled={i === 0} title="Déplacer à gauche"
                       className="flex h-6 w-6 items-center justify-center rounded bg-black/60 text-white disabled:opacity-30">

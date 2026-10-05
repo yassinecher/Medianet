@@ -70,6 +70,8 @@ export interface Programme {
   benefits?: string[]
   /** « Retour en images » — programme photo gallery. */
   galleryUrls?: string[]
+  /** « Page publique » layout (JSON, see lib/programmePage.ts); null = default layout. */
+  pageJson?: string | null
 }
 
 export interface Phase {

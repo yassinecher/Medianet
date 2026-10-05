@@ -42,6 +42,10 @@ export interface Programme {
   expertCount?: number; trainingSessionsCount?: number; mentoringHoursPerMonth?: number
   // Structured lists
   objectives?: string[]; benefits?: string[]
+  /** « Retour en images » — photos shown on the public programme page. */
+  galleryUrls?: string[]
+  /** « Page publique » layout JSON (null = default layout). */
+  pageJson?: string | null
 }
 export interface Phase { id?: number; programmeId?: number; title: string; name?: string; description?: string; startDate?: string; endDate?: string; phaseOrder?: number; order?: number; isActive?: boolean }
 export interface Criteria { id?: number; programmeId?: number; name: string; description?: string; weight: number; maxScore?: number; criterionOrder?: number; active?: boolean; aiGenerated?: boolean }

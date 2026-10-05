@@ -3,12 +3,14 @@
  * AvatarUpload — a compact image picker for the front-office, backed by the same
  * MinIO file service as the back-office (POST /api/files/upload). Shows a round
  * (or square) preview, an upload button, a remove button, and a collapsible
- * "paste a URL" fallback. Emits the resulting URL string via onChange.
+ * "paste a link" option (POST /api/files/import — the server stores a copy;
+ * Google Drive / Dropbox share links work). Emits the resulting URL via onChange.
  */
-import { useRef, useState } from 'react'
-import { Upload, Loader2, X, ImageIcon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Upload, Loader2, X, ImageIcon, Link2, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { filesApi } from '@/lib/api'
+import { importImageLink } from '@/lib/imageLink'
 import { Input } from '@/components/ui/input'
 import { getInitials } from '@/lib/utils'
 
@@ -51,11 +53,30 @@ export function AvatarUpload({
     }
   }
 
-  const clear = async () => {
-    if (!value) return
-    const url = value
-    onChange('')
-    try { await filesApi.delete(url) } catch { /* best-effort */ }
+  // Only forget the URL: the form may still be cancelled, and the saved record
+  // must never point at a deleted file.
+  const clear = () => { if (value) onChange('') }
+
+  const [link, setLink] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [broken, setBroken] = useState(false)
+  useEffect(() => { setBroken(false) }, [value])
+
+  const importLink = async () => {
+    if (!link.trim() || importing) return
+    setImporting(true)
+    setLinkError(null)
+    try {
+      const { url, copied } = await importImageLink(link, folder)
+      onChange(url)
+      setLink('')
+      toast.success(copied ? 'Image importée' : 'Image liée depuis son site d’origine')
+    } catch (e: any) {
+      setLinkError(e.message)
+    } finally {
+      setImporting(false)
+    }
   }
 
   return (
@@ -64,8 +85,16 @@ export function AvatarUpload({
         <div className="relative shrink-0" style={{ width: size, height: size }}>
           {value ? (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={value} alt="" className={`h-full w-full object-cover border border-border ${radius}`} />
+              {broken ? (
+                <div title="Image introuvable : remplacez-la"
+                  className={`flex h-full w-full items-center justify-center border border-amber-500/40 bg-amber-500/10 text-amber-600 ${radius}`}>
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={value} alt="" onError={() => setBroken(true)}
+                  className={`h-full w-full border border-border bg-white ${shape === 'square' ? 'object-contain' : 'object-cover'} ${radius}`} />
+              )}
               <button type="button" onClick={clear} title="Retirer"
                 className="absolute -top-1.5 -right-1.5 rounded-full bg-destructive text-destructive-foreground p-0.5 shadow hover:scale-110 transition-transform">
                 <X className="h-3 w-3" />
@@ -87,10 +116,26 @@ export function AvatarUpload({
       <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden"
         onChange={(e) => onFile(e.target.files?.[0])} />
 
+      {broken && <p className="text-[11px] text-amber-600 dark:text-amber-400">L’image actuelle ne s’affiche plus : remplacez-la.</p>}
+
       {showUrlField && (
         <details className="text-xs">
-          <summary className="cursor-pointer text-muted-foreground hover:text-foreground select-none">…ou coller une URL</summary>
-          <Input className="mt-1.5 h-8" placeholder="https://…" value={value ?? ''} onChange={(e) => onChange(e.target.value)} />
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground select-none">
+            …ou coller un lien (Google Drive, Dropbox, site web…)
+          </summary>
+          <div className="mt-1.5 flex gap-1.5">
+            <Input className="h-8" placeholder="https://…" value={link}
+              onChange={(e) => { setLink(e.target.value); setLinkError(null) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); importLink() } }} />
+            <button type="button" onClick={importLink} disabled={importing || !link.trim()}
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50">
+              {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+              Importer
+            </button>
+          </div>
+          {linkError && (
+            <p className="mt-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">{linkError}</p>
+          )}
         </details>
       )}
     </div>

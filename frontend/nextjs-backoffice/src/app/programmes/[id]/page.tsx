@@ -4,7 +4,8 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Plus, Trash2, Edit2, Save, Loader2, CheckCircle2, Building2, X, Upload, Link2, Image, BarChart3, Target, Star, FileText, Wand2, Calendar, Tag,
-  LayoutDashboard, Info, CalendarClock, Users, Mail, Presentation, ClipboardList, Inbox, GraduationCap, Megaphone } from 'lucide-react'
+  LayoutDashboard, Info, CalendarClock, Users, Mail, Presentation, ClipboardList, Inbox, GraduationCap, Megaphone,
+  LayoutTemplate, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { programmesApi, partnersApi, sessionsApi, CATALOG_CATEGORIES } from '@/lib/api'
 import { useCatalog } from '@/hooks/useCatalog'
@@ -33,6 +34,7 @@ import { ParticipantsPanel } from './ParticipantsPanel'
 import { ParticipantsRoster } from './ParticipantsRoster'
 import { WorkshopsPanel } from './WorkshopsPanel'
 import { MailingPanel } from './MailingPanel'
+import { PublicPageCard } from './PublicPageCard'
 
 const statusLabel: Record<string, string> = {
   DRAFT: 'Brouillon', OPEN: 'Ouvert', IN_PROGRESS: 'En cours',
@@ -77,7 +79,7 @@ type Tab =
 /** Leaf-tab label + icon (a leaf is the actual panel rendered below the nav). */
 const TAB_META: Record<Tab, { label: string; Icon: typeof BarChart3 }> = {
   dashboard:     { label: 'Tableau de bord', Icon: LayoutDashboard },
-  info:          { label: 'Informations',    Icon: Info },
+  info:          { label: 'Infos & photos',  Icon: Info },
   candidatures:  { label: 'Candidatures',     Icon: Inbox },
   criteria:      { label: 'Critères',         Icon: Target },
   evaluations:   { label: 'Évaluations',      Icon: Star },
@@ -117,8 +119,11 @@ export default function ProgrammeDetailPage() {
   // between tabs and only leaves the programme once you're back on the first one.
   useEffect(() => {
     const readTab = () => {
-      const t = new URLSearchParams(window.location.search).get('tab') as Tab | null
+      const q = new URLSearchParams(window.location.search)
+      const t = q.get('tab') as Tab | null
       setActiveTab(t && ALL_TABS.includes(t) ? t : 'dashboard')
+      // ?tab=info&edit=1 — straight to the edit form (programmes list « Modifier »).
+      if (t === 'info' && q.get('edit') === '1') setEditMode(true)
     }
     readTab()
     window.addEventListener('popstate', readTab)
@@ -142,14 +147,10 @@ export default function ProgrammeDetailPage() {
     eligibleOrgTypes: [] as string[],
     formTemplate: 'STANDARD',
     customFormSchema: null as CustomFormSchema | null,
-    // Rich fields
-    tagline: '', logoUrl: '', bannerImageUrl: '', location: '', applicationUrl: '',
-    expertCount: '', trainingSessionsCount: '', mentoringHoursPerMonth: '', maxStartups: '',
-    objectives: [] as string[], benefits: [] as string[],
-    galleryUrls: [] as string[],
+    // Visuals, figures, objectives, benefits and photos are edited in the
+    // « Page publique » builder (/programmes/[id]/page-publique).
+    applicationUrl: '',
   })
-  const [newObjective, setNewObjective] = useState('')
-  const [newBenefit, setNewBenefit] = useState('')
 
   // Phases state
   const [phases, setPhases] = useState<Phase[]>([])
@@ -190,18 +191,7 @@ export default function ProgrammeDetailPage() {
           eligibleOrgTypes: (p as any).eligibleOrgTypes ?? [],
           formTemplate: (p as any).formTemplate ?? 'STANDARD',
           customFormSchema: parseSchema((p as any).customFormSchema),
-          tagline: (p as any).tagline ?? '',
-          logoUrl: (p as any).logoUrl ?? '',
-          bannerImageUrl: (p as any).bannerImageUrl ?? '',
-          location: (p as any).location ?? '',
           applicationUrl: (p as any).applicationUrl ?? '',
-          expertCount: (p as any).expertCount?.toString() ?? '',
-          trainingSessionsCount: (p as any).trainingSessionsCount?.toString() ?? '',
-          mentoringHoursPerMonth: (p as any).mentoringHoursPerMonth?.toString() ?? '',
-          maxStartups: (p as any).maxStartups?.toString() ?? '',
-          objectives: (p as any).objectives ?? [],
-          benefits: (p as any).benefits ?? [],
-          galleryUrls: (p as any).galleryUrls ?? [],
         })
         setPhases(p.phases ?? [])
         setCriteria(p.criteria ?? [])
@@ -240,18 +230,9 @@ export default function ProgrammeDetailPage() {
         eligibleOrgTypes: form.eligibleOrgTypes,
         // formTemplate / customFormSchema intentionally NOT sent — the form is
         // edited only in the Parcours candidature-session panel (single source).
-        tagline: form.tagline || undefined,
-        logoUrl: form.logoUrl || undefined,
-        bannerImageUrl: form.bannerImageUrl || undefined,
-        location: form.location || undefined,
-        applicationUrl: form.applicationUrl || undefined,
-        expertCount: form.expertCount ? Number(form.expertCount) : undefined,
-        trainingSessionsCount: form.trainingSessionsCount ? Number(form.trainingSessionsCount) : undefined,
-        mentoringHoursPerMonth: form.mentoringHoursPerMonth ? Number(form.mentoringHoursPerMonth) : undefined,
-        maxStartups: form.maxStartups ? Number(form.maxStartups) : undefined,
-        objectives: form.objectives,
-        benefits: form.benefits,
-        galleryUrls: form.galleryUrls,
+        // Visuals, figures, objectives, benefits and photos are NOT sent either:
+        // the « Page publique » builder owns them.
+        applicationUrl: form.applicationUrl, // '' = cleared
       })
       setProgramme(res.data)
       setEditMode(false)
@@ -406,7 +387,16 @@ export default function ProgrammeDetailPage() {
                 <h1 className="text-2xl font-bold text-foreground truncate">{programme?.title ?? programme?.name}</h1>
                 {programme && <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor(programme.status)}`}>{statusLabel[programme.status]}</span>}
                 {programme && (
-                  <div className="ml-auto sm:ml-2 flex gap-2">
+                  <div className="ml-auto sm:ml-2 flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" className="gap-1.5" title="Modifier les informations du programme (titre, dates, secteurs…)"
+                      onClick={() => { selectTab('info'); setEditMode(true) }}>
+                      <Edit2 className="h-3.5 w-3.5" />Modifier
+                    </Button>
+                    <Link href={`/programmes/${programme.id}/page-publique`} title="Personnaliser la page publique du programme (sections, photos, vidéo…)">
+                      <Button variant="outline" size="sm" className="gap-1.5 border-emerald-500/40 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 hover:from-emerald-500/10 hover:to-teal-500/10">
+                        <LayoutTemplate className="h-3.5 w-3.5 text-emerald-500" />Page publique
+                      </Button>
+                    </Link>
                     <Link href={`/programmes/${programme.id}/timeline`}>
                       <Button variant="outline" size="sm" className="gap-1.5 border-amber-500/40 bg-gradient-to-r from-amber-500/5 to-rose-500/5 hover:from-amber-500/10 hover:to-rose-500/10">
                         <BarChart3 className="h-3.5 w-3.5 text-amber-500" />
@@ -691,177 +681,47 @@ Parcours
                         </div>
                       </section>
 
-                      {/* ── Présentation ── */}
+                      {/* ── Candidature externe ── */}
                       <section className="rounded-xl border border-border bg-muted/10 p-4">
                         <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
-                          <Image className="h-3.5 w-3.5" />Présentation visuelle
+                          <Link2 className="h-3.5 w-3.5" />Lien de candidature externe <span className="font-normal opacity-60">(optionnel)</span>
                         </p>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1 sm:col-span-2">
-                            <label className="text-xs font-medium text-muted-foreground">Accroche / Tagline</label>
-                            <Input placeholder="ex : Le programme FoodTech de référence" value={form.tagline}
-                              onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Upload className="h-3 w-3" />Logo du programme</label>
-                            <ImageUpload value={form.logoUrl} folder="logos" previewHeight={70} compact
-                              onChange={(url) => setForm((f) => ({ ...f, logoUrl: url }))} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Image className="h-3 w-3" />Image bannière</label>
-                            <ImageUpload value={form.bannerImageUrl} folder="banners" previewHeight={70} compact
-                              onChange={(url) => setForm((f) => ({ ...f, bannerImageUrl: url }))} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Link2 className="h-3 w-3" />Lien candidature externe</label>
-                            <Input placeholder="https://typeform.com/..." value={form.applicationUrl}
-                              onChange={(e) => setForm((f) => ({ ...f, applicationUrl: e.target.value }))} />
-                            <p className="text-[10px] text-muted-foreground">
-                              Doit commencer par <code>http://</code> ou <code>https://</code>. Laissez vide pour utiliser le formulaire interne.
-                            </p>
-                            {form.applicationUrl && !/^https?:\/\//i.test(form.applicationUrl) && (
-                              <p className="text-[10px] text-amber-600 dark:text-amber-400">
-URL invalide — sera ignorée, le formulaire interne sera utilisé.
-                              </p>
-                            )}
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Lieu / Localisation</label>
-                            <Input placeholder="ex : Startup Village, Tunis" value={form.location}
-                              onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} />
-                          </div>
-                        </div>
-                      </section>
-
-                      {/* ── Galerie (retour en images) ── */}
-                      <section className="rounded-xl border border-border bg-muted/10 p-4">
-                        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-1">
-                          <Image className="h-3.5 w-3.5" />Galerie — retour en images
+                        <Input placeholder="https://typeform.com/..." value={form.applicationUrl}
+                          onChange={(e) => setForm((f) => ({ ...f, applicationUrl: e.target.value }))} />
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          Doit commencer par <code>http://</code> ou <code>https://</code>. Laissez vide pour utiliser le formulaire interne.
                         </p>
-                        <p className="mb-3 text-[11px] text-muted-foreground">
-                          Photos du programme (ateliers, demo day…) affichées sur la page publique et dans la présentation générée.
-                        </p>
-                        {form.galleryUrls.length > 0 && (
-                          <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                            {form.galleryUrls.map((u, i) => (
-                              <div key={`${u}-${i}`} className="group relative overflow-hidden rounded-lg border border-border">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={u} alt={`Photo ${i + 1}`} className="h-24 w-full object-cover" />
-                                <button type="button" title="Retirer"
-                                  onClick={() => setForm((f) => ({ ...f, galleryUrls: f.galleryUrls.filter((_, j) => j !== i) }))}
-                                  className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:flex">
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
+                        {form.applicationUrl && !/^https?:\/\//i.test(form.applicationUrl) && (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                            URL invalide — sera ignorée, le formulaire interne sera utilisé.
+                          </p>
                         )}
-                        {/* Adder — remounts after each upload so it's ready for the next photo. */}
-                        <ImageUpload key={form.galleryUrls.length} value="" folder="gallery" previewHeight={70} compact
-                          onChange={(url) => { if (url) setForm((f) => ({ ...f, galleryUrls: [...f.galleryUrls, url] })) }} />
                       </section>
 
-                      {/* ── Statistiques clés ── */}
-                      <section className="rounded-xl border border-border bg-muted/10 p-4">
-                        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
-                          <BarChart3 className="h-3.5 w-3.5" />Chiffres clés <span className="font-normal opacity-60">(affichés sur la page du programme)</span>
-                        </p>
-                        <div className="grid gap-3 sm:grid-cols-4">
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Startups sélectionnées</label>
-                            <Input type="number" min="1" placeholder="ex : 5" value={form.maxStartups}
-                              onChange={(e) => setForm((f) => ({ ...f, maxStartups: e.target.value }))} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Nombre d'experts</label>
-                            <Input type="number" min="1" placeholder="ex : 35" value={form.expertCount}
-                              onChange={(e) => setForm((f) => ({ ...f, expertCount: e.target.value }))} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Sessions de formation</label>
-                            <Input type="number" min="1" placeholder="ex : 20" value={form.trainingSessionsCount}
-                              onChange={(e) => setForm((f) => ({ ...f, trainingSessionsCount: e.target.value }))} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">H. mentorat / mois</label>
-                            <Input type="number" min="1" placeholder="ex : 10" value={form.mentoringHoursPerMonth}
-                              onChange={(e) => setForm((f) => ({ ...f, mentoringHoursPerMonth: e.target.value }))} />
-                          </div>
-                        </div>
-                      </section>
+                      {/* The public page's look & content now live in the page builder. */}
+                      <Link href={`/programmes/${id}/page-publique`}
+                        className="flex items-center gap-3 rounded-xl border border-brand-500/30 bg-brand-500/5 p-4 transition-colors hover:bg-brand-500/10">
+                        <LayoutTemplate className="h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
+                        <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                          <span className="block text-sm font-semibold text-foreground">Accroche, bannière, logo, lieu, chiffres clés, objectifs, avantages, photos…</span>
+                          se modifient dans la <b>Page publique</b>, avec un aperçu en direct.
+                        </span>
+                        <ArrowRight className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
+                      </Link>
 
-                      <div className="grid gap-5 lg:grid-cols-2 items-start">
-                      {/* ── Objectifs ── */}
-                      <section className="rounded-xl border border-border bg-muted/10 p-4">
-                        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
-                          <Target className="h-3.5 w-3.5" />Objectifs du programme
-                        </p>
-                        <div className="space-y-2">
-                          {form.objectives.map((obj, i) => (
-                            <div key={i} className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
-                              <span className="flex-1 text-sm text-foreground">{obj}</span>
-                              <button type="button" onClick={() => setForm((f) => ({ ...f, objectives: f.objectives.filter((_, j) => j !== i) }))}
-                                className="text-muted-foreground hover:text-destructive transition-colors">
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          <div className="flex gap-2">
-                            <Input placeholder="Ajouter un objectif..." value={newObjective}
-                              onChange={(e) => setNewObjective(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && newObjective.trim()) {
-                                  e.preventDefault()
-                                  setForm((f) => ({ ...f, objectives: [...f.objectives, newObjective.trim()] }))
-                                  setNewObjective('')
-                                }
-                              }} />
-                            <Button type="button" variant="ghost" size="icon"
-                              onClick={() => { if (newObjective.trim()) { setForm((f) => ({ ...f, objectives: [...f.objectives, newObjective.trim()] })); setNewObjective('') } }}>
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <p className="text-xs text-muted-foreground">Appuyez sur Entrée ou pour ajouter</p>
-                        </div>
-                      </section>
-
-                      {/* ── Bénéfices ── */}
-                      <section className="rounded-xl border border-border bg-muted/10 p-4">
-                        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
-                          <Star className="h-3.5 w-3.5" />Ce que les participants gagnent
-                        </p>
-                        <div className="space-y-2">
-                          {form.benefits.map((b, i) => (
-                            <div key={i} className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
-                              <span className="flex-1 text-sm text-foreground">{b}</span>
-                              <button type="button" onClick={() => setForm((f) => ({ ...f, benefits: f.benefits.filter((_, j) => j !== i) }))}
-                                className="text-muted-foreground hover:text-destructive transition-colors">
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          <div className="flex gap-2">
-                            <Input placeholder="Ajouter un bénéfice..." value={newBenefit}
-                              onChange={(e) => setNewBenefit(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && newBenefit.trim()) {
-                                  e.preventDefault()
-                                  setForm((f) => ({ ...f, benefits: [...f.benefits, newBenefit.trim()] }))
-                                  setNewBenefit('')
-                                }
-                              }} />
-                            <Button type="button" variant="ghost" size="icon"
-                              onClick={() => { if (newBenefit.trim()) { setForm((f) => ({ ...f, benefits: [...f.benefits, newBenefit.trim()] })); setNewBenefit('') } }}>
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <p className="text-xs text-muted-foreground">Appuyez sur Entrée ou pour ajouter</p>
-                        </div>
-                      </section>
+                      {/* Save again at the bottom — the form is long. */}
+                      <div className="flex justify-end gap-2 border-t border-border pt-4">
+                        <Button variant="ghost" size="sm" onClick={() => setEditMode(false)}>Annuler</Button>
+                        <Button variant="brand" size="sm" onClick={handleSaveInfo} disabled={saving}>
+                          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          {saving ? 'Sauvegarde...' : 'Sauvegarder'}
+                        </Button>
                       </div>
                     </div>
                   )}
                 </MagicCard>
+
+                {programme && <PublicPageCard programme={programme} />}
               </motion.div>
             )}
 

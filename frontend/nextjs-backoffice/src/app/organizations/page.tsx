@@ -22,6 +22,7 @@ import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ImageUpload } from '@/components/upload/ImageUpload'
 
 // ── Types (mirror backend DTOs) ────────────────────────────────────────────
 
@@ -282,6 +283,11 @@ export default function OrganizationsPage() {
                     <Input value={form.contactPhone ?? ''}
                       onChange={e => setForm(f => ({ ...f, contactPhone: e.target.value }))} />
                   </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-xs font-medium text-muted-foreground">Logo</label>
+                    <ImageUpload value={form.logoUrl ?? ''} folder="logos" previewHeight={64} compact enableSearch={false}
+                      onChange={(url) => setForm(f => ({ ...f, logoUrl: url }))} />
+                  </div>
                   <div className="space-y-1 sm:col-span-2 flex items-center gap-2 pt-1">
                     <input id="internal-cb" type="checkbox" checked={!!form.internal}
                       onChange={e => setForm(f => ({ ...f, internal: e.target.checked }))}
@@ -384,7 +390,7 @@ function OrgCard({
           </button>
           {org.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={org.logoUrl} alt={org.name} className="h-10 w-10 rounded-lg object-cover border border-border" />
+            <img src={org.logoUrl} alt={org.name} className="h-10 w-10 rounded-lg object-contain border border-border bg-white" />
           ) : (
             <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-muted">
               <Building2 className="h-5 w-5 text-muted-foreground" />
@@ -467,7 +473,11 @@ function OrgCard({
             <Field label="Site web"    value={draft.website ?? ''}     onChange={(v) => setDraft(d => ({ ...d, website: v }))} />
             <Field label="Email"       value={draft.contactEmail ?? ''} onChange={(v) => setDraft(d => ({ ...d, contactEmail: v }))} />
             <Field label="Téléphone"   value={draft.contactPhone ?? ''} onChange={(v) => setDraft(d => ({ ...d, contactPhone: v }))} />
-            <Field label="Logo (URL)"  value={draft.logoUrl ?? ''}     onChange={(v) => setDraft(d => ({ ...d, logoUrl: v }))} className="sm:col-span-2" />
+            <div className="space-y-1 sm:col-span-2">
+              <label className="text-xs font-medium text-muted-foreground">Logo</label>
+              <ImageUpload value={draft.logoUrl ?? ''} folder="logos" previewHeight={64} compact enableSearch={false}
+                onChange={(url) => setDraft(d => ({ ...d, logoUrl: url }))} />
+            </div>
             <div className="space-y-1 sm:col-span-2 flex items-center gap-2 pt-1">
               <input type="checkbox" checked={!!draft.internal}
                 onChange={e => setDraft(d => ({ ...d, internal: e.target.checked }))}

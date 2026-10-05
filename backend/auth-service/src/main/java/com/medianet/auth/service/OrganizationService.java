@@ -131,7 +131,8 @@ public class OrganizationService {
         if (req.getContactPhone()   != null) o.setContactPhone(req.getContactPhone());
         if (req.getFoundedYear()    != null) o.setFoundedYear(req.getFoundedYear());
         if (req.getEmployeeCount()  != null) o.setEmployeeCount(req.getEmployeeCount());
-        if (req.getLogoUrl()        != null) o.setLogoUrl(req.getLogoUrl());
+        // "" = logo removed
+        if (req.getLogoUrl()        != null) o.setLogoUrl(req.getLogoUrl().isBlank() ? null : req.getLogoUrl().trim());
         if (req.getInternal()       != null) o.setInternal(req.getInternal());
         if (req.getLinkedCompanyId()!= null) o.setLinkedCompanyId(req.getLinkedCompanyId());
         return toDto(orgRepository.save(o));

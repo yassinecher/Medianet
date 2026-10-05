@@ -22,12 +22,19 @@ type Device = keyof typeof DEVICES
  * page never scrolls inside the iframe — where its scrollbar would be scaled to
  * a sliver — the pane itself scrolls, with a normal scrollbar.
  */
-export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
-  doc: LandingDoc
+export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock, path = '/', messageType = 'landing-preview', siteHref }: {
+  /** Working copy pushed to the preview (landing doc, or programme fields + layout). */
+  doc: LandingDoc | Record<string, any>
   selectedId: string | null
   /** Changes whenever the preview should scroll to the selected block. */
   focusKey: number
   onSelectBlock: (id: string) => void
+  /** Front-office page previewed (opened with `?edit=1`). */
+  path?: string
+  /** postMessage type carrying `doc` — the previewed page listens for it. */
+  messageType?: string
+  /** « Site » button target (defaults to the previewed page). */
+  siteHref?: string
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
@@ -75,7 +82,7 @@ export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
       const m = e.data
       if (m?.type === 'landing-preview-ready') {
         post({ type: 'landing-preview-viewport', height: viewportHeight })
-        post({ type: 'landing-preview', doc: docRef.current })
+        post({ type: messageType, doc: docRef.current })
         if (selectedRef.current) post({ type: 'select-block', id: selectedRef.current, scroll: true })
       } else if (m?.type === 'landing-preview-height' && typeof m.height === 'number') {
         setPageHeight(Math.ceil(m.height))
@@ -89,13 +96,13 @@ export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
-  }, [post, onSelectBlock, fit, viewportHeight])
+  }, [post, onSelectBlock, fit, viewportHeight, messageType])
 
   // Push the working copy (lightly debounced while typing).
   useEffect(() => {
-    const t = setTimeout(() => post({ type: 'landing-preview', doc }), 120)
+    const t = setTimeout(() => post({ type: messageType, doc }), 120)
     return () => clearTimeout(t)
-  }, [doc, post])
+  }, [doc, post, messageType])
 
   useEffect(() => {
     post({ type: 'select-block', id: selectedId, scroll: true })
@@ -122,7 +129,7 @@ export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
           className="ml-auto flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:text-foreground">
           <RotateCcw className="h-3.5 w-3.5" />
         </button>
-        <a href={base} target="_blank" rel="noopener noreferrer" title="Ouvrir le site public (version publiée)"
+        <a href={siteHref ?? `${base}${path === '/' ? '' : path}`} target="_blank" rel="noopener noreferrer" title="Ouvrir le site public (version publiée)"
           className="flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-[11px] font-medium text-muted-foreground hover:text-foreground">
           <ExternalLink className="h-3 w-3" />Site
         </a>
@@ -133,7 +140,7 @@ export function PreviewPane({ doc, selectedId, focusKey, onSelectBlock }: {
         className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-muted/30 [scrollbar-gutter:stable]">
         <div className="relative mx-auto overflow-hidden bg-background shadow-sm"
           style={{ width: deviceWidth * fit, height: frameHeight * fit }}>
-          <iframe key={reloadKey} ref={iframeRef} src={`${base}/?edit=1`} title="Aperçu de la page d’accueil"
+          <iframe key={reloadKey} ref={iframeRef} src={`${base}${path}?edit=1`} title="Aperçu de la page"
             scrolling="no"
             sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
             style={{

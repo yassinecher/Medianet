@@ -351,6 +351,15 @@ export const filesApi = {
     )
     return r.data.url
   },
+  /**
+   * Import an image from a pasted link (Google Drive / Dropbox share links work):
+   * the server downloads and stores a copy. Returns the stored URL. Rejects with
+   * 400 (unusable link) or 422 (the remote site refused the server).
+   */
+  importUrl: async (url: string, folder = 'uploads') => {
+    const r = await api.post<{ url: string }>('/api/files/import', { url, folder })
+    return r.data.url
+  },
   /** Upload any file type. */
   uploadAny: async (file: File, folder = 'documents') => {
     const form = new FormData()

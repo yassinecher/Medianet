@@ -141,6 +141,13 @@ public class Programme {
     @Builder.Default
     private List<String> galleryUrls = new ArrayList<>();
 
+    /**
+     * « Page publique » layout (JSON: hero options + ordered typed blocks), edited
+     * in the back-office page builder. Null = the default layout.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String pageJson;
+
     /** Admin who created this programme (denormalized from JWT). */
     private Long   createdByAdminId;
     private String createdByAdminName;

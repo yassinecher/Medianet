@@ -55,4 +55,7 @@ public class ProgrammeDto {
     private List<String> objectives;
     private List<String> benefits;
     private List<String> galleryUrls;
+
+    /** « Page publique » layout JSON (null = default layout). */
+    private String pageJson;
 }

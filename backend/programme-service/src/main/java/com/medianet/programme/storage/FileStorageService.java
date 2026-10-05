@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.annotation.PostConstruct;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.time.LocalDate;
 import java.util.Set;
@@ -27,6 +28,7 @@ public class FileStorageService {
 
     private final MinioClient client;
     private final MinioConfig config;
+    private final RemoteImageFetcher remoteImages;
 
     private static final Set<String> ALLOWED_IMAGES = Set.of("image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/gif");
     private static final Set<String> ALLOWED_VIDEOS = Set.of("video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/x-msvideo");
@@ -99,6 +101,31 @@ public class FileStorageService {
             return url;
         } catch (Exception e) {
             log.error("Upload failed", e);
+            throw new RuntimeException("Upload failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Import an image from a pasted link (share links of Drive / Dropbox / GitHub
+     * are understood): downloaded server-side, then stored like an upload, so the
+     * site never depends on the original host. See {@link RemoteImageFetcher}.
+     */
+    public String importFromUrl(String folder, String link, boolean allowSvg) {
+        RemoteImageFetcher.Fetched img = remoteImages.fetch(link, allowSvg);
+        String safeFolder = (folder == null || folder.isBlank()) ? "uploads" : folder.replaceAll("[^a-zA-Z0-9_-]", "_");
+        String objectKey  = "%s/%s/%s%s".formatted(safeFolder, LocalDate.now(), UUID.randomUUID(), img.extension());
+        try (InputStream is = new ByteArrayInputStream(img.bytes())) {
+            client.putObject(PutObjectArgs.builder()
+                    .bucket(config.getBucket())
+                    .object(objectKey)
+                    .stream(is, img.bytes().length, -1)
+                    .contentType(img.contentType())
+                    .build());
+            String url = "%s/%s/%s".formatted(stripTrailingSlash(config.getPublicUrl()), config.getBucket(), objectKey);
+            log.info("Imported image ({} bytes) -> {}", img.bytes().length, url);
+            return url;
+        } catch (Exception e) {
+            log.error("Storing imported image failed", e);
             throw new RuntimeException("Upload failed: " + e.getMessage(), e);
         }
     }

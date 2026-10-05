@@ -6,6 +6,7 @@ import { ArrowRight, Building2, Handshake, Loader2 } from 'lucide-react'
 import { Navbar } from '@/components/layout/Navbar'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { MagicCard } from '@/components/magicui/magic-card'
+import { LogoImage } from '@/components/media/LogoImage'
 import { publicPartnersApi } from '@/lib/api'
 
 interface Partner {
@@ -61,9 +62,7 @@ export default function PartenairesPage() {
                 <Link href={`/partenaires/${p.id}`} className="block h-full">
                   <MagicCard className="flex h-full flex-col p-6 transition-transform hover:-translate-y-0.5">
                     <div className="mb-4 flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-border bg-white">
-                      {p.logoUrl
-                        ? <img src={p.logoUrl} alt={p.name} className="h-full w-full object-contain p-1.5" />
-                        : <Building2 className="h-7 w-7 text-muted-foreground" />}
+                      <LogoImage src={p.logoUrl} alt={p.name} className="h-full w-full object-contain p-1.5" iconClassName="h-7 w-7" />
                     </div>
                     <h3 className="font-semibold text-foreground">{p.name}</h3>
                     {p.description && <p className="mt-1.5 line-clamp-3 text-sm text-muted-foreground">{p.description}</p>}

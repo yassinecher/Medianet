@@ -8,12 +8,32 @@ import { BLOCK_TYPES, blockTitle, mediaLayoutLabel, type LandingBlock } from './
 
 export const SETTINGS_ID = '__settings__'
 
+/** Any editor block: the outline only needs id / type / visibility. */
+export interface OutlineBlock { id: string; type: string; visible?: boolean; data: Record<string, any> }
+export interface OutlineEntry { title: string; subtitle: string; icon: any }
+
+const landingDescribe = (b: OutlineBlock): OutlineEntry => {
+  const lb = b as LandingBlock
+  const meta = BLOCK_TYPES[lb.type]
+  return {
+    title: blockTitle(lb),
+    subtitle: `${meta?.label ?? b.type}${lb.type === 'media' ? ` · ${mediaLayoutLabel(lb.data?.layout)}` : ''}`,
+    icon: meta?.icon ?? PlusSquare,
+  }
+}
+const LANDING_PINNED: OutlineEntry = { title: 'Réglages du site', subtitle: 'Logo, couleurs, pied de page', icon: Palette }
+
 /**
- * Left column of the editor: "Réglages du site" + the page's blocks in order.
- * Drag a row (or use the ⋯ menu / Alt+↑↓) to reorder; the eye toggles visibility.
+ * Left column of the editor: a pinned item (site settings, programme hero…) +
+ * the page's blocks in order. Drag a row (or use the ⋯ menu / Alt+↑↓) to
+ * reorder; the eye toggles visibility. `canDuplicate` = false hides
+ * « Dupliquer » for one-per-page blocks.
  */
-export function BlockOutline({ blocks, selectedId, onSelect, onMove, onReorder, onToggle, onDuplicate, onDelete, onAdd }: {
-  blocks: LandingBlock[]
+export function BlockOutline({
+  blocks, selectedId, onSelect, onMove, onReorder, onToggle, onDuplicate, onDelete, onAdd,
+  describe = landingDescribe, pinned = LANDING_PINNED, pinnedId = SETTINGS_ID, canDuplicate = () => true,
+}: {
+  blocks: OutlineBlock[]
   selectedId: string
   onSelect: (id: string) => void
   onMove: (id: string, dir: -1 | 1) => void
@@ -23,6 +43,10 @@ export function BlockOutline({ blocks, selectedId, onSelect, onMove, onReorder, 
   onDelete: (id: string) => void
   /** Open the block catalog; `afterId` = insert position. */
   onAdd: (afterId?: string) => void
+  describe?: (b: OutlineBlock) => OutlineEntry
+  pinned?: OutlineEntry
+  pinnedId?: string
+  canDuplicate?: (b: OutlineBlock) => boolean
 }) {
   const [menu, setMenu] = useState<string | null>(null)
   const [dragFrom, setDragFrom] = useState<number | null>(null)
@@ -41,15 +65,15 @@ export function BlockOutline({ blocks, selectedId, onSelect, onMove, onReorder, 
 
   return (
     <div className="space-y-3">
-      <button type="button" onClick={() => onSelect(SETTINGS_ID)}
+      <button type="button" onClick={() => onSelect(pinnedId)}
         className={cn('flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors',
-          selectedId === SETTINGS_ID ? 'border-brand-500 bg-brand-500/10' : 'border-border bg-card hover:border-brand-400')}>
+          selectedId === pinnedId ? 'border-brand-500 bg-brand-500/10' : 'border-border bg-card hover:border-brand-400')}>
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/10 text-brand-600 dark:text-brand-400">
-          <Palette className="h-4 w-4" />
+          <pinned.icon className="h-4 w-4" />
         </span>
         <span className="min-w-0">
-          <span className="block text-sm font-semibold text-foreground">Réglages du site</span>
-          <span className="block truncate text-[11px] text-muted-foreground">Logo, couleurs, pied de page</span>
+          <span className="block text-sm font-semibold text-foreground">{pinned.title}</span>
+          <span className="block truncate text-[11px] text-muted-foreground">{pinned.subtitle}</span>
         </span>
       </button>
 
@@ -61,8 +85,8 @@ export function BlockOutline({ blocks, selectedId, onSelect, onMove, onReorder, 
 
       <ol className="space-y-1" onDragLeave={(e) => { if (e.currentTarget === e.target) setDropAt(null) }}>
         {blocks.map((b, i) => {
-          const meta = BLOCK_TYPES[b.type]
-          const Icon = meta?.icon ?? PlusSquare
+          const entry = describe(b)
+          const Icon = entry.icon ?? PlusSquare
           const hidden = b.visible === false
           const selected = selectedId === b.id
           return (
@@ -103,9 +127,9 @@ export function BlockOutline({ blocks, selectedId, onSelect, onMove, onReorder, 
                   <Icon className="h-3.5 w-3.5" />
                 </span>
                 <span className={cn('min-w-0 flex-1', hidden && 'opacity-60')}>
-                  <span className="block truncate text-[13px] font-semibold leading-tight text-foreground">{blockTitle(b)}</span>
+                  <span className="block truncate text-[13px] font-semibold leading-tight text-foreground">{entry.title}</span>
                   <span className="block truncate text-[10px] text-muted-foreground">
-                    {meta?.label}{b.type === 'media' ? ` · ${mediaLayoutLabel(b.data?.layout)}` : ''}{hidden ? ' · masqué' : ''}
+                    {entry.subtitle}{hidden ? ' · masqué' : ''}
                   </span>
                 </span>
                 <button type="button" title={hidden ? 'Afficher' : 'Masquer'} onClick={(e) => { e.stopPropagation(); onToggle(b.id) }}
@@ -123,7 +147,7 @@ export function BlockOutline({ blocks, selectedId, onSelect, onMove, onReorder, 
                   {[
                     { label: 'Monter', icon: ArrowUp, disabled: i === 0, run: () => onMove(b.id, -1) },
                     { label: 'Descendre', icon: ArrowDown, disabled: i === blocks.length - 1, run: () => onMove(b.id, 1) },
-                    { label: 'Dupliquer', icon: Copy, run: () => onDuplicate(b.id) },
+                    { label: 'Dupliquer', icon: Copy, disabled: !canDuplicate(b), run: () => onDuplicate(b.id) },
                     { label: 'Ajouter un bloc après', icon: Plus, run: () => onAdd(b.id) },
                   ].map((a) => (
                     <button key={a.label} type="button" disabled={a.disabled}
@@ -144,7 +168,7 @@ export function BlockOutline({ blocks, selectedId, onSelect, onMove, onReorder, 
         })}
       </ol>
 
-      <button type="button" onClick={() => onAdd(selectedId !== SETTINGS_ID ? selectedId : undefined)}
+      <button type="button" onClick={() => onAdd(selectedId !== pinnedId ? selectedId : undefined)}
         className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-brand-500/60 bg-brand-500/[0.04] py-2.5 text-sm font-semibold text-brand-700 transition-colors hover:bg-brand-500/10 dark:text-brand-300">
         <Plus className="h-4 w-4" />Ajouter un bloc
       </button>

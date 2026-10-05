@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -8,7 +8,7 @@ import {
   Layers, Clock, ChevronRight, Check, X, Target, Link2, History, Globe, UserRound,
   Image as ImageIcon,
 } from 'lucide-react'
-import { ImageUpload } from '@/components/upload/ImageUpload'
+import { ImageListEditor } from '@/components/upload/ImageListEditor'
 import toast from 'react-hot-toast'
 import { sessionsApi, programmesApi } from '@/lib/api'
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -557,41 +557,40 @@ export default function SessionPage() {
 function SessionGalleryCard({ programmeId, session, onChanged }: {
   programmeId: number; session: Session; onChanged: () => Promise<void>
 }) {
-  const urls = session.galleryUrls ?? []
+  // Local list = what the admin sees; saves are serialized so quick add /
+  // reorder / remove clicks can't reach the API out of order.
+  const [urls, setUrls] = useState<string[]>(session.galleryUrls ?? [])
   const [busy, setBusy] = useState(false)
-  const save = async (next: string[]) => {
+  const pending = useRef<string[] | null>(null)
+  const inFlight = useRef(false)
+  const flush = async () => {
+    if (inFlight.current || !pending.current) return
+    const next = pending.current
+    pending.current = null
+    inFlight.current = true
     setBusy(true)
-    try { await sessionsApi.update(programmeId, session.id, { galleryUrls: next }); await onChanged() }
+    try { await sessionsApi.update(programmeId, session.id, { galleryUrls: next }) }
     catch (e: any) { toast.error(e?.response?.data?.message ?? 'Enregistrement impossible') }
-    finally { setBusy(false) }
+    finally {
+      inFlight.current = false
+      if (pending.current) flush()
+      else { setBusy(false); onChanged() }
+    }
   }
+  const change = (next: string[]) => { setUrls(next); pending.current = next; flush() }
   return (
     <MagicCard className="p-5">
       <h2 className="mb-1 flex items-center gap-2 font-semibold text-foreground">
         <ImageIcon className="h-4 w-4 text-brand-500" />Retour en images
+        {busy && <span className="ml-auto flex items-center gap-1 text-[11px] font-normal text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Enregistrement…</span>}
       </h2>
       <p className="mb-3 text-xs text-muted-foreground">
-        Photos de cette session — elles alimentent la galerie du studio de présentation.
+        Photos de cette session : elles s’affichent sous la session sur la page publique du programme
+        et alimentent la galerie du studio de présentation.
       </p>
-      {urls.length > 0 && (
-        <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {urls.map((u, i) => (
-            <div key={`${u}-${i}`} className="group relative overflow-hidden rounded-xl border border-border">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={u} alt="" className="h-24 w-full object-cover" />
-              <button type="button" title="Retirer" disabled={busy}
-                onClick={() => save(urls.filter((_, j) => j !== i))}
-                className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:flex">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      {/* key = length → the picker resets after each successful add */}
-      <ImageUpload key={urls.length} value="" folder="sessions" compact searchContext="feature"
-        onChange={(u) => { if (u) save([...urls, u]) }} />
-      {busy && <p className="mt-2 text-[11px] text-muted-foreground">Enregistrement…</p>}
+      <ImageListEditor folder="sessions" searchQuery={session.title ?? ''}
+        images={urls.map((url) => ({ url }))}
+        onChange={(next) => change(next.map((i) => i.url).filter((u): u is string => !!u))} />
     </MagicCard>
   )
 }

@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Building2, Globe, Loader2, Rocket } from 'lucide-react'
+import { Globe, Loader2, Rocket } from 'lucide-react'
 import { Navbar } from '@/components/layout/Navbar'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { MagicCard } from '@/components/magicui/magic-card'
+import { LogoImage } from '@/components/media/LogoImage'
 import { incubatedApi } from '@/lib/api'
 
 interface Company {
@@ -61,9 +62,7 @@ export default function SocietesIncubeesPage() {
                 <MagicCard className="flex h-full flex-col p-6">
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-border bg-white">
-                      {c.logoUrl
-                        ? <img src={c.logoUrl} alt={c.name} className="h-full w-full object-contain p-1.5" />
-                        : <Building2 className="h-6 w-6 text-muted-foreground" />}
+                      <LogoImage src={c.logoUrl} alt={c.name} className="h-full w-full object-contain p-1.5" />
                     </div>
                     {c.foundedYear && (
                       <span className="rounded-full bg-brand-500/10 px-2.5 py-1 text-[11px] font-bold text-brand-600 dark:text-brand-400">

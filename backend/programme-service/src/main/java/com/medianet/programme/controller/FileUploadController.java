@@ -4,13 +4,16 @@ import com.medianet.programme.storage.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
 /**
- * File upload endpoints (admin-only). Stores files in MinIO and returns
+ * File upload endpoints. Stores files in MinIO and returns
  * the public URL the frontend can drop into <code>logoUrl</code>,
  * <code>bannerImageUrl</code>, etc.
  */
@@ -22,17 +25,46 @@ public class FileUploadController {
     private final FileStorageService storage;
 
     /**
-     * Upload an image (PNG / JPG / WebP / SVG / GIF).
+     * Upload an image (PNG / JPG / WebP / GIF, plus SVG for staff).
      * <p>Usage: <code>POST /api/files/upload?folder=logos</code> with multipart field <code>file</code>.
      * Returns: <code>{ "url": "http://localhost:9000/medianet/logos/2026-05-22/abc.png" }</code>
+     *
+     * <p>Any signed-in user: porteurs upload their organisation logo and avatar
+     * from the front-office (/upload-doc already accepts any file from them).
+     * SVG can carry scripts, so it stays reserved to staff.
      */
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
-    @PreAuthorize("hasRole('ADMIN') or hasAuthority('programmes:update')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Map<String, String>> upload(
             @RequestPart("file") MultipartFile file,
             @RequestParam(defaultValue = "uploads") String folder) {
+        if ("image/svg+xml".equals(file.getContentType()) && !isStaff()) {
+            throw new IllegalArgumentException("Les images SVG ne sont pas acceptées ici : utilisez un PNG, JPG ou WebP.");
+        }
         String url = storage.upload(folder, file, /* onlyImages */ true);
         return ResponseEntity.ok(Map.of("url", url));
+    }
+
+    /**
+     * Import an image from a link — body <code>{ "url": "…", "folder": "logos" }</code>.
+     * The server downloads it (Google Drive / Dropbox / GitHub share links are
+     * understood) and stores a copy, so the site keeps working even if the
+     * original link changes. Returns <code>{ "url": … }</code>, like /upload.
+     * 400 = not usable (not an image, internal address…); 422 = the remote site
+     * refused us (the browser may still be able to show the link directly).
+     */
+    @PostMapping("/import")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Map<String, String>> importFromLink(@RequestBody Map<String, String> body) {
+        String folder = body.getOrDefault("folder", "uploads");
+        String url = storage.importFromUrl(folder, body.get("url"), isStaff());
+        return ResponseEntity.ok(Map.of("url", url));
+    }
+
+    private static boolean isStaff() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream().map(GrantedAuthority::getAuthority)
+                .anyMatch(a -> a.equals("ROLE_ADMIN") || a.equals("programmes:update"));
     }
 
     /** Upload a non-image file (PDF, pitch deck, etc.) — ADMIN only. */

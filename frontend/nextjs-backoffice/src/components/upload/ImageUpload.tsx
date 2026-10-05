@@ -1,8 +1,9 @@
 'use client'
-import { useRef, useState } from 'react'
-import { Upload, Loader2, X, Image as ImageIcon, Search, Sparkles, ExternalLink } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Upload, Loader2, X, Image as ImageIcon, Search, Sparkles, ExternalLink, Link2, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { filesApi, adminAiApi } from '@/lib/api'
+import { importImageLink } from '@/lib/imageLink'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
@@ -44,8 +45,10 @@ interface PhotoResult {
  * Drop-in image picker. Three ways to set an image:
  *   1. Upload a file        (POST → /api/files/upload)
  *   2. Search stock photos (POST → /api/admin-ai/search-photos — same chain as the AI)
- *   3. Paste an external URL
- * All three produce a URL string the parent saves via onChange.
+ *   3. Paste a link         (POST → /api/files/import — the server stores a copy;
+ *      Google Drive / Dropbox share links work)
+ * All three produce a URL string the parent saves via onChange — once per
+ * image, so "adder" usages (value="" + key reset) are safe.
  */
 export function ImageUpload({
   value,
@@ -61,6 +64,30 @@ export function ImageUpload({
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+
+  // ── Paste-a-link state ────────────────────────────────────────────────────
+  const [link, setLink] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  // The current image no longer loads (e.g. an old share link saved as-is).
+  const [broken, setBroken] = useState(false)
+  useEffect(() => { setBroken(false) }, [value])
+
+  const importLink = async () => {
+    if (!link.trim() || importing) return
+    setImporting(true)
+    setLinkError(null)
+    try {
+      const { url, copied } = await importImageLink(link, folder)
+      onChange(url)
+      setLink('')
+      toast.success(copied ? 'Image importée' : 'Image liée depuis son site d’origine')
+    } catch (err: any) {
+      setLinkError(err.message)
+    } finally {
+      setImporting(false)
+    }
+  }
 
   // ── Stock-photo search state ──────────────────────────────────────────────
   const [searchOpen, setSearchOpen] = useState(false)
@@ -115,22 +142,25 @@ export function ImageUpload({
     toast.success('Image sélectionnée')
   }
 
-  const clear = async () => {
-    if (!value) return
-    const url = value
-    onChange('')
-    // Best-effort cleanup — don't block UX on failure. Only delete our own uploads.
-    try { await filesApi.delete(url) } catch {}
-  }
+  // The stored file is kept: the parent form may still be cancelled, and the
+  // saved record must never point at a deleted image.
+  const clear = () => { if (value) onChange('') }
 
   return (
     <div className="space-y-2">
       {/* Preview */}
       {value ? (
         <div className="relative inline-block rounded-lg border border-border bg-muted/30 p-1">
-          <img src={value} alt=""
-            style={{ height: previewHeight }}
-            className="rounded object-contain bg-white" />
+          {broken ? (
+            <div style={{ height: previewHeight, minWidth: previewHeight * 1.6 }}
+              className="flex flex-col items-center justify-center gap-1 rounded bg-amber-500/10 px-3 text-center text-[10px] font-medium text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="h-4 w-4" />Image introuvable : remplacez-la
+            </div>
+          ) : (
+            <img src={value} alt="" onError={() => setBroken(true)}
+              style={{ height: previewHeight }}
+              className="rounded object-contain bg-white" />
+          )}
           <button type="button" onClick={clear}
             className="absolute -top-2 -right-2 rounded-full bg-destructive text-destructive-foreground p-1 shadow-md hover:scale-110 transition-transform"
             title="Retirer">
@@ -239,12 +269,27 @@ Utilise des mots-clés en <strong>anglais</strong>, 3+ mots, précis : « africa
       {showUrlField && (
         <details className="text-xs">
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground select-none">
-            …ou coller une URL externe
+            …ou coller un lien (Google Drive, Dropbox, site web…)
           </summary>
-          <Input className="mt-2"
-            placeholder={placeholder}
-            value={value ?? ''}
-            onChange={(e) => onChange(e.target.value)} />
+          <div className="mt-2 flex gap-1.5">
+            <Input className="h-8 text-xs"
+              placeholder={placeholder}
+              value={link}
+              onChange={(e) => { setLink(e.target.value); setLinkError(null) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); importLink() } }} />
+            <Button type="button" size="sm" variant="outline" onClick={importLink}
+              disabled={importing || !link.trim()} className="h-8 shrink-0 gap-1">
+              {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+              Importer
+            </Button>
+          </div>
+          {linkError ? (
+            <p className="mt-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">{linkError}</p>
+          ) : (
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              L’image est copiée sur nos serveurs : elle reste affichée même si le lien d’origine change.
+            </p>
+          )}
         </details>
       )}
     </div>

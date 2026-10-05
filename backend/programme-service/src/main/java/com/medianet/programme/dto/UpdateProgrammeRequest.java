@@ -39,4 +39,7 @@ public class UpdateProgrammeRequest {
     private List<String> objectives;
     private List<String> benefits;
     private List<String> galleryUrls;
+
+    /** « Page publique » layout JSON; "" resets to the default layout. */
+    private String pageJson;
 }
