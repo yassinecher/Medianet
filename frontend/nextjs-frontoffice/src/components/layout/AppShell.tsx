@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { User } from '@/types'
 import {
   Home, FileText, CheckSquare, FolderKanban, LogOut, ChevronLeft, ChevronRight,
-  Briefcase, Sparkles, GraduationCap, Menu, X, ChevronDown, Bell, User as UserIcon,
+  Briefcase, GraduationCap, Menu, X, ChevronDown, Bell, User as UserIcon,
   Building2, Presentation, Mail, Loader2, CalendarDays, Handshake, AlertTriangle,
 } from 'lucide-react'
 import { fetchNotifications, relTime, type NotificationItem } from '@/lib/notifications'
@@ -28,14 +28,10 @@ import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { MedianetLogoMain } from '@/components/brand/MedianetLogoMain'
 import { useAuthStore, useUser, useFrontofficeRoles, usePerms, type FrontofficeRole } from '@/store/auth.store'
 import { useSessionExpiry } from '@/hooks/useSessionExpiry'
+import { ROLE_META } from '@/lib/roles'
 import { startAuthEvents } from '@/lib/authEvents'
 import { cn, getInitials } from '@/lib/utils'
 
-const ROLE_META: Record<FrontofficeRole, { label: string; icon: any; color: string }> = {
-  PORTEUR: { label: 'Porteur', icon: Briefcase,     color: 'text-brand-600 dark:text-brand-400'     },
-  MENTOR:  { label: 'Mentor',  icon: Sparkles,      color: 'text-emerald-600 dark:text-emerald-400' },
-  JURY:    { label: 'Juré',    icon: GraduationCap, color: 'text-amber-600 dark:text-amber-400'     },
-}
 
 type NavItem = {
   label: string
@@ -107,6 +103,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
   const visibleNav = NAV.filter((n) => navVisible(n, roles, perms))
+  const multiRole = roles.length > 1
+  /** An entry tied to some roles only (not one shared by every front-office role). */
+  const roleScoped = (n: NavItem) => !!n.roles && n.roles.length < 3
 
   const handleLogout = () => { logout(); router.push('/') }
 
@@ -141,7 +140,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <li key={item.href}>
                   <Link href={item.href}
                     title={collapsed ? item.label : [
-                      item.roles ? `Rôle : ${item.roles.join(' ou ')}` : null,
+                      item.roles ? `Espace : ${item.roles.map((r) => ROLE_META[r].label).join(' ou ')}` : null,
                       item.perm ? `Permission : ${item.perm}` : null,
                     ].filter(Boolean).join(' · ') || undefined}
                     className={cn(
@@ -153,12 +152,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     )}>
                     <Icon className="h-4 w-4 shrink-0" />
                     {!collapsed && <span className="truncate">{item.label}</span>}
+                    {/* Which space this entry belongs to — only when the user has several. */}
+                    {!collapsed && multiRole && roleScoped(item) && (
+                      <span className="ml-auto flex shrink-0 gap-0.5">
+                        {item.roles!.filter((r) => roles.includes(r)).map((r) => (
+                          <span key={r} className={cn('h-1.5 w-1.5 rounded-full', ROLE_META[r].dot)} />
+                        ))}
+                      </span>
+                    )}
                   </Link>
                 </li>
               )
             })}
           </ul>
         </nav>
+
+        {/* Role legend — explains the dots when the user holds several roles. */}
+        {!collapsed && multiRole && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-border px-4 py-2.5">
+            {roles.map((r) => (
+              <span key={r} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className={cn('h-1.5 w-1.5 rounded-full', ROLE_META[r].dot)} />{ROLE_META[r].label}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Footer: collapse toggle */}
         <div className="border-t border-border p-2">
@@ -197,12 +215,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                           active ? 'bg-brand-500/10 text-brand-700 dark:text-brand-300' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}>
                         <Icon className="h-4 w-4 shrink-0" />
                         <span>{item.label}</span>
+                        {multiRole && roleScoped(item) && (
+                          <span className="ml-auto flex shrink-0 gap-0.5">
+                            {item.roles!.filter((r) => roles.includes(r)).map((r) => (
+                              <span key={r} className={cn('h-1.5 w-1.5 rounded-full', ROLE_META[r].dot)} />
+                            ))}
+                          </span>
+                        )}
                       </Link>
                     </li>
                   )
                 })}
               </ul>
             </nav>
+            {multiRole && (
+              <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-border px-4 py-2.5">
+                {roles.map((r) => (
+                  <span key={r} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className={cn('h-1.5 w-1.5 rounded-full', ROLE_META[r].dot)} />{ROLE_META[r].label}
+                  </span>
+                ))}
+              </div>
+            )}
           </aside>
         </>
       )}
@@ -386,7 +420,7 @@ function AvatarMenu({ user, roles, onLogout }: {
                 {roles.map((r) => {
                   const I = ROLE_META[r].icon
                   return (
-                    <span key={r} className={cn('inline-flex items-center gap-1 rounded-full bg-card border border-border px-2 py-0.5 text-[10px] font-bold', ROLE_META[r].color)}>
+                    <span key={r} className={cn('inline-flex items-center gap-1 rounded-full bg-card border border-border px-2 py-0.5 text-[10px] font-bold', ROLE_META[r].text)}>
                       <I className="h-3 w-3" />
                       {ROLE_META[r].label}
                     </span>

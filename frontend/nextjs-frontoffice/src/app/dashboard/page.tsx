@@ -15,8 +15,9 @@ import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { MedianetLogoMain } from '@/components/brand/MedianetLogoMain'
 import { candidaturesApi, tasksApi, programmesApi, juryApi, participantsApi } from '@/lib/api'
-import { useUser, useActiveRole, useIsJury, frontofficeRolesOf } from '@/store/auth.store'
-import { formatRelativeDate, statusColor, scoreColor, formatDate } from '@/lib/utils'
+import { useUser, useActiveRole, useIsJury, useAuthStore, useFrontofficeRoles, frontofficeRolesOf, type FrontofficeRole } from '@/store/auth.store'
+import { ROLE_META } from '@/lib/roles'
+import { cn, formatRelativeDate, statusColor, scoreColor, formatDate } from '@/lib/utils'
 import type { Candidature, Task, Programme } from '@/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -199,8 +200,14 @@ function MentorWorkspace({ orgs }: { orgs: any[] }) {
 
 export default function DashboardPage() {
   const user = useUser()
-  const activeRole = useActiveRole() ?? 'PORTEUR'
   const isJury = useIsJury()
+  // A user may hold several roles (e.g. porteur AND juré): each one is a
+  // « space » on this dashboard. The chosen one is remembered (persisted store);
+  // default = the first held role (porteur → mentor → juré).
+  const roles = useFrontofficeRoles()
+  const storedRole = useActiveRole()
+  const setActiveRole = useAuthStore((s) => s.setActiveRole)
+  const activeRole: FrontofficeRole = (storedRole && roles.includes(storedRole) ? storedRole : roles[0]) ?? 'PORTEUR'
   const [candidatures, setCandidatures] = useState<Candidature[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [programmes, setProgrammes] = useState<Programme[]>([])
@@ -317,11 +324,35 @@ export default function DashboardPage() {
                 <HeroIcon className="h-7 w-7" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span className="rounded-full bg-white/20 backdrop-blur-sm px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide">
-                    Profil {activeRole.toLowerCase()}
-                  </span>
-                </div>
+                {roles.length > 1 ? (
+                  // Several roles → one switchable « space » per role, each with what's waiting in it.
+                  <div className="mb-3 flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Vos espaces">
+                    <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-white/75">Vos espaces</span>
+                    {roles.map((r) => {
+                      const meta = ROLE_META[r]
+                      const Icon = meta.icon
+                      const on = r === activeRole
+                      const count = r === 'PORTEUR' ? candidatures.length : r === 'MENTOR' ? mentorOrgs.length : juryPending
+                      return (
+                        <button key={r} type="button" role="tab" aria-selected={on} onClick={() => setActiveRole(r)}
+                          title={`Afficher votre espace ${meta.long}`}
+                          className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition-colors',
+                            on ? cn('bg-white shadow-sm', meta.text) : 'bg-white/15 text-white hover:bg-white/25')}>
+                          <Icon className="h-3.5 w-3.5" />{meta.label}
+                          {count > 0 && (
+                            <span className={cn('rounded-full px-1.5 text-[10px] tabular-nums', on ? cn('text-white', meta.dot) : 'bg-white/25')}>{count}</span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide backdrop-blur-sm">
+                      Espace {ROLE_META[activeRole].long.toLowerCase()}
+                    </span>
+                  </div>
+                )}
                 <h1 className="text-2xl sm:text-3xl font-black">
                   Bonjour, {user?.firstName}
                 </h1>
@@ -343,7 +374,7 @@ export default function DashboardPage() {
                       </Button>
                     </Link>
                   )}
-                  {isJury && (
+                  {activeRole === 'JURY' && (
                     <Link href="/evaluations">
                       <Button className="bg-white text-amber-700 hover:bg-white/90 gap-1.5 font-bold">
                         <GraduationCap className="h-3.5 w-3.5" />Mes évaluations
@@ -353,7 +384,7 @@ export default function DashboardPage() {
                       </Button>
                     </Link>
                   )}
-                  {isMentor && (
+                  {activeRole === 'MENTOR' && (
                     <Link href="/organizations">
                       <Button className="bg-white text-emerald-700 hover:bg-white/90 gap-1.5 font-bold">
                         <Users className="h-3.5 w-3.5" />Mes startups
@@ -373,6 +404,18 @@ export default function DashboardPage() {
             </div>
           </div>
         </motion.div>
+
+        {/* ── Work waiting in another space (multi-role users) ──────── */}
+        {roles.length > 1 && activeRole !== 'JURY' && isJury && juryPending > 0 && (
+          <button type="button" onClick={() => setActiveRole('JURY')}
+            className={cn('flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors hover:bg-amber-500/15', ROLE_META.JURY.chip)}>
+            <GraduationCap className="h-4 w-4 shrink-0" />
+            <span className="flex-1">
+              <b>{juryPending}</b> candidature{juryPending > 1 ? 's' : ''} à évaluer dans votre espace <b>Juré</b>.
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs font-semibold">Ouvrir<ArrowRight className="h-3.5 w-3.5" /></span>
+          </button>
+        )}
 
         {/* ── Stats grid ────────────────────────────────────────────── */}
         <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
@@ -433,10 +476,10 @@ export default function DashboardPage() {
           <div className="lg:col-span-2 space-y-6">
 
             {/* Jury workspace — candidatures to evaluate + my ratings */}
-            {isJury && <JuryWorkspace items={juryItems} myEvalOf={myEvalOf} />}
+            {activeRole === 'JURY' && <JuryWorkspace items={juryItems} myEvalOf={myEvalOf} />}
 
             {/* Mentor workspace — startups I accompany */}
-            {isMentor && <MentorWorkspace orgs={mentorOrgs} />}
+            {activeRole === 'MENTOR' && <MentorWorkspace orgs={mentorOrgs} />}
 
             {/* Mes programmes en cours — incubation space (accepted candidatures) */}
             {activeRole === 'PORTEUR' && myProgrammes.length > 0 && (
