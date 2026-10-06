@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import Cookies from 'js-cookie'
 import type { User } from '@/types'
+import { cookieExpiry, isTokenExpired } from '@/lib/session'
 
 interface AuthStore {
   user: User | null
@@ -16,7 +17,8 @@ export const useAuthStore = create<AuthStore>()(
     (set) => ({
       user: null, token: null, isAuthenticated: false,
       setAuth: (user, token) => {
-        Cookies.set('admin_token', token, { expires: 7, sameSite: 'Strict' })
+        // The cookie lives exactly as long as the token inside it.
+        Cookies.set('admin_token', token, { expires: cookieExpiry(token), sameSite: 'Strict' })
         set({ user, token, isAuthenticated: true })
       },
       logout: () => {
@@ -29,10 +31,13 @@ export const useAuthStore = create<AuthStore>()(
       partialize: (s) => ({ user: s.user, token: s.token }),
       onRehydrateStorage: () => (s) => {
         if (!s) return
-        // The cookie is the source of truth: if it's gone (expired / cleared on a
-        // 401), drop the persisted session so guards stay consistent.
-        if (!Cookies.get('admin_token')) { s.user = null; s.token = null; s.isAuthenticated = false }
-        else s.isAuthenticated = true
+        // The cookie's token is the source of truth: if it's gone (cleared on a
+        // 401) or past its expiry, drop the persisted session so guards stay consistent.
+        const token = Cookies.get('admin_token')
+        if (!token || isTokenExpired(token)) {
+          Cookies.remove('admin_token')
+          s.user = null; s.token = null; s.isAuthenticated = false
+        } else s.isAuthenticated = true
       },
     }
   )

@@ -23,11 +23,16 @@ export default function AdminLoginPage() {
   const [foBase, setFoBase] = useState('')
   useEffect(() => { setFoBase(frontofficeBase()) }, [])
 
-  // Explain a forced logout (e.g. the ADMIN role was removed during the session).
+  // Explain a forced logout (ADMIN role removed, session expired…). `?expired=1`
+  // comes from the middleware, which has no access to sessionStorage.
   useEffect(() => {
     try {
+      const params = new URLSearchParams(window.location.search)
       const reason = sessionStorage.getItem('bo-logout-reason')
-      if (reason) { sessionStorage.removeItem('bo-logout-reason'); toast.error(reason, { id: 'logout-reason', duration: 6000 }) }
+        ?? (params.get('expired') === '1' ? 'Votre session a expiré — reconnectez-vous.' : null)
+      sessionStorage.removeItem('bo-logout-reason')
+      if (params.has('expired')) window.history.replaceState({}, '', '/login')
+      if (reason) toast.error(reason, { id: 'logout-reason', duration: 6000 })
     } catch {}
   }, [])
 

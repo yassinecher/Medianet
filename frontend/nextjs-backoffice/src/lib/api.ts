@@ -57,7 +57,7 @@ api.interceptors.response.use(
         const path = window.location.pathname
         if (path !== '/login' && !sessionEnding) {
           sessionEnding = true
-          window.location.href = '/login'
+          window.location.href = '/login?expired=1'
         }
       }
       if (err.response?.status === 403) {

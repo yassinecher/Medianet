@@ -1226,6 +1226,7 @@ public class AdminAiService {
         // type one. Everything degrades gracefully.
         Map<String, Object> media = new java.util.LinkedHashMap<>();
         boolean autoTranscribed = false;
+        boolean mediaDown = false;   // pitch-media-service unreachable (not "no speech")
         Integer durationSeconds = null;
 
         // ── Cache: the media pipeline (Whisper + vision) is the expensive part.
@@ -1289,11 +1290,14 @@ public class AdminAiService {
                 catch (Exception ignored) {}
             }
             int segCount = media.get("segments") instanceof List<?> sl ? sl.size() : 0;
+            mediaDown = Boolean.TRUE.equals(media.get("unavailable"));
             // NB: same step id as the "running" event above so the UI RESOLVES that
             // row instead of leaving it spinning next to a new one.
             stage.accept(mapOf("step", "media", "status", autoTr.isBlank() ? "warn" : "done",
-                    "label", autoTr.isBlank() ? "Aucune parole détectée" : "Transcription terminée",
-                    "detail", autoTr.isBlank() ? "vérifiez la piste audio"
+                    "label", mediaDown ? "Service de transcription indisponible"
+                            : autoTr.isBlank() ? "Aucune parole détectée" : "Transcription terminée",
+                    "detail", mediaDown ? "pitch-media-service injoignable"
+                            : autoTr.isBlank() ? "vérifiez la piste audio"
                             : segCount + " segments · " + str(media.get("language")) + " · " + durationSeconds + "s"));
             if (media.get("wordsPerMinute") != null) {
                 stage.accept(mapOf("step", "delivery", "status", "done", "label", "Élocution mesurée",
@@ -1314,6 +1318,8 @@ public class AdminAiService {
             err.put("aiEnhanced", false);
             err.put("error", videoUrl.isBlank()
                     ? "Ajoutez une vidéo (transcription automatique) ou saisissez le texte de votre pitch."
+                    : mediaDown
+                    ? "La transcription automatique est indisponible (service vidéo arrêté) — saisissez le texte de votre pitch."
                     : "La transcription automatique n'a rien produit — vérifiez que la vidéo contient de l'audio, ou saisissez le texte.");
             if (!media.isEmpty()) err.put("media", media);
             return err;
@@ -1953,12 +1959,14 @@ public class AdminAiService {
             var resp = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() / 100 != 2) {
                 log.warn("pitch-media-service returned {} for {}", resp.statusCode(), videoUrl);
-                return Map.of();
+                return Map.of("unavailable", true, "reason", "HTTP " + resp.statusCode());
             }
             return json.readValue(resp.body(), Map.class);
         } catch (Exception e) {
+            // Unreachable service (e.g. the opt-in `media` compose profile is off) —
+            // flag it so the caller doesn't report it as "no speech in the video".
             log.warn("pitch-media-service call failed ({}): {}", pitchMediaUrl, e.getMessage());
-            return Map.of();
+            return Map.of("unavailable", true, "reason", String.valueOf(e.getMessage()));
         }
     }
 

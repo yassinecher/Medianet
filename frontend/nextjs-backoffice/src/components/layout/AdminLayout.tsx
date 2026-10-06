@@ -12,6 +12,7 @@ import {
 import { useTheme } from 'next-themes'
 import { useAuthStore, useUser, hasAdminAccess, endAdminSession } from '@/store/auth.store'
 import { startAuthEvents } from '@/lib/authEvents'
+import { useSessionExpiry } from '@/hooks/useSessionExpiry'
 import { AccessDenied } from '@/components/AccessDenied'
 import { MedianetLogo } from '@/components/brand/MedianetLogo'
 import { Button } from '@/components/ui/button'
@@ -54,6 +55,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   // Live permission updates: refreshes the JWT (and this layout) whenever an
   // admin changes this user's roles/permissions; logs out if disabled.
   useEffect(() => { startAuthEvents() }, [])
+
+  // The token expires (24 h) while the panel is open → end the session right
+  // away, instead of leaving a dead panel until some API call fails.
+  const token = useAuthStore((s) => s.token)
+  useSessionExpiry('admin_token', () => endAdminSession('Votre session a expiré — reconnectez-vous.'), token)
 
   // A session whose user is no longer ADMIN (role removed) must not keep the shell.
   useEffect(() => {

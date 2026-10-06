@@ -27,6 +27,7 @@ import { getState, decorate, notifSort, unseenCount, NOTIF_EVENT } from '@/lib/n
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { MedianetLogoMain } from '@/components/brand/MedianetLogoMain'
 import { useAuthStore, useUser, useFrontofficeRoles, usePerms, type FrontofficeRole } from '@/store/auth.store'
+import { useSessionExpiry } from '@/hooks/useSessionExpiry'
 import { startAuthEvents } from '@/lib/authEvents'
 import { cn, getInitials } from '@/lib/utils'
 
@@ -92,6 +93,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Live permission updates: refreshes the JWT (and this layout) whenever an
   // admin changes this user's roles/permissions; logs out if disabled.
   useEffect(() => { startAuthEvents() }, [])
+  // The token expires (24 h) while a page is open → log out right away and say
+  // why, instead of leaving a dead dashboard until some API call fails.
+  const token = useAuthStore((s) => s.token)
+  useSessionExpiry('token', () => { logout(); window.location.href = '/login?expired=1' }, token)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('frontoffice.sidebar.collapsed', collapsed ? '1' : '0')

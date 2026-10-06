@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import Cookies from 'js-cookie'
+import { cookieExpiry, isTokenExpired } from '@/lib/session'
 import type { User } from '@/types'
 
 /** Roles relevant to the frontoffice (porteur experience). ADMIN is backoffice-only. */
@@ -60,7 +61,8 @@ export const useAuthStore = create<AuthStore>()(
       activeRole: null,
       isAuthenticated: false,
       setAuth: (user, token) => {
-        Cookies.set('token', token, { expires: 7, sameSite: 'Lax' })
+        // The cookie lives exactly as long as the token inside it.
+        Cookies.set('token', token, { expires: cookieExpiry(token), sameSite: 'Lax' })
         // The login AuthResponse carries the id as `userId`, not `id`. Normalize
         // so `user.id` is always populated — pages filter/match on it (e.g.
         // /organizations by createdByUserId, jury eval matching by juryId).
@@ -81,10 +83,12 @@ export const useAuthStore = create<AuthStore>()(
       onRehydrateStorage: () => (s) => {
         if (!s) return
         // The cookie is the single source of truth for "is there a live session".
-        // If it's gone (expired, cleared on a 401, or removed by the browser), the
-        // persisted user/token are stale — drop them so guards stay consistent and
-        // the app never behaves as authenticated without a token.
-        if (!Cookies.get('token')) {
+        // If it's gone (cleared on a 401, removed by the browser) or its token is
+        // past its expiry, the persisted user/token are stale — drop them so guards
+        // stay consistent and the app never behaves as authenticated without a token.
+        const cookie = Cookies.get('token')
+        if (!cookie || isTokenExpired(cookie)) {
+          Cookies.remove('token')
           s.user = null; s.token = null; s.isAuthenticated = false; s.activeRole = null
           return
         }
