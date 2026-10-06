@@ -317,7 +317,7 @@ export default function DashboardPage() {
               style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '32px 32px' }} />
             {/* Medianet brand mark — on a white chip so the wordmark reads on any gradient */}
             <div className="absolute right-4 top-4 hidden rounded-xl bg-white px-3 py-2 shadow-md sm:block">
-              <MedianetLogoMain size="sm" tagline={false} href="/" />
+              <MedianetLogoMain size="sm" tagline={false} href="/" onLight />
             </div>
             <div className="relative flex items-start gap-4">
               <div className="hidden sm:flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">

@@ -12,10 +12,13 @@ const HEIGHT = { sm: 'h-8', md: 'h-9', lg: 'h-11' } as const
  * `stripe` / `tagline` are kept for call-site compatibility — the artwork
  * already contains the tagline and the multicolor mark.
  */
-export function MedianetLogo({ size = 'md', href, className, onDark = false }: {
+export function MedianetLogo({ size = 'md', href, className, onDark = false, onLight = false }: {
   size?: 'sm' | 'md' | 'lg'
   /** Always use the light-text artwork (logo placed on a dark/colored panel). */
   onDark?: boolean
+  /** Always use the navy-text artwork (logo placed on a white chip/panel),
+   *  whatever the site theme — the dark-mode variant would vanish on white. */
+  onLight?: boolean
   stripe?: boolean
   tagline?: boolean
   /** Wrap in a link (e.g. "/") when provided. */
@@ -30,6 +33,8 @@ export function MedianetLogo({ size = 'md', href, className, onDark = false }: {
         <img src={custom} alt="Medianet Incubator" className={cn(h, 'w-auto max-w-[220px] object-contain')} />
       ) : onDark ? (
         <img src="/brand/medianet-incubator-dark.svg" alt="Medianet Incubator" className={cn(h, 'w-auto')} />
+      ) : onLight ? (
+        <img src="/brand/medianet-incubator.svg" alt="Medianet Incubator" className={cn(h, 'w-auto')} />
       ) : (
         <>
           <img src="/brand/medianet-incubator.svg" alt="Medianet Incubator" className={cn(h, 'w-auto dark:hidden')} />

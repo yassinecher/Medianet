@@ -26,6 +26,7 @@ import { fetchNotifications, relTime, type NotificationItem } from '@/lib/notifi
 import { getState, decorate, notifSort, unseenCount, NOTIF_EVENT } from '@/lib/notificationState'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { MedianetLogoMain } from '@/components/brand/MedianetLogoMain'
+import { MedianetMark } from '@/components/brand/MedianetMark'
 import { useAuthStore, useUser, useFrontofficeRoles, usePerms, type FrontofficeRole } from '@/store/auth.store'
 import { useSessionExpiry } from '@/hooks/useSessionExpiry'
 import { ROLE_META } from '@/lib/roles'
@@ -35,6 +36,8 @@ import { cn, getInitials } from '@/lib/utils'
 
 type NavItem = {
   label: string
+  /** One-word caption under the icon when the sidebar is collapsed. */
+  short: string
   href: string
   icon: any
   /** Required: the user must hold at least ONE of these roles. */
@@ -45,18 +48,18 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   // The dashboard is role-dependent: it only exists for front-office roles.
-  { label: 'Tableau de bord',  href: '/dashboard',     icon: Home,          roles: ['PORTEUR', 'MENTOR', 'JURY'] },
-  { label: 'Calendrier',       href: '/calendar',      icon: CalendarDays,  roles: ['PORTEUR', 'MENTOR', 'JURY'] },
-  { label: 'Notifications',    href: '/notifications', icon: Bell,          roles: ['PORTEUR', 'MENTOR', 'JURY'] },
-  { label: 'Programmes',       href: '/programmes',    icon: FolderKanban,  perm: 'programmes:read' },
+  { label: 'Tableau de bord',  short: 'Accueil',       href: '/dashboard',     icon: Home,          roles: ['PORTEUR', 'MENTOR', 'JURY'] },
+  { label: 'Calendrier',       short: 'Calendrier',    href: '/calendar',      icon: CalendarDays,  roles: ['PORTEUR', 'MENTOR', 'JURY'] },
+  { label: 'Notifications',    short: 'Notifs',        href: '/notifications', icon: Bell,          roles: ['PORTEUR', 'MENTOR', 'JURY'] },
+  { label: 'Programmes',       short: 'Programmes',    href: '/programmes',    icon: FolderKanban,  perm: 'programmes:read' },
   // "Mes candidatures" is the porteur experience — a jury/mentor holding
   // candidatures:read (to consult dossiers) must NOT see it.
-  { label: 'Mes candidatures', href: '/candidatures',  icon: FileText,      roles: ['PORTEUR'], perm: 'candidatures:read' },
-  { label: 'Mes présentations', href: '/presentations', icon: Presentation,  roles: ['PORTEUR'] },
-  { label: 'Mes évaluations',  href: '/evaluations',   icon: GraduationCap, roles: ['JURY'], perm: 'candidatures:evaluate' },
-  { label: 'Mes organisations', href: '/organizations', icon: Building2,    perm: 'organizations:read' },
-  { label: 'Accompagnement',   href: '/coaching',      icon: Handshake,     roles: ['MENTOR', 'PORTEUR'] },
-  { label: 'Mes tâches',       href: '/tasks',         icon: CheckSquare,   perm: 'tasks:read' },
+  { label: 'Mes candidatures', short: 'Candidatures',  href: '/candidatures',  icon: FileText,      roles: ['PORTEUR'], perm: 'candidatures:read' },
+  { label: 'Mes présentations', short: 'Présentations', href: '/presentations', icon: Presentation,  roles: ['PORTEUR'] },
+  { label: 'Mes évaluations',  short: 'Évaluations',   href: '/evaluations',   icon: GraduationCap, roles: ['JURY'], perm: 'candidatures:evaluate' },
+  { label: 'Mes organisations', short: 'Organisations', href: '/organizations', icon: Building2,    perm: 'organizations:read' },
+  { label: 'Accompagnement',   short: 'Coaching',      href: '/coaching',      icon: Handshake,     roles: ['MENTOR', 'PORTEUR'] },
+  { label: 'Mes tâches',       short: 'Tâches',        href: '/tasks',         icon: CheckSquare,   perm: 'tasks:read' },
 ]
 
 /**
@@ -114,48 +117,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* ── SIDEBAR (desktop) ─────────────────────────────────────────── */}
       <aside className={cn(
         'fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-border bg-card transition-all duration-200 md:flex',
-        collapsed ? 'w-16' : 'w-60',
+        collapsed ? 'w-[88px]' : 'w-60',
       )}>
         {/* Brand */}
         <Link href="/dashboard" className={cn(
           'flex h-16 items-center border-b border-border px-4 transition-colors hover:bg-accent/30',
-          collapsed && 'justify-center px-0'
+          collapsed && 'justify-center px-2'
         )}>
-          {collapsed ? (
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-accent">
-              <span className="text-xs font-bold text-white">M</span>
-            </div>
-          ) : (
-            <MedianetLogoMain size="sm" tagline={false} />
-          )}
+          {collapsed ? <MedianetMark /> : <MedianetLogoMain size="sm" tagline={false} />}
         </Link>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto p-2">
-          <ul className="space-y-0.5">
+        {/* Collapsed: no scrollbar (it would eat the captions' width); still scrolls. */}
+        <nav className={cn('flex-1 overflow-y-auto', collapsed ? 'p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden' : 'p-2')}>
+          <ul className={collapsed ? 'space-y-1' : 'space-y-0.5'}>
             {visibleNav.map((item) => {
               const Icon = item.icon
               const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+              // Which space this entry belongs to — only when the user has several.
+              const dots = multiRole && roleScoped(item) ? item.roles!.filter((r) => roles.includes(r)) : []
               return (
                 <li key={item.href}>
                   <Link href={item.href}
-                    title={collapsed ? item.label : [
+                    title={[
+                      collapsed ? item.label : null,
                       item.roles ? `Espace : ${item.roles.map((r) => ROLE_META[r].label).join(' ou ')}` : null,
                       item.perm ? `Permission : ${item.perm}` : null,
                     ].filter(Boolean).join(' · ') || undefined}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      'rounded-lg font-medium transition-colors',
                       active
                         ? 'bg-brand-500/10 text-brand-700 dark:text-brand-300'
                         : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                      collapsed && 'justify-center px-0'
+                      collapsed
+                        ? 'relative flex flex-col items-center gap-1 px-0.5 py-2'
+                        : 'flex items-center gap-3 px-3 py-2 text-sm',
                     )}>
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {!collapsed && <span className="truncate">{item.label}</span>}
-                    {/* Which space this entry belongs to — only when the user has several. */}
-                    {!collapsed && multiRole && roleScoped(item) && (
-                      <span className="ml-auto flex shrink-0 gap-0.5">
-                        {item.roles!.filter((r) => roles.includes(r)).map((r) => (
+                    <Icon className={cn('shrink-0', collapsed ? 'h-[18px] w-[18px]' : 'h-4 w-4')} />
+                    {collapsed
+                      ? <span className="w-full truncate text-center text-[10px] leading-tight">{item.short}</span>
+                      : <span className="truncate">{item.label}</span>}
+                    {dots.length > 0 && (
+                      <span className={cn('flex shrink-0 gap-0.5', collapsed ? 'absolute right-2 top-1.5' : 'ml-auto')}>
+                        {dots.map((r) => (
                           <span key={r} className={cn('h-1.5 w-1.5 rounded-full', ROLE_META[r].dot)} />
                         ))}
                       </span>
@@ -242,7 +246,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* ── MAIN AREA ─────────────────────────────────────────────────── */}
-      <div className={cn('transition-all duration-200', collapsed ? 'md:ml-16' : 'md:ml-60')}>
+      <div className={cn('transition-all duration-200', collapsed ? 'md:ml-[88px]' : 'md:ml-60')}>
         {/* TOPBAR — minimal: Dashboard + Notifications + Avatar dropdown */}
         <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
           <div className="flex h-14 items-center justify-between px-4 sm:px-6">
