@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ProgrammeHero } from '@/components/programme-page/ProgrammeHero'
 import {
-  ProgrammeBlockView, programmeBlockHasContent,
+  CONTAINER, ProgrammeBlockView, programmeBlockHasContent,
   type ApplyState, type PageCtx, type ResolvedBackground,
 } from '@/components/programme-page/ProgrammeSections'
 import {
@@ -171,7 +171,7 @@ function SectionNav({ items, topClass, action }: {
   if (items.length < 2) return null
   return (
     <div className={cn('sticky z-30 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70', topClass)}>
-      <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 sm:px-6">
+      <div className={cn(CONTAINER, 'flex items-center gap-3')}>
         <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {items.map((i) => (
             <a key={i.id} href={`#${i.id}`}
@@ -468,7 +468,7 @@ export default function ProgrammeDetailPage() {
 
       {/* Personalized band — porteur progress, jury workspace, mentor startups */}
       {(isEnrolled || showJury || showMentor) && (
-        <div className="mx-auto max-w-6xl px-4 pt-10 sm:px-6">
+        <div className={cn(CONTAINER, 'pt-10')}>
           <div className={`grid gap-4 ${[isEnrolled, showJury, showMentor].filter(Boolean).length > 1 ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
             {isEnrolled && <PorteurProgressCard phases={phases} done={doneCount} current={currentPhase} next={nextPhase} pct={progressPct} />}
             {showJury && <JuryPanelCard items={juryItems} done={juryDone} email={user?.email ?? ''} />}

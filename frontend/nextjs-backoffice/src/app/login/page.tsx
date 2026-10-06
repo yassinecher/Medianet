@@ -79,8 +79,8 @@ export default function AdminLoginPage() {
         className="relative z-10 w-full max-w-sm"
       >
         {/* Card */}
-        <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-xl shadow-slate-200/60 dark:shadow-black/40">
-          <BorderBeam colorFrom="#6272f6" colorTo="#a78bfa" duration={8} />
+        <div className="relative rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-xl shadow-slate-200/60 dark:shadow-black/40">
+          <BorderBeam />
 
           {/* Logo */}
           <div className="mb-8 text-center">

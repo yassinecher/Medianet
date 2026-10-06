@@ -165,8 +165,8 @@ export default function InvitationRegisterPage() {
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.35 }}
         className="relative z-10 w-full max-w-md">
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-8 shadow-2xl">
-          <BorderBeam duration={8} />
+        <div className="relative rounded-2xl border border-border bg-card p-8 shadow-2xl">
+          <BorderBeam />
 
           <div className="mb-6 text-center">
             <div className="mb-3 flex justify-center">

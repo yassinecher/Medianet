@@ -5,7 +5,7 @@ import { ArrowDown, ArrowLeft, Calendar, CheckCircle2, Clock, ExternalLink, MapP
 import { Button } from '@/components/ui/button'
 import { formatDate, cn } from '@/lib/utils'
 import type { ProgrammeHeroSettings } from '@/lib/programmePage'
-import type { ApplyState } from './ProgrammeSections'
+import { CONTAINER, type ApplyState } from './ProgrammeSections'
 import type { Programme } from '@/types'
 
 const STATUS: Record<string, { label: string; dot: string }> = {
@@ -35,7 +35,11 @@ export function ProgrammeHero({ programme, settings, apply, journeyAnchor }: {
   journeyAnchor?: string
 }) {
   const photo = settings.style !== 'gradient' ? programme.bannerImageUrl : undefined
-  const status = STATUS[programme.status]
+  // OPEN only means « candidatures ouvertes » while the candidature window is.
+  const accepting = programme.acceptingApplications ?? programme.status === 'OPEN'
+  const status = programme.status === 'OPEN' && !accepting
+    ? { label: 'Candidatures fermées', dot: 'bg-amber-400' }
+    : STATUS[programme.status]
   const deadline = programme.candidatureDeadline ?? programme.applicationDeadline
   const days = apply.deadlineDays
   const ctaLabel = settings.ctaLabel?.trim() || 'Rejoindre le programme'
@@ -75,7 +79,7 @@ export function ProgrammeHero({ programme, settings, apply, journeyAnchor }: {
         </>
       )}
 
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pb-8 pt-6 sm:px-6 md:pb-10">
+      <div className={cn(CONTAINER, 'flex flex-1 flex-col pb-8 pt-6 md:pb-10')}>
         <Link href="/programmes" className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 backdrop-blur-sm transition hover:bg-white/20">
           <ArrowLeft className="h-3.5 w-3.5" />Tous les programmes
         </Link>
@@ -136,7 +140,9 @@ export function ProgrammeHero({ programme, settings, apply, journeyAnchor }: {
 
           {settings.showFacts !== false && facts.length > 0 && (
             <div className={cn('mt-8 grid gap-px overflow-hidden rounded-2xl border border-white/15 bg-white/15 backdrop-blur-md',
-              facts.length === 1 ? 'grid-cols-1' : facts.length === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4')}>
+              // As many columns as facts — never an empty cell in the strip.
+              facts.length === 1 ? 'grid-cols-1' : facts.length === 2 ? 'grid-cols-1 sm:grid-cols-2'
+                : facts.length === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4')}>
               {facts.map((f) => (
                 <div key={f.label} className="flex items-start gap-3 bg-slate-950/30 px-4 py-3.5">
                   <f.icon className="mt-0.5 h-4 w-4 shrink-0 text-white/70" />

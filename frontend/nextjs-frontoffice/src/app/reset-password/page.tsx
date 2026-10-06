@@ -47,8 +47,8 @@ export default function ResetPasswordPage() {
 
   return (
     <AuthShell>
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-7 shadow-xl sm:p-8">
-        <BorderBeam duration={12} />
+      <div className="relative rounded-2xl border border-border bg-card p-7 shadow-xl sm:p-8">
+        <BorderBeam />
         {done ? (
           <div className="space-y-4 text-center">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">

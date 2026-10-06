@@ -78,8 +78,8 @@ export default function LoginPage() {
 
   return (
     <AuthShell>
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-7 shadow-xl sm:p-8">
-        <BorderBeam duration={12} />
+      <div className="relative rounded-2xl border border-border bg-card p-7 shadow-xl sm:p-8">
+        <BorderBeam />
 
         <div className="mb-7">
           <h1 className="text-2xl font-bold text-foreground">Connexion</h1>

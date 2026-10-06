@@ -1,78 +1,45 @@
-'use client'
 import { cn } from '@/lib/utils'
-import { useEffect, useRef } from 'react'
 
 /**
- * BorderBeam — animated gradient border.
+ * BorderBeam — a soft light gliding along a card's border.
  *
- * Technique: conic-gradient rotated via rAF, masked to only the border strip
- * using CSS mask-composite: exclude (hides interior, shows only the border area).
- *
- * Why not the original offset-path: rect() approach?
- * → Poor browser support (Chrome 116+, not Safari, not Firefox stable).
- *
- * Why not the white padding-box overlay?
- * → That paints a solid white div over the card content, hiding labels and text.
+ * Drawn ON the parent's 1px border (`-inset-px`), so the parent must NOT be
+ * `overflow-hidden` (that clips it back inside the border). Designed to stay
+ * in the background: thin, long gradual tail, head that fades out, faint glow,
+ * slow lap, gentle breathing — and it dims while a field inside the card has
+ * focus, so it never competes with the form (globals.css: `.beam-*`).
+ * The angle is a registered CSS custom property animated in CSS (no JS);
+ * reduced-motion visitors get a faint, still accent.
  */
 export function BorderBeam({
   className,
-  size = 200,
-  duration = 10,
-  // Theme-aware defaults; any CSS color works (hex, rgb(), var()).
-  colorFrom = 'rgb(var(--brand-500))',
-  colorTo = 'rgb(var(--brand-300))',
+  duration = 16,
+  // The theme's primary color (follows the admin-chosen site theme).
+  color = 'rgb(var(--brand-500))',
   delay = 0,
   borderWidth = 1.5,
 }: {
   className?: string
-  size?: number
+  /** Seconds per full lap. */
   duration?: number
-  colorFrom?: string
-  colorTo?: string
+  /** Any CSS color (hex, rgb(), var()). */
+  color?: string
+  /** Seconds — offsets where the beam starts. */
   delay?: number
   borderWidth?: number
 }) {
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-
-    let raf: number
-    let startTs: number | null = null
-    const totalMs = duration * 1000
-    const delayMs = delay * 1000
-
-    const tick = (ts: number) => {
-      if (!startTs) startTs = ts - delayMs
-      const elapsed = (ts - startTs) % totalMs
-      const deg = (elapsed / totalMs) * 360
-      // Long, feathered head/tail so the sweep reads as a soft travelling glow
-      // (hard 60°/180° stops looked rigid/mechanical on rectangular cards).
-      el.style.background = `conic-gradient(from ${deg}deg, transparent 0deg, color-mix(in srgb, ${colorFrom} 13%, transparent) 30deg, ${colorFrom} 110deg, ${colorTo} 170deg, color-mix(in srgb, ${colorTo} 13%, transparent) 250deg, transparent 300deg)`
-      raf = requestAnimationFrame(tick)
-    }
-
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [duration, colorFrom, colorTo, delay])
-
+  const tint = (pct: number) => `color-mix(in srgb, ${color} ${pct}%, transparent)`
   return (
-    <div
-      ref={ref}
-      className={cn('pointer-events-none absolute inset-0 rounded-[inherit]', className)}
-      style={{
-        border: `${borderWidth}px solid transparent`,
-        // Mask trick: show ONLY the border strip, keep interior fully transparent.
-        // Layer 1 (padding-box): white mask = opaque inside padding area
-        // Layer 2 (border-box):  white mask = opaque over entire element
-        // exclude/source-out composite: visible only where layer2=1 AND layer1=0
-        //   → only the border strip is visible, interior is transparent
-        WebkitMask: 'linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0)',
-        WebkitMaskComposite: 'source-out',
-        mask: 'linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0)',
-        maskComposite: 'exclude',
-      }}
-    />
+    <div aria-hidden className={cn('beam-wrap pointer-events-none absolute -inset-px rounded-[inherit]', className)}
+      style={{ filter: `drop-shadow(0 0 8px ${tint(60)})` }}>
+      <div className="beam-ring absolute inset-0 rounded-[inherit]"
+        style={{
+          ['--beam-width' as string]: `${borderWidth}px`,
+          ['--beam-duration' as string]: `${duration}s`,
+          ['--beam-delay' as string]: `${-delay}s`,
+          // ~150° arc: long gradual tail → full color just before the head → soft fade-out.
+          backgroundImage: `conic-gradient(from var(--beam-angle), transparent 0deg 210deg, ${tint(30)} 270deg, ${tint(85)} 320deg, ${color} 348deg, ${tint(80)} 355deg, transparent 360deg)`,
+        }} />
+    </div>
   )
 }

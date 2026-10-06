@@ -117,3 +117,46 @@
   from { clip-path: circle(0%   at var(--vt-x, 50%) var(--vt-y, 50%)); }
   to   { clip-path: circle(150% at var(--vt-x, 50%) var(--vt-y, 50%)); }
 }
+
+/* ── BorderBeam (components/magicui/border-beam.tsx) ─────────────────────────
+   A soft light gliding along a card border. The conic gradient's start angle
+   is a registered property, so CSS animates it (no per-frame JS); the mask
+   keeps only the border band (--beam-width). It breathes slowly and dims while
+   a field in the card has focus, so it never competes with the form. */
+@property --beam-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes beam-spin {
+  to { --beam-angle: 360deg; }
+}
+@keyframes beam-breathe {
+  from { opacity: 0.55; }
+  to   { opacity: 1; }
+}
+.beam-wrap {
+  transition: opacity 0.6s ease;
+}
+:focus-within > .beam-wrap {
+  opacity: 0.3;
+}
+.beam-ring {
+  border: var(--beam-width, 1.5px) solid transparent;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  /* The gradient must cover the BORDER box: sized to the padding box (the
+     default) it tiles outward, and the border band then shows the edge of
+     the neighbouring tile — light on the wrong side, in two places. */
+  background-origin: border-box;
+  background-repeat: no-repeat;
+  animation:
+    beam-spin var(--beam-duration, 16s) linear infinite,
+    beam-breathe 5s ease-in-out infinite alternate;
+  animation-delay: var(--beam-delay, 0s), 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .beam-ring { animation: none; opacity: 0.5; --beam-angle: 30deg; }
+}

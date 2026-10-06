@@ -42,8 +42,8 @@ export default function RsvpAcceptPage() {
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background">
       <div className="absolute inset-0"><Particles quantity={40} color={state === 'success' ? '#34d399' : undefined} /></div>
       <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="relative z-10 w-full max-w-sm px-4">
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-8 text-center shadow-2xl">
-          <BorderBeam colorFrom={state === 'success' ? '#34d399' : undefined} colorTo={state === 'success' ? '#6ee7b7' : undefined} />
+        <div className="relative rounded-2xl border border-border bg-card p-8 text-center shadow-2xl">
+          <BorderBeam color={state === 'success' ? '#10b981' : undefined} />
 
           {state === 'loading' && (
             <>
