@@ -8,6 +8,7 @@ import { Navbar } from '@/components/layout/Navbar'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { Button } from '@/components/ui/button'
 import { publicPartnersApi } from '@/lib/api'
+import { LogoImage } from '@/components/media/LogoImage'
 
 interface Partner {
   id: number; name: string; logoUrl?: string
@@ -55,9 +56,7 @@ export default function PartenaireProfilePage() {
             <div className="px-6 pb-8 sm:px-8">
               <div className="-mt-10 mb-5 flex items-end gap-4">
                 <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-card bg-white shadow-lg">
-                  {partner.logoUrl
-                    ? <img src={partner.logoUrl} alt={partner.name} className="h-full w-full object-contain p-2" />
-                    : <Building2 className="h-8 w-8 text-muted-foreground" />}
+                  <LogoImage src={partner.logoUrl} alt={partner.name} className="h-full w-full object-contain p-2" iconClassName="h-8 w-8" />
                 </div>
                 <div className="min-w-0 pb-1">
                   <h1 className="truncate text-2xl font-bold text-foreground">{partner.name}</h1>

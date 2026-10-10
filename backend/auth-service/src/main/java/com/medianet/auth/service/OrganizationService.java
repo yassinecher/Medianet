@@ -95,7 +95,20 @@ public class OrganizationService {
         }
     }
 
-    public OrganizationDto create(CreateOrganizationRequest req, Long currentUserId) {
+    /** Who may change an organisation (profile, logo, members): staff, the user
+     *  who registered it, or its assigned porteur. */
+    private void assertCanEdit(Organization o, Long userId, boolean staff) {
+        if (staff) return;
+        boolean owner = userId != null && (
+                userId.equals(o.getCreatedByUserId()) || userId.equals(o.getPorteurUserId()));
+        if (!owner) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Seul le porteur de cette organisation peut la modifier.");
+        }
+    }
+
+    public OrganizationDto create(CreateOrganizationRequest req, Long currentUserId, boolean staff) {
+        String logo = req.getLogoUrl() == null || req.getLogoUrl().isBlank() ? null : req.getLogoUrl().trim();
         Organization o = Organization.builder()
                 .name(req.getName())
                 .type(normalizeType(req.getType()))
@@ -109,16 +122,17 @@ public class OrganizationService {
                 .contactPhone(req.getContactPhone())
                 .foundedYear(req.getFoundedYear())
                 .employeeCount(req.getEmployeeCount())
-                .logoUrl(req.getLogoUrl())
-                .internal(Boolean.TRUE.equals(req.getInternal()))
-                .linkedCompanyId(req.getLinkedCompanyId())
+                .logoUrl(logo)
+                .internal(staff && Boolean.TRUE.equals(req.getInternal()))
+                .linkedCompanyId(staff ? req.getLinkedCompanyId() : null)
                 .createdByUserId(currentUserId)
                 .build();
         return toDto(orgRepository.save(o));
     }
 
-    public OrganizationDto update(Long id, UpdateOrganizationRequest req) {
+    public OrganizationDto update(Long id, UpdateOrganizationRequest req, Long userId, boolean staff) {
         Organization o = findOrThrow(id);
+        assertCanEdit(o, userId, staff);
         if (req.getName()           != null) o.setName(req.getName());
         if (req.getType()           != null) o.setType(normalizeType(req.getType()));
         if (req.getDescription()    != null) o.setDescription(req.getDescription());
@@ -133,8 +147,9 @@ public class OrganizationService {
         if (req.getEmployeeCount()  != null) o.setEmployeeCount(req.getEmployeeCount());
         // "" = logo removed
         if (req.getLogoUrl()        != null) o.setLogoUrl(req.getLogoUrl().isBlank() ? null : req.getLogoUrl().trim());
-        if (req.getInternal()       != null) o.setInternal(req.getInternal());
-        if (req.getLinkedCompanyId()!= null) o.setLinkedCompanyId(req.getLinkedCompanyId());
+        // Incubator-side flags: only staff set them.
+        if (staff && req.getInternal()        != null) o.setInternal(req.getInternal());
+        if (staff && req.getLinkedCompanyId() != null) o.setLinkedCompanyId(req.getLinkedCompanyId());
         return toDto(orgRepository.save(o));
     }
 
@@ -286,8 +301,10 @@ public class OrganizationService {
                 .stream().map(this::toMemberDto).collect(Collectors.toList());
     }
 
-    public OrganizationMemberDto addMember(Long organizationId, CreateOrganizationMemberRequest req) {
+    public OrganizationMemberDto addMember(Long organizationId, CreateOrganizationMemberRequest req,
+                                           Long userId, boolean staff) {
         Organization o = findOrThrow(organizationId);
+        assertCanEdit(o, userId, staff);
         // Invite-only flow: the porteur supplies an email; the member fills their
         // own details after accepting. Default the (non-null) name from the email.
         String fullName = (req.getFullName() != null && !req.getFullName().isBlank())
@@ -358,7 +375,8 @@ public class OrganizationService {
     }
 
     public OrganizationMemberDto updateMember(Long organizationId, Long memberId,
-                                              UpdateOrganizationMemberRequest req) {
+                                              UpdateOrganizationMemberRequest req, Long userId, boolean staff) {
+        assertCanEdit(findOrThrow(organizationId), userId, staff);
         OrganizationMember m = findMember(organizationId, memberId);
         if (req.getUserId()          != null) m.setUserId(req.getUserId());
         if (req.getFullName()        != null) m.setFullName(req.getFullName());
@@ -376,7 +394,8 @@ public class OrganizationService {
 
     /** Remove a member from the org. This does NOT delete their account — only the
      *  membership row — and cancels any pending invitation token. */
-    public void removeMember(Long organizationId, Long memberId) {
+    public void removeMember(Long organizationId, Long memberId, Long userId, boolean staff) {
+        assertCanEdit(findOrThrow(organizationId), userId, staff);
         OrganizationMember m = findMember(organizationId, memberId);
         invitationRepository.deleteByMemberId(memberId); // cancel pending/used token
         memberRepository.delete(m);

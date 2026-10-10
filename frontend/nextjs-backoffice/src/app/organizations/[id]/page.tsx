@@ -11,14 +11,17 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
   Building2, ArrowLeft, Loader2, Globe2, MapPin, Mail, Phone, Users, Linkedin,
-  FileText, Trophy, CalendarRange, Calendar, Briefcase, History, ClipboardList, ExternalLink,
+  FileText, Trophy, CalendarRange, Calendar, Briefcase, History, ClipboardList, ExternalLink, ImageIcon, X,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { organizationsApi, candidaturesApi } from '@/lib/api'
 import { PorteurVisAVis } from './PorteurVisAVis'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ImageUpload } from '@/components/upload/ImageUpload'
+import { LogoImage } from '@/components/media/LogoImage'
 import { statusColor, scoreColor, getInitials, formatDate } from '@/lib/utils'
 
 const TYPE_LABEL: Record<string, string> = {
@@ -82,6 +85,18 @@ export default function AdminOrganizationDetailPage() {
   }, [id])
 
   useEffect(() => { if (!isNaN(id)) load() }, [id, load])
+
+  // Logo: saved as soon as an image is picked ('' = removed).
+  const [editingLogo, setEditingLogo] = useState(false)
+  const saveLogo = async (url: string) => {
+    try {
+      const r = await organizationsApi.update(id, { logoUrl: url })
+      setOrg((o) => (o ? { ...o, logoUrl: r.data?.logoUrl ?? undefined } : o))
+      toast.success(url ? 'Logo mis à jour' : 'Logo retiré')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? e?.response?.data?.error ?? 'Le logo n’a pas pu être enregistré')
+    }
+  }
 
   const members = org?.members ?? []
 
@@ -149,13 +164,22 @@ export default function AdminOrganizationDetailPage() {
           <div className="h-24 bg-gradient-to-r from-brand-500 via-brand-600 to-purple-600" />
           <div className="px-5 pb-5">
             <div className="-mt-9 flex items-end gap-4">
-              {org.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={org.logoUrl} alt={org.name} className="h-[72px] w-[72px] rounded-2xl object-contain border-4 border-card bg-white shadow-md" />
-              ) : (
-                <div className="flex h-[72px] w-[72px] items-center justify-center rounded-2xl border-4 border-card bg-muted shadow-md"><Building2 className="h-8 w-8 text-muted-foreground" /></div>
-              )}
+              <div className={`flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-2xl border-4 border-card shadow-md ${org.logoUrl ? 'bg-white' : 'bg-muted'}`}>
+                <LogoImage src={org.logoUrl} alt={org.name} className="h-full w-full object-contain" iconClassName="h-8 w-8" />
+              </div>
+              <div className="ml-auto pb-1">
+                <Button variant="outline" size="sm" onClick={() => setEditingLogo((v) => !v)} className="gap-1.5">
+                  {editingLogo ? <X className="h-3.5 w-3.5" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                  {editingLogo ? 'Fermer' : org.logoUrl ? 'Changer le logo' : 'Ajouter un logo'}
+                </Button>
+              </div>
             </div>
+            {editingLogo && (
+              <div className="mt-3 max-w-md rounded-xl border border-border bg-muted/20 p-3">
+                <ImageUpload value={org.logoUrl ?? ''} folder="logos" previewHeight={64} compact enableSearch={false}
+                  onChange={saveLogo} />
+              </div>
+            )}
             <div className="mt-3">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl font-bold text-foreground">{org.name}</h1>

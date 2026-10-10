@@ -69,7 +69,9 @@ export function SiteFooter({ footerText }: { footerText?: string }) {
             <li className="flex items-center gap-2"><Mail className="h-4 w-4 shrink-0 text-brand-500" />
               <a href={`mailto:${CONTACT.email}`} className="hover:text-brand-600 dark:hover:text-brand-400">{CONTACT.email}</a>
             </li>
-            <li className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-brand-500" />{CONTACT.phone}</li>
+            <li className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-brand-500" />
+              <a href={CONTACT.phoneHref} className="hover:text-brand-600 dark:hover:text-brand-400">{CONTACT.phone}</a>
+            </li>
           </ul>
         </div>
       </div>

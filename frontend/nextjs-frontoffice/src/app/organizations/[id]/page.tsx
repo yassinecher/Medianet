@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AvatarUpload } from '@/components/ui/AvatarUpload'
+import { LogoImage } from '@/components/media/LogoImage'
 import { getInitials } from '@/lib/utils'
 
 interface Member {
@@ -35,7 +36,7 @@ interface Org {
   id: number; name: string; type?: string; sector?: string; city?: string; country?: string
   address?: string; website?: string; logoUrl?: string; description?: string
   contactEmail?: string; contactPhone?: string; foundedYear?: number; employeeCount?: string
-  createdByUserId?: number; members?: Member[]
+  createdByUserId?: number; porteurUserId?: number | null; members?: Member[]
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -44,6 +45,7 @@ const TYPE_LABEL: Record<string, string> = {
   GOVERNMENT: 'Public', OTHER: 'Autre',
 }
 const EMPLOYEE_RANGES = ['1-10', '11-50', '51-200', '201-500', '500+']
+const apiError = (e: any) => e?.response?.data?.message ?? e?.response?.data?.error ?? 'Erreur'
 const normalizeUrl = (u?: string) => (!u ? '' : /^https?:\/\//.test(u) ? u : `https://${u}`)
 
 export default function OrganizationProfilePage() {
@@ -72,7 +74,8 @@ export default function OrganizationProfilePage() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [sendingInvite, setSendingInvite] = useState(false)
 
-  const isOwner = !!user && org?.createdByUserId === user.id
+  // Same rule as the API: the user who registered it, or its assigned porteur.
+  const isOwner = !!user && (org?.createdByUserId === user.id || org?.porteurUserId === user.id)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -120,7 +123,7 @@ export default function OrganizationProfilePage() {
       setOrg((o) => (o ? { ...o, ...r.data } : r.data))
       setEditingOrg(false)
       toast.success('Profil mis à jour')
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+    } catch (e: any) { toast.error(apiError(e)) }
     finally { setSavingOrg(false) }
   }
 
@@ -135,7 +138,7 @@ export default function OrganizationProfilePage() {
       setMembers((arr) => [...arr, r.data])
       setInviteEmail(''); setInviting(false)
       toast.success('Invitation envoyée par email')
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Erreur') }
+    } catch (e: any) { toast.error(apiError(e)) }
     finally { setSendingInvite(false) }
   }
   const removeMember = async (m: Member) => {
@@ -148,7 +151,7 @@ export default function OrganizationProfilePage() {
       await organizationsApi.removeMember(id, m.id)
       setMembers((arr) => arr.filter((x) => x.id !== m.id))
       toast.success(pending ? 'Invitation annulée' : 'Membre retiré')
-    } catch { toast.error('Erreur') }
+    } catch (e: any) { toast.error(apiError(e)) }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -198,14 +201,9 @@ export default function OrganizationProfilePage() {
             {!editingOrg ? (
               <>
                 <div className="-mt-10 flex items-end gap-4">
-                  {org.logoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={org.logoUrl} alt={org.name} className="h-20 w-20 rounded-2xl object-contain border-4 border-card shadow-md bg-white" />
-                  ) : (
-                    <div className="flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-card bg-muted shadow-md">
-                      <Building2 className="h-9 w-9 text-muted-foreground" />
-                    </div>
-                  )}
+                  <div className={`flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-4 border-card shadow-md ${org.logoUrl ? 'bg-white' : 'bg-muted'}`}>
+                    <LogoImage src={org.logoUrl} alt={org.name} className="h-full w-full object-contain" iconClassName="h-9 w-9" />
+                  </div>
                   {isOwner && (
                     <div className="ml-auto pb-1">
                       <Button variant="outline" size="sm" onClick={startEditOrg} className="gap-1.5">

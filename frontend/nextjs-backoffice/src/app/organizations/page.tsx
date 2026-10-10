@@ -23,6 +23,7 @@ import { MagicCard } from '@/components/magicui/magic-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ImageUpload } from '@/components/upload/ImageUpload'
+import { LogoImage } from '@/components/media/LogoImage'
 
 // ── Types (mirror backend DTOs) ────────────────────────────────────────────
 
@@ -388,14 +389,9 @@ function OrgCard({
             className="mt-1 rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent">
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
-          {org.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={org.logoUrl} alt={org.name} className="h-10 w-10 rounded-lg object-contain border border-border bg-white" />
-          ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-muted">
-              <Building2 className="h-5 w-5 text-muted-foreground" />
-            </div>
-          )}
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border ${org.logoUrl ? 'bg-white' : 'bg-muted'}`}>
+            <LogoImage src={org.logoUrl} alt={org.name} className="h-full w-full object-contain" iconClassName="h-5 w-5" />
+          </div>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-0.5">
               <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${tone}`}>{label}</span>

@@ -349,7 +349,7 @@ public class RemoteImageFetcher {
         return null;
     }
 
-    private static boolean looksLikeHtml(byte[] b) {
+    static boolean looksLikeHtml(byte[] b) {
         String head = textHead(b);
         return head.startsWith("<!doctype html") || head.startsWith("<html") || head.contains("<head");
     }
@@ -361,7 +361,7 @@ public class RemoteImageFetcher {
         return s.stripLeading().toLowerCase(Locale.ROOT);
     }
 
-    private static String extensionOf(String type) {
+    static String extensionOf(String type) {
         return switch (type) {
             case "image/png"     -> ".png";
             case "image/jpeg"    -> ".jpg";

@@ -10,9 +10,10 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Building2, Users, Globe2, MapPin, Mail, Phone, Linkedin, FileText, ExternalLink,
+  Users, Globe2, MapPin, Mail, Phone, Linkedin, FileText, ExternalLink,
 } from 'lucide-react'
 import { organizationsApi } from '@/lib/api'
+import { LogoImage } from '@/components/media/LogoImage'
 import { getInitials } from '@/lib/utils'
 
 const normalizeUrl = (u?: string) => (!u ? '' : /^https?:\/\//.test(u) ? u : `https://${u}`)
@@ -76,12 +77,9 @@ function OrganisationCard({ organizationId, embedded }: { organizationId: number
       <div className="h-16 bg-gradient-to-r from-brand-500 via-brand-600 to-brand-accent" />
       <div className="px-5 pb-5">
         <div className="-mt-8 flex items-end gap-3">
-          {org.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={org.logoUrl} alt={org.name} className="h-16 w-16 rounded-xl object-cover border-4 border-card bg-card shadow" />
-          ) : (
-            <div className="flex h-16 w-16 items-center justify-center rounded-xl border-4 border-card bg-muted shadow"><Building2 className="h-7 w-7 text-muted-foreground" /></div>
-          )}
+          <div className={`flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border-4 border-card shadow ${org.logoUrl ? 'bg-white' : 'bg-muted'}`}>
+            <LogoImage src={org.logoUrl} alt={org.name} className="h-full w-full object-contain" iconClassName="h-7 w-7" />
+          </div>
           {embedded ? (
             // Jury context: open the full profile in a NEW TAB so the evaluation
             // page (and its back-stack) is never disturbed.

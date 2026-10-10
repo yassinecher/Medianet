@@ -14,6 +14,8 @@ import toast from 'react-hot-toast'
 import { organizationsApi, ORGANIZATION_TYPES } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AvatarUpload } from '@/components/ui/AvatarUpload'
+import { LogoImage } from '@/components/media/LogoImage'
 
 interface Org {
   id: number
@@ -46,9 +48,8 @@ export function OrganizationPicker({ currentUserId, selectedId, onSelect }: Prop
   const [creating, setCreating] = useState(false)
 
   // Create form
-  const [draft, setDraft] = useState({
-    name: '', type: 'STARTUP', sector: '', city: '', country: '', website: '', description: '',
-  })
+  const EMPTY_DRAFT = { name: '', type: 'STARTUP', sector: '', city: '', country: '', website: '', description: '', logoUrl: '' }
+  const [draft, setDraft] = useState(EMPTY_DRAFT)
 
   useEffect(() => {
     let cancelled = false
@@ -78,11 +79,12 @@ export function OrganizationPicker({ currentUserId, selectedId, onSelect }: Prop
         country: draft.country || undefined,
         website: draft.website || undefined,
         description: draft.description || undefined,
+        logoUrl: draft.logoUrl || undefined,
       })
       const created: Org = r.data
       setOrgs(arr => [created, ...arr])
       onSelect(created.id, created)
-      setDraft({ name: '', type: 'STARTUP', sector: '', city: '', country: '', website: '', description: '' })
+      setDraft(EMPTY_DRAFT)
       setShowCreate(false)
       toast.success('Organisation créée et sélectionnée')
     } catch (e: any) {
@@ -127,14 +129,9 @@ export function OrganizationPicker({ currentUserId, selectedId, onSelect }: Prop
                         ? 'border-brand-500 bg-brand-500/5 ring-2 ring-brand-500/30'
                         : 'border-border hover:border-brand-400 hover:bg-accent/40'}`}>
                     <div className="flex items-start gap-3">
-                      {o.logoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={o.logoUrl} alt={o.name} className="h-10 w-10 rounded-lg object-cover border border-border" />
-                      ) : (
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-muted">
-                          <Building2 className="h-5 w-5 text-muted-foreground" />
-                        </div>
-                      )}
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border ${o.logoUrl ? 'bg-white' : 'bg-muted'}`}>
+                        <LogoImage src={o.logoUrl} alt={o.name} className="h-full w-full object-contain p-0.5" iconClassName="h-5 w-5" />
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-foreground">{o.name}</span>
@@ -204,6 +201,11 @@ export function OrganizationPicker({ currentUserId, selectedId, onSelect }: Prop
                       <Input value={draft.name}
                         onChange={(e) => setDraft(d => ({ ...d, name: e.target.value }))}
                         placeholder="Ex. Acme FoodTech" />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-xs font-medium text-muted-foreground">Logo</label>
+                      <AvatarUpload value={draft.logoUrl} onChange={(url) => setDraft(d => ({ ...d, logoUrl: url }))}
+                        folder="logos" initials={draft.name || 'O'} shape="square" size={56} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">Secteur</label>

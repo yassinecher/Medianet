@@ -102,18 +102,28 @@ public class OrganizationController {
         return auth.getAuthorities().stream().map(a -> a.getAuthority()).anyMatch(a -> a.equals("ROLE_ADMIN"));
     }
 
+    /** Staff who manage every organisation: ADMIN or the organizations:update permission. */
+    private boolean canManageAll() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream().map(a -> a.getAuthority())
+                .anyMatch(a -> a.equals("ROLE_ADMIN") || a.equals("organizations:update"));
+    }
+
     @PostMapping
     public ResponseEntity<OrganizationDto> create(
             @Valid @RequestBody CreateOrganizationRequest req,
             @RequestAttribute(value = "userId", required = false) Long userId) {
-        return ResponseEntity.status(201).body(service.create(req, userId));
+        return ResponseEntity.status(201).body(service.create(req, userId, canManageAll()));
     }
 
+    /** Staff, or the organisation's own porteur (creator / assigned). */
     @PutMapping("/{id}")
     public ResponseEntity<OrganizationDto> update(
             @PathVariable Long id,
-            @RequestBody UpdateOrganizationRequest req) {
-        return ResponseEntity.ok(service.update(id, req));
+            @RequestBody UpdateOrganizationRequest req,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        return ResponseEntity.ok(service.update(id, req, userId, canManageAll()));
     }
 
     @DeleteMapping("/{id}")
@@ -191,23 +201,26 @@ public class OrganizationController {
     @PostMapping("/{id}/members")
     public ResponseEntity<OrganizationMemberDto> addMember(
             @PathVariable Long id,
-            @Valid @RequestBody CreateOrganizationMemberRequest req) {
-        return ResponseEntity.status(201).body(service.addMember(id, req));
+            @Valid @RequestBody CreateOrganizationMemberRequest req,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        return ResponseEntity.status(201).body(service.addMember(id, req, userId, canManageAll()));
     }
 
     @PutMapping("/{id}/members/{memberId}")
     public ResponseEntity<OrganizationMemberDto> updateMember(
             @PathVariable Long id,
             @PathVariable Long memberId,
-            @RequestBody UpdateOrganizationMemberRequest req) {
-        return ResponseEntity.ok(service.updateMember(id, memberId, req));
+            @RequestBody UpdateOrganizationMemberRequest req,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        return ResponseEntity.ok(service.updateMember(id, memberId, req, userId, canManageAll()));
     }
 
     @DeleteMapping("/{id}/members/{memberId}")
     public ResponseEntity<Void> removeMember(
             @PathVariable Long id,
-            @PathVariable Long memberId) {
-        service.removeMember(id, memberId);
+            @PathVariable Long memberId,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        service.removeMember(id, memberId, userId, canManageAll());
         return ResponseEntity.noContent().build();
     }
 }

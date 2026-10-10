@@ -27,7 +27,8 @@ public class FileUploadController {
     /**
      * Upload an image (PNG / JPG / WebP / GIF, plus SVG for staff).
      * <p>Usage: <code>POST /api/files/upload?folder=logos</code> with multipart field <code>file</code>.
-     * Returns: <code>{ "url": "http://localhost:9000/medianet/logos/2026-05-22/abc.png" }</code>
+     * Returns: <code>{ "url": "http://localhost:9000/medianet/logos/2026-05-22/abc.png" }</code>.
+ * The type is read from the file itself (see {@link FileStorageService#uploadImage}).
      *
      * <p>Any signed-in user: porteurs upload their organisation logo and avatar
      * from the front-office (/upload-doc already accepts any file from them).
@@ -38,10 +39,7 @@ public class FileUploadController {
     public ResponseEntity<Map<String, String>> upload(
             @RequestPart("file") MultipartFile file,
             @RequestParam(defaultValue = "uploads") String folder) {
-        if ("image/svg+xml".equals(file.getContentType()) && !isStaff()) {
-            throw new IllegalArgumentException("Les images SVG ne sont pas acceptées ici : utilisez un PNG, JPG ou WebP.");
-        }
-        String url = storage.upload(folder, file, /* onlyImages */ true);
+        String url = storage.uploadImage(folder, file, isStaff());
         return ResponseEntity.ok(Map.of("url", url));
     }
 
@@ -73,7 +71,7 @@ public class FileUploadController {
     public ResponseEntity<Map<String, String>> uploadAny(
             @RequestPart("file") MultipartFile file,
             @RequestParam(defaultValue = "documents") String folder) {
-        String url = storage.upload(folder, file, /* onlyImages */ false);
+        String url = storage.uploadDocument(folder, file);
         return ResponseEntity.ok(Map.of("url", url));
     }
 
@@ -87,7 +85,7 @@ public class FileUploadController {
     public ResponseEntity<Map<String, String>> uploadDoc(
             @RequestPart("file") MultipartFile file,
             @RequestParam(defaultValue = "task-docs") String folder) {
-        String url = storage.upload(folder, file, /* onlyImages */ false);
+        String url = storage.uploadDocument(folder, file);
         return ResponseEntity.ok(Map.of("url", url,
                 "filename", file.getOriginalFilename() != null ? file.getOriginalFilename() : "document"));
     }

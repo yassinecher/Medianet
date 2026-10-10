@@ -15,6 +15,7 @@ import jakarta.annotation.PostConstruct;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.time.LocalDate;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -30,7 +31,11 @@ public class FileStorageService {
     private final MinioConfig config;
     private final RemoteImageFetcher remoteImages;
 
-    private static final Set<String> ALLOWED_IMAGES = Set.of("image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/gif");
+    /** Content a browser would render or run in our origin — documents of this kind are served as downloads. */
+    private static final Set<String> ACTIVE_TYPES = Set.of("text/html", "application/xhtml+xml", "image/svg+xml",
+            "text/xml", "application/xml", "text/javascript", "application/javascript", "application/x-javascript");
+    private static final Set<String> ACTIVE_EXTENSIONS = Set.of(".html", ".htm", ".xhtml", ".shtml", ".svg", ".svgz",
+            ".xml", ".xsl", ".js", ".mjs");
     private static final Set<String> ALLOWED_VIDEOS = Set.of("video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/x-msvideo");
     private static final long        MAX_BYTES      = 10 * 1024 * 1024L;        // 10 MB (images/docs)
     private static final long        MAX_VIDEO_BYTES = 2L * 1024 * 1024 * 1024; // 2 GB (pitch videos)
@@ -67,37 +72,79 @@ public class FileStorageService {
     }
 
     /**
-     * Upload a file under a logical folder and return the public URL.
+     * Upload an image (logo, avatar, banner, photo…) and return its public URL.
+     * The type comes from the file's first bytes, not from the browser's claim or
+     * the file name — a renamed or unreadable file is refused with a clear
+     * message instead of being stored as a broken image.
      *
-     * @param folder logical sub-directory ("logos", "banners", "avatars", "partners"…)
-     * @param file   the multipart payload
-     * @param onlyImages if true, reject non-image content types
+     * @param folder   logical sub-directory ("logos", "banners", "avatars", "partners"…)
+     * @param allowSvg SVG can carry scripts: staff only
      */
-    public String upload(String folder, MultipartFile file, boolean onlyImages) {
+    public String uploadImage(String folder, MultipartFile file, boolean allowSvg) {
+        byte[] bytes = readCapped(file);
+        String type = RemoteImageFetcher.sniff(bytes);
+        if (type == null) {
+            throw new IllegalArgumentException(isHeifFamily(bytes)
+                    ? "Les photos HEIC / AVIF ne sont pas prises en charge : enregistrez-la en JPG ou PNG, puis réessayez."
+                    : "Ce fichier n'est pas une image lisible : utilisez un PNG, JPG, WebP ou GIF.");
+        }
+        if (type.equals("image/svg+xml") && !allowSvg) {
+            throw new IllegalArgumentException("Les images SVG ne sont pas acceptées ici : utilisez un PNG, JPG ou WebP.");
+        }
+        return store(folder, "uploads", bytes, type, RemoteImageFetcher.extensionOf(type), false);
+    }
+
+    /**
+     * Upload a document (PDF, deck, archive, image…) and return its public URL.
+     * Files a browser would run as a page (HTML, SVG, XML, JS) are stored as
+     * downloads, so a public link can never serve a script from our domain.
+     */
+    public String uploadDocument(String folder, MultipartFile file) {
+        byte[] bytes = readCapped(file);
+        String contentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
+        String ext = extractExtension(file.getOriginalFilename(), contentType);
+        boolean active = ACTIVE_TYPES.contains(contentType.toLowerCase())
+                || ACTIVE_EXTENSIONS.contains(ext)
+                || "image/svg+xml".equals(RemoteImageFetcher.sniff(bytes))
+                || RemoteImageFetcher.looksLikeHtml(bytes);
+        return store(folder, "documents", bytes, active ? "application/octet-stream" : contentType, ext, active);
+    }
+
+    private byte[] readCapped(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("File is empty");
+            throw new IllegalArgumentException("Le fichier est vide.");
         }
         if (file.getSize() > MAX_BYTES) {
-            throw new IllegalArgumentException("File too large (max 10 MB)");
+            throw new IllegalArgumentException("Le fichier dépasse 10 MB.");
         }
-        String contentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
-        if (onlyImages && !ALLOWED_IMAGES.contains(contentType)) {
-            throw new IllegalArgumentException("Only image files are allowed: " + ALLOWED_IMAGES);
+        try {
+            return file.getBytes();
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("Le fichier n'a pas pu être lu.");
         }
+    }
 
-        String safeFolder = (folder == null || folder.isBlank()) ? "uploads" : folder.replaceAll("[^a-zA-Z0-9_-]", "_");
-        String ext        = extractExtension(file.getOriginalFilename(), contentType);
+    /** HEIC / HEIF / AVIF (ISO-BMFF "ftyp" box) — what phones often produce. */
+    private static boolean isHeifFamily(byte[] b) {
+        if (b.length < 12 || b[4] != 'f' || b[5] != 't' || b[6] != 'y' || b[7] != 'p') return false;
+        String brand = new String(b, 8, 4, java.nio.charset.StandardCharsets.US_ASCII);
+        return Set.of("heic", "heix", "hevc", "heim", "heis", "mif1", "msf1", "avif", "avis").contains(brand);
+    }
+
+    private String store(String folder, String defaultFolder, byte[] bytes, String contentType, String ext,
+                         boolean asDownload) {
+        String safeFolder = (folder == null || folder.isBlank()) ? defaultFolder : folder.replaceAll("[^a-zA-Z0-9_-]", "_");
         String objectKey  = "%s/%s/%s%s".formatted(safeFolder, LocalDate.now(), UUID.randomUUID(), ext);
-
-        try (InputStream is = file.getInputStream()) {
-            client.putObject(PutObjectArgs.builder()
-                    .bucket(config.getBucket())
-                    .object(objectKey)
-                    .stream(is, file.getSize(), -1)
-                    .contentType(contentType)
-                    .build());
+        PutObjectArgs.Builder put = PutObjectArgs.builder()
+                .bucket(config.getBucket())
+                .object(objectKey)
+                .stream(new ByteArrayInputStream(bytes), bytes.length, -1)
+                .contentType(contentType);
+        if (asDownload) put.headers(Map.of("Content-Disposition", "attachment"));
+        try {
+            client.putObject(put.build());
             String url = "%s/%s/%s".formatted(stripTrailingSlash(config.getPublicUrl()), config.getBucket(), objectKey);
-            log.info("Uploaded {} ({} bytes) -> {}", objectKey, file.getSize(), url);
+            log.info("Uploaded {} ({} bytes) -> {}", objectKey, bytes.length, url);
             return url;
         } catch (Exception e) {
             log.error("Upload failed", e);
@@ -112,22 +159,7 @@ public class FileStorageService {
      */
     public String importFromUrl(String folder, String link, boolean allowSvg) {
         RemoteImageFetcher.Fetched img = remoteImages.fetch(link, allowSvg);
-        String safeFolder = (folder == null || folder.isBlank()) ? "uploads" : folder.replaceAll("[^a-zA-Z0-9_-]", "_");
-        String objectKey  = "%s/%s/%s%s".formatted(safeFolder, LocalDate.now(), UUID.randomUUID(), img.extension());
-        try (InputStream is = new ByteArrayInputStream(img.bytes())) {
-            client.putObject(PutObjectArgs.builder()
-                    .bucket(config.getBucket())
-                    .object(objectKey)
-                    .stream(is, img.bytes().length, -1)
-                    .contentType(img.contentType())
-                    .build());
-            String url = "%s/%s/%s".formatted(stripTrailingSlash(config.getPublicUrl()), config.getBucket(), objectKey);
-            log.info("Imported image ({} bytes) -> {}", img.bytes().length, url);
-            return url;
-        } catch (Exception e) {
-            log.error("Storing imported image failed", e);
-            throw new RuntimeException("Upload failed: " + e.getMessage(), e);
-        }
+        return store(folder, "uploads", img.bytes(), img.contentType(), img.extension(), false);
     }
 
     /**
@@ -182,8 +214,8 @@ public class FileStorageService {
 
     private String extractExtension(String filename, String contentType) {
         if (filename != null && filename.contains(".")) {
-            String ext = filename.substring(filename.lastIndexOf('.'));
-            if (ext.length() <= 10) return ext.toLowerCase();
+            String ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
+            if (ext.matches("\\.[a-z0-9]{1,9}")) return ext;
         }
         return switch (contentType) {
             case "image/png"     -> ".png";

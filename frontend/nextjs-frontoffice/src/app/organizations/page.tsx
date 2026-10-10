@@ -17,6 +17,8 @@ import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { AvatarUpload } from '@/components/ui/AvatarUpload'
+import { LogoImage } from '@/components/media/LogoImage'
 
 interface Org {
   id: number
@@ -41,7 +43,7 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 const EMPTY = {
-  name: '', type: 'STARTUP', sector: '', city: '', country: '', website: '', description: '',
+  name: '', type: 'STARTUP', sector: '', city: '', country: '', website: '', description: '', logoUrl: '',
 }
 type Draft = typeof EMPTY
 
@@ -152,6 +154,7 @@ export default function OrganizationsPage() {
       country: draft.country || undefined,
       website: draft.website || undefined,
       description: draft.description || undefined,
+      logoUrl: draft.logoUrl || undefined,
     }
     try {
       const r = await organizationsApi.create(payload)
@@ -184,6 +187,11 @@ export default function OrganizationsPage() {
         <div className="space-y-1 sm:col-span-2">
           <label className="text-xs font-medium text-muted-foreground">Nom de l&apos;organisation *</label>
           <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Ex. Acme FoodTech" />
+        </div>
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-xs font-medium text-muted-foreground">Logo</label>
+          <AvatarUpload value={draft.logoUrl} onChange={(url) => setDraft((d) => ({ ...d, logoUrl: url }))}
+            folder="logos" initials={draft.name || 'O'} shape="square" />
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Secteur</label>
@@ -261,14 +269,9 @@ export default function OrganizationsPage() {
               <Link key={o.id} href={`/organizations/${o.id}`}
                 className="group rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:border-brand-400 hover:shadow-md">
                 <div className="flex items-start gap-4">
-                  {o.logoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={o.logoUrl} alt={o.name} className="h-12 w-12 rounded-lg object-cover border border-border" />
-                  ) : (
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
-                      <Building2 className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                  )}
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border ${o.logoUrl ? 'bg-white' : 'bg-muted'}`}>
+                    <LogoImage src={o.logoUrl} alt={o.name} className="h-full w-full object-contain p-0.5" />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-foreground group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{o.name}</span>
