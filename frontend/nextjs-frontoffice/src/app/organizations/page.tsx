@@ -227,15 +227,15 @@ export default function OrganizationsPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-4xl space-y-6">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Building2 className="h-6 w-6 text-brand-500" />{HEAD.h}
+              <Building2 className="h-6 w-6 shrink-0 text-brand-500" />{HEAD.h}
             </h1>
             <p className="text-sm text-muted-foreground">{orgs.length} organisation(s) — {HEAD.sub}</p>
           </div>
           {editing !== 'new' && isPorteur && (
-            <Button variant="brand" onClick={startCreate} className="gap-1.5">
+            <Button variant="brand" onClick={startCreate} className="gap-1.5 self-start sm:self-auto">
               <Plus className="h-4 w-4" />Nouvelle organisation
             </Button>
           )}

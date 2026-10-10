@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Settings, Save, Loader2, Moon, Sun, Globe2, Shield, Bell, DatabaseBackup, Download } from 'lucide-react'
 import { useTheme } from 'next-themes'
@@ -12,7 +12,11 @@ import { useAuthStore } from '@/store/auth.store'
 import { downloadFullBackup } from '@/lib/backup'
 
 export default function SettingsPage() {
-  const { theme, setTheme } = useTheme()
+  const { theme: rawTheme, setTheme } = useTheme()
+  // next-themes only knows the theme in the browser: render it after mount (no hydration mismatch).
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+  const theme = mounted ? rawTheme : undefined
   const user = useAuthStore((s) => s.user)
 
   const [platformForm, setPlatformForm] = useState({

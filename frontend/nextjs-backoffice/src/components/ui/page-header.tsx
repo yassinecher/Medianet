@@ -35,8 +35,9 @@ export function PageHeader({ title, description, icon: Icon, backHref, actions, 
           <Icon className="h-5 w-5" />
         </span>
       )}
-      <div className="min-w-0 flex-1">
-        <h1 className="truncate text-2xl font-bold text-foreground">{title}</h1>
+      {/* min width → on phones the actions wrap under the title instead of truncating it */}
+      <div className="min-w-[12rem] flex-1">
+        <h1 className="text-2xl font-bold leading-tight text-foreground [overflow-wrap:anywhere] sm:truncate">{title}</h1>
         {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}

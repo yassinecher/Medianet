@@ -99,6 +99,8 @@ export default function ProgrammesPage() {
         {/* soft glow blobs */}
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-20 left-1/3 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
+        {/* readability scrim: white text on the bright gold/cyan gradient measured 2.1–3.4:1 */}
+        <div className="pointer-events-none absolute inset-0 bg-black/35" />
 
         <div className="relative">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold backdrop-blur-sm">

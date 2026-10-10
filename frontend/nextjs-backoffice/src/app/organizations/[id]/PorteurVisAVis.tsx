@@ -86,8 +86,10 @@ export function PorteurVisAVis({ org, onChanged }: { org: OrgLite; onChanged: ()
       {/* Mentors are assigned PER PROGRAMME now (a startup can be in several). */}
       <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
         <Handshake className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-500" />
-        Les <b className="mx-1 font-semibold text-foreground">référents (mentors)</b> sont désormais assignés
-        <b className="mx-1 font-semibold text-foreground">par programme</b> — onglet « Participants » du programme.
+        <span>
+          Les <b className="font-semibold text-foreground">référents (mentors)</b> sont désormais assignés{' '}
+          <b className="font-semibold text-foreground">par programme</b> — onglet « Participants » du programme.
+        </span>
       </p>
 
       {picker === 'porteur' && (

@@ -105,7 +105,7 @@ export function Navbar() {
                 </div>
                 <span className="text-sm font-medium text-foreground">{user.firstName}</span>
               </div>
-              <Button variant="ghost" size="icon" onClick={handleLogout}><LogOut className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" onClick={handleLogout} aria-label="Se déconnecter" title="Se déconnecter"><LogOut className="h-4 w-4" /></Button>
             </>
           ) : (
             <div className="hidden gap-2 sm:flex">
@@ -113,7 +113,8 @@ export function Navbar() {
               <Link href="/register"><Button variant="brand" size="sm">S'inscrire</Button></Link>
             </div>
           )}
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen(!open)}>
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen(!open)}
+            aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'} aria-expanded={open}>
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
         </div>

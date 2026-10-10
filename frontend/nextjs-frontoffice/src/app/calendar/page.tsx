@@ -33,6 +33,7 @@ type Ev = {
 }
 
 const MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+const MONTHS_SHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
 const WD = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const parse = (s?: string) => (s ? s.slice(0, 10) : undefined)
@@ -208,7 +209,8 @@ export default function CalendarPage() {
             <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground"><CalendarDays className="h-6 w-6 text-brand-500" />Calendrier</h1>
             <p className="text-sm text-muted-foreground">Sessions, échéances, rendez-vous et ateliers — au même endroit.</p>
           </div>
-          <div className="flex items-center gap-2">
+          {/* Wraps on phones so « Aujourd'hui » never ends up clipped off-screen. */}
+          <div className="flex flex-wrap items-center gap-2">
             {/* View switch */}
             <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
               {([['month', 'Mois', LayoutGrid], ['week', 'Semaine', Columns3], ['agenda', 'Agenda', List]] as const).map(([v, label, Icon]) => (
@@ -221,7 +223,7 @@ export default function CalendarPage() {
             {view !== 'agenda' && (
               <div className="flex items-center gap-2">
                 <button onClick={() => move(-1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border hover:bg-accent"><ChevronLeft className="h-4 w-4" /></button>
-                <span className="min-w-[10.5rem] text-center text-sm font-bold text-foreground">{periodLabel}</span>
+                <span className="min-w-[8.5rem] text-center text-sm font-bold text-foreground sm:min-w-[10.5rem]">{periodLabel}</span>
                 <button onClick={() => move(1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border hover:bg-accent"><ChevronRight className="h-4 w-4" /></button>
               </div>
             )}
@@ -294,15 +296,25 @@ function MonthGrid({ cells, byDate, today, selected, onSelect }: {
       </div>
       <div className="grid grid-cols-7 gap-1">
         {cells.map((day, i) => {
-          if (!day) return <div key={i} className="min-h-[4.5rem] rounded-lg" />
+          if (!day) return <div key={i} className="min-h-[3.25rem] rounded-lg sm:min-h-[4.5rem]" />
           const evs = byDate.get(day) ?? []
           const isToday = day === today
           const isSel = day === selected
           return (
             <button key={i} onClick={() => onSelect(isSel ? null : day)}
-              className={`min-h-[4.5rem] rounded-lg border p-1 text-left transition-colors ${isSel ? 'border-brand-500 ring-1 ring-brand-500/40 bg-brand-500/5' : isToday ? 'border-brand-400 bg-brand-500/5' : 'border-border bg-background/40 hover:border-brand-300'}`}>
+              className={`min-h-[3.25rem] rounded-lg border p-1 text-left transition-colors sm:min-h-[4.5rem] ${isSel ? 'border-brand-500 ring-1 ring-brand-500/40 bg-brand-500/5' : isToday ? 'border-brand-400 bg-brand-500/5' : 'border-border bg-background/40 hover:border-brand-300'}`}>
               <div className={`mb-0.5 text-right text-[11px] font-semibold ${isToday ? 'text-brand-600 dark:text-brand-400' : 'text-muted-foreground'}`}>{Number(day.slice(8, 10))}</div>
-              <div className="space-y-0.5">
+              {/* Phones: a cell is ~40px wide — coloured dots instead of clipped titles
+                  (tapping the day lists its events). */}
+              {evs.length > 0 && (
+                <div className="flex flex-wrap justify-end gap-0.5 sm:hidden" aria-label={`${evs.length} événement(s)`}>
+                  {evs.slice(0, 4).map((e, j) => (
+                    <span key={j} className={`h-1.5 w-1.5 rounded-full ${e.kind === 'task' && e.overdue ? 'bg-rose-500' : KINDS[e.kind].dot}`} />
+                  ))}
+                  {evs.length > 4 && <span className="text-[8px] leading-none text-muted-foreground">+{evs.length - 4}</span>}
+                </div>
+              )}
+              <div className="hidden space-y-0.5 sm:block">
                 {evs.slice(0, 3).map((e, j) => (
                   <span key={j} title={e.title}
                     className={`block truncate rounded border px-1 py-0.5 text-[10px] font-medium ${e.kind === 'task' && e.overdue ? 'border-rose-500/30 bg-rose-500/15 text-rose-700 dark:text-rose-300' : KINDS[e.kind].chip}`}>
@@ -403,7 +415,7 @@ function EventList({ events, showDate }: { events: Ev[]; showDate?: boolean }) {
 
 function fmt(d: string) {
   const [y, m, day] = d.split('-')
-  return `${day} ${MONTHS[Number(m) - 1]?.slice(0, 4) ?? m} ${y}`
+  return `${Number(day)} ${MONTHS_SHORT[Number(m) - 1] ?? m} ${y}`
 }
 function fmtLong(d: string) {
   const dt = new Date(`${d}T00:00:00`)

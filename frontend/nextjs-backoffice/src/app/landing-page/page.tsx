@@ -240,7 +240,7 @@ export default function LandingPageEditor() {
   if (!doc) {
     return (
       <AdminLayout>
-        <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[280px_1fr]">
           <Skeleton className="h-[60vh] rounded-2xl" />
           <Skeleton className="h-[60vh] rounded-2xl" />
         </div>
@@ -312,7 +312,7 @@ export default function LandingPageEditor() {
         </div>
       </div>
 
-      <div className={cn('grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[280px_minmax(0,1fr)] lg:grid-rows-1',
+      <div className={cn('grid grid-cols-[minmax(0,1fr)] gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[280px_minmax(0,1fr)] lg:grid-rows-1',
         previewOpen && 'xl:grid-cols-[270px_minmax(360px,0.85fr)_minmax(0,1.15fr)]')}>
         {/* ── Outline ─────────────────────────────────────────────── */}
         <aside className="lg:min-h-0 lg:overflow-y-auto lg:pr-1">

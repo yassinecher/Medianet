@@ -375,7 +375,7 @@ export default function ProgrammeDetailPage() {
     <AdminLayout>
       <div className="space-y-6">
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3">
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-start gap-3">
           <Link href="/programmes">
             <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
           </Link>
@@ -384,7 +384,7 @@ export default function ProgrammeDetailPage() {
           ) : (
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold text-foreground truncate">{programme?.title ?? programme?.name}</h1>
+                <h1 className="text-2xl font-bold leading-tight text-foreground [overflow-wrap:anywhere] sm:truncate">{programme?.title ?? programme?.name}</h1>
                 {programme && <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor(programme.status)}`}>{statusLabel[programme.status]}</span>}
                 {programme && (
                   <div className="ml-auto sm:ml-2 flex flex-wrap gap-2">

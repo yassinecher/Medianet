@@ -54,12 +54,13 @@ export default function PartenaireProfilePage() {
               <div className="brand-stripe absolute bottom-0 left-0 right-0 h-1" />
             </div>
             <div className="px-6 pb-8 sm:px-8">
-              <div className="-mt-10 mb-5 flex items-end gap-4">
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-card bg-white shadow-lg">
+              {/* Phones: the name sits below the band instead of under it. */}
+              <div className="-mt-10 mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+                <div className="relative z-10 flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-card bg-white shadow-lg">
                   <LogoImage src={partner.logoUrl} alt={partner.name} className="h-full w-full object-contain p-2" iconClassName="h-8 w-8" />
                 </div>
                 <div className="min-w-0 pb-1">
-                  <h1 className="truncate text-2xl font-bold text-foreground">{partner.name}</h1>
+                  <h1 className="text-2xl font-bold leading-tight text-foreground [overflow-wrap:anywhere] sm:truncate">{partner.name}</h1>
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Partenaire Medianet</p>
                 </div>
               </div>

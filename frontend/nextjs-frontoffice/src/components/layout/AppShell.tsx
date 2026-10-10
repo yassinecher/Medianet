@@ -250,7 +250,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* TOPBAR — minimal: Dashboard + Notifications + Avatar dropdown */}
         <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
           <div className="flex h-14 items-center justify-between px-4 sm:px-6">
-            <button type="button" onClick={() => setMobileOpen(true)}
+            <button type="button" onClick={() => setMobileOpen(true)} aria-label="Ouvrir le menu"
               className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent md:hidden">
               <Menu className="h-4 w-4" />
             </button>

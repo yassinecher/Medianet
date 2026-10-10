@@ -264,12 +264,13 @@ Les utilisateurs qui détiennent ce rôle voient leurs accès se mettre à jour 
             {roles.map((role, i) => (
               <motion.div key={role.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}>
                 <MagicCard className="p-4">
-                  <div className="flex items-center gap-4">
+                  {/* Phones: actions wrap under the role instead of squeezing it. */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white
                       ${role.name === 'ADMIN' ? 'bg-gradient-to-br from-purple-500 to-purple-700' : 'bg-gradient-to-br from-brand-500 to-purple-600'}`}>
                       <Shield className="h-5 w-5" />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-[11rem] flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-foreground">{role.displayName}</p>
                         <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">{role.name}</span>
@@ -287,7 +288,7 @@ Les utilisateurs qui détiennent ce rôle voient leurs accès se mettre à jour 
                       </div>
                       <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-muted-foreground">
                         {role.description && <span>{role.description}</span>}
-                        <span className="flex items-center gap-1"><UsersIcon className="h-3 w-3" />{role.userCount} utilisateur(s)</span>
+                        <span className="flex items-center gap-1 whitespace-nowrap"><UsersIcon className="h-3 w-3" />{role.userCount} utilisateur(s)</span>
                         <span className="flex items-center gap-1">
                           <KeyRound className="h-3 w-3" />
                           {role.permissions?.length ?? 0} permission(s)
@@ -295,7 +296,7 @@ Les utilisateurs qui détiennent ce rôle voient leurs accès se mettre à jour 
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="ml-auto flex items-center gap-1 shrink-0">
                       {editing !== role.id && can('roles:update') && (
                         <Button variant="ghost" size="sm" onClick={() => openEdit(role)} className="gap-1">
                           <Pencil className="h-3.5 w-3.5" />Modifier

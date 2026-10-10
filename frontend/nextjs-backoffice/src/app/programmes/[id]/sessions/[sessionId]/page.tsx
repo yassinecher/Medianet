@@ -710,8 +710,11 @@ function CriteriaCard({ programmeId, session, criteria, onChanged }: {
           const w = weights[c.id] ?? c.weight ?? 0
           return (
             <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2">
-              <input type="checkbox" checked={sel} onChange={() => toggle(c.id)} className="h-4 w-4 shrink-0 accent-brand-500" />
-              <span className={`min-w-0 flex-1 truncate text-sm ${sel ? 'text-foreground' : 'text-muted-foreground line-through'}`} title={c.name}>{c.name}</span>
+              {/* The name toggles too: a 16px checkbox alone is a hard target on a phone. */}
+              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-1.5">
+                <input type="checkbox" checked={sel} onChange={() => toggle(c.id)} className="h-4 w-4 shrink-0 accent-brand-500" />
+                <span className={`min-w-0 flex-1 truncate text-sm ${sel ? 'text-foreground' : 'text-muted-foreground line-through'}`} title={c.name}>{c.name}</span>
+              </label>
               {sel && (
                 <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
                   Poids

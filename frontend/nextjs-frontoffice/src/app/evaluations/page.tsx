@@ -125,7 +125,8 @@ export default function EvaluationsPage() {
       <motion.div key={`${c.id}-${phaseId ?? 'none'}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
         <button type="button" onClick={() => router.push(href)} className="block w-full text-left">
           <MagicCard className="p-5 transition-shadow hover:shadow-md">
-            <div className="flex items-start justify-between gap-4">
+            {/* Phones: status + action go under the project instead of squeezing it. */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
               <div className="min-w-0">
                 <h3 className="font-semibold text-foreground truncate">
                   {c.projectName || c.companyName || `Candidature #${c.id}`}
@@ -145,7 +146,7 @@ export default function EvaluationsPage() {
                   {c.porteurName && <span>· {c.porteurName}</span>}
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-3">
+              <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-start">
                 {submitted ? (
                   <span className="inline-flex items-center gap-1 text-sm font-bold text-amber-600">
                     <Trophy className="h-4 w-4" />{Number(ev.weightedScore ?? 0).toFixed(1)}<span className="text-xs font-normal text-muted-foreground">/10</span>

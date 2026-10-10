@@ -40,6 +40,8 @@ export default function JuryEvaluatePage() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  /** The programme behind the candidature is gone (deleted / archived): its criteria can't load. */
+  const [criteriaMissing, setCriteriaMissing] = useState(false)
   const [cand, setCand] = useState<any | null>(null)
   const [criteria, setCriteria] = useState<Criterion[]>([])
   const [scores, setScores] = useState<Record<number, number>>({})
@@ -85,7 +87,11 @@ export default function JuryEvaluatePage() {
         mine?.criteriaScores?.forEach((cs: any) => { if (cs.criteriaId != null && cs.score != null) pre[cs.criteriaId] = cs.score })
 
         if (c.programmeId) {
-          let list: Criterion[] = ((await programmesApi.criteria(c.programmeId)).data ?? [])
+          // A deleted programme must not make the whole evaluation unreadable.
+          let raw: Criterion[] = []
+          try { raw = (await programmesApi.criteria(c.programmeId)).data ?? [] }
+          catch { if (!cancelled) setCriteriaMissing(true) }
+          let list: Criterion[] = raw
             .filter((x: Criterion) => x.active !== false)
             .sort((a: Criterion, b: Criterion) => (a.criterionOrder ?? 0) - (b.criterionOrder ?? 0))
           // Scope to the evaluating session's criteria + weights.
@@ -277,7 +283,9 @@ export default function JuryEvaluatePage() {
 
                     {criteria.length === 0 ? (
                       <p className="rounded-xl border border-border bg-background/50 p-3 text-xs text-muted-foreground">
-                        Aucun critère défini — laissez une appréciation globale ci-dessous.
+                        {criteriaMissing
+                          ? 'Le programme de cette candidature a été supprimé ou archivé : ses critères ne sont plus disponibles. Vous pouvez laisser une appréciation globale ci-dessous.'
+                          : 'Aucun critère défini — laissez une appréciation globale ci-dessous.'}
                       </p>
                     ) : (
                       criteria.map((c) => (

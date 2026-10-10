@@ -904,16 +904,17 @@ function TimelineBoard({ programmeId, programme }: {
       <UpdateNotifySuggestion programmeId={programmeId} programmeName={programme?.title ?? 'Programme'}
         suggest={suggest} onClose={() => setSuggest(null)} />
       {/* HEADER */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-gradient-to-r from-amber-500/5 via-card to-rose-500/5 shrink-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 border-b border-border bg-gradient-to-r from-amber-500/5 via-card to-rose-500/5 shrink-0">
         {/* Client-side Link (no full page reload) straight back to the Sessions tab. */}
         <Link href={`/programmes/${programmeId}?tab=phases`} title="Retour au parcours"
           className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-accent shrink-0">
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-rose-500 text-white shadow-sm">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-rose-500 text-white shadow-sm">
           <Calendar className="h-4 w-4" />
         </div>
-        <div className="flex-1 min-w-0">
+        {/* min width → on phones the zoom / view controls wrap below the title */}
+        <div className="min-w-[12rem] flex-1">
           <p className="text-sm font-bold text-foreground truncate">
 Parcours · {programme?.title ?? `Programme #${programmeId}`}
           </p>

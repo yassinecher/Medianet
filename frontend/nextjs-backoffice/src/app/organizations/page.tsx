@@ -167,11 +167,12 @@ export default function OrganizationsPage() {
     <AdminLayout>
       <div className="space-y-6">
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 shadow-lg shadow-brand-500/25">
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 shadow-lg shadow-brand-500/25">
             <Building2 className="h-5 w-5 text-white" />
           </div>
-          <div className="flex-1 min-w-0">
+          {/* min width → on phones the button wraps under the title instead of squeezing it */}
+          <div className="min-w-[12rem] flex-1">
             <h1 className="text-2xl font-bold text-foreground">Organisations</h1>
             <p className="text-sm text-muted-foreground">
               Startups, partenaires, sponsors, universités — et leurs équipes ({orgs.length} au total)
@@ -384,7 +385,7 @@ function OrgCard({
   return (
     <MagicCard className="p-4">
       {!editing ? (
-        <div className="flex items-start gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <button onClick={onToggleExpand}
             className="mt-1 rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-accent">
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -392,7 +393,7 @@ function OrgCard({
           <div className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border ${org.logoUrl ? 'bg-white' : 'bg-muted'}`}>
             <LogoImage src={org.logoUrl} alt={org.name} className="h-full w-full object-contain" iconClassName="h-5 w-5" />
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="min-w-[10rem] flex-1">
             <div className="flex flex-wrap items-center gap-2 mb-0.5">
               <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${tone}`}>{label}</span>
               {org.internal && (
@@ -428,7 +429,8 @@ function OrgCard({
               <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{org.description}</p>
             )}
           </div>
-          <div className="flex gap-1">
+          {/* Phones: the actions take their own row under the organisation. */}
+          <div className="flex w-full justify-end gap-1 sm:w-auto">
             {org.id && (
               <Link href={`/organizations/${org.id}`} title="Ouvrir la fiche">
                 <Button variant="outline" size="sm" className="gap-1 text-xs"><ArrowUpRight className="h-3.5 w-3.5" />Ouvrir</Button>

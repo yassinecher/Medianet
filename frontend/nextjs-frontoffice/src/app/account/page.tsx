@@ -196,6 +196,7 @@ export default function AccountPage() {
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Email</label>
               <Input value={user.email} disabled />
+              <p className="mt-1 text-[10px] text-muted-foreground">L&apos;email ne peut pas être modifié — contactez l&apos;administrateur.</p>
             </div>
             <div>
               <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground" htmlFor="phone">
@@ -207,7 +208,6 @@ export default function AccountPage() {
                 className={missingPhone ? 'border-amber-500/60 focus-visible:ring-amber-500' : undefined} />
             </div>
           </div>
-          <p className="text-[10px] text-muted-foreground">L&apos;email ne peut pas être modifié — contactez l&apos;administrateur.</p>
           <div className="flex justify-end">
             <Button onClick={handleSaveProfile} disabled={!profileChanged || savingProfile} variant="brand" className="gap-1.5">
               {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -218,9 +218,9 @@ export default function AccountPage() {
 
         {/* Sign-in methods + password */}
         <MagicCard className="space-y-4 p-6">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-brand-500" />
+              <KeyRound className="h-4 w-4 shrink-0 text-brand-500" />
               <h2 className="font-bold text-foreground">Connexion &amp; mot de passe</h2>
             </div>
             {!showPwForm && (

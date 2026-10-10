@@ -169,7 +169,7 @@ export function MailingPanel({ programmeId, programmeName }: { programmeId: numb
       {loading ? (
         <div className="flex h-24 items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           {/* Composer */}
           <div className="space-y-3">
             <div className="flex flex-wrap gap-1.5">

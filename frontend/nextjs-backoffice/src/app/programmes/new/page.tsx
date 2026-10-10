@@ -514,8 +514,10 @@ function NewProgrammeWizard() {
             <div className="space-y-4">
               <p className="flex items-start gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                Définissez les critères sur lesquels le jury notera les candidatures. Le <b>coefficient</b> pondère le score.
-                Optionnel ici — vous pourrez en ajouter à tout moment dans l’onglet « Critères ».
+                <span>
+                  Définissez les critères sur lesquels le jury notera les candidatures. Le <b>coefficient</b> pondère le score.
+                  Optionnel ici — vous pourrez en ajouter à tout moment dans l’onglet « Critères ».
+                </span>
               </p>
 
               {criteria.length > 0 && (
@@ -685,7 +687,7 @@ function NewProgrammeWizard() {
                   </div>
                   {derivedDeadline ? (
                     <p className="mt-2 flex items-center gap-1.5 rounded-lg bg-sky-500/10 px-2.5 py-1.5 text-[11px] text-sky-700 dark:text-sky-300">
-                      <Lock className="h-3 w-3" />Clôture des candidatures fixée automatiquement au <b>{fmt(derivedDeadline)}</b> (fin de la session).
+                      <Lock className="h-3 w-3 shrink-0" /><span>Clôture des candidatures fixée automatiquement au <b>{fmt(derivedDeadline)}</b> (fin de la session).</span>
                     </p>
                   ) : (
                     <p className="mt-2 flex items-center gap-1.5 rounded-lg bg-muted/60 px-2.5 py-1.5 text-[11px] text-muted-foreground">

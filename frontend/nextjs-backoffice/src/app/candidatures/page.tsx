@@ -115,10 +115,11 @@ export default function CandidaturesPage() {
             {filtered.map((c, i) => (
               <motion.div key={c.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}>
                 <MagicCard className="p-4">
-                  <div className="flex items-start gap-4">
+                  {/* Phones: actions go under the details instead of squeezing them. */}
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-foreground truncate">{c.projectName ?? `Candidature #${c.id}`}</h3>
+                        <h3 className="min-w-0 font-semibold text-foreground truncate">{c.projectName ?? `Candidature #${c.id}`}</h3>
                         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor(c.status)}`}>
                           {statusLabel[c.status] ?? c.status}
                         </span>
@@ -136,12 +137,12 @@ export default function CandidaturesPage() {
                           </Link>
                         )}
                         {c.applicant && <span>{c.applicant.firstName} {c.applicant.lastName}</span>}
-                        {c.applicant?.email && <span>· {c.applicant.email}</span>}
-                        <span>· {formatDate(c.submittedAt ?? c.createdAt)}</span>
+                        {c.applicant?.email && <span className="break-all">· {c.applicant.email}</span>}
+                        <span className="whitespace-nowrap">· {formatDate(c.submittedAt ?? c.createdAt)}</span>
                         {c.sector && <span>· {c.sector}</span>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                    <div className="flex flex-wrap items-center gap-1 sm:shrink-0 sm:justify-end">
                       <Link href={`/candidatures/${c.id}`}>
                         <Button variant="outline" size="sm" className="text-xs gap-1"><Eye className="h-3.5 w-3.5" />Détails</Button>
                       </Link>

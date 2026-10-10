@@ -60,8 +60,11 @@ export function ProgrammeCard({ programme, appliedStatus, invited }: { programme
                 <img src={programme.logoUrl} alt="" className="max-h-full max-w-full object-contain" />
               </div>
             )}
-            <span className={cn('absolute right-3 top-3 rounded-full px-2 py-0.5 text-xs font-semibold', statusColor(programme.status))}>
-              {statusLabel[programme.status]}
+            {/* Solid chip under the tinted badge: stays readable on any cover image. */}
+            <span className="absolute right-3 top-3 rounded-full bg-card/95 shadow-sm">
+              <span className={cn('block rounded-full px-2 py-0.5 text-xs font-semibold', statusColor(programme.status))}>
+                {statusLabel[programme.status]}
+              </span>
             </span>
           </div>
         ) : (
@@ -77,8 +80,11 @@ export function ProgrammeCard({ programme, appliedStatus, invited }: { programme
                 <img src={programme.logoUrl} alt="" className="max-h-full max-w-full object-contain" />
               </div>
             )}
-            <span className={cn('absolute right-3 top-3 rounded-full px-2 py-0.5 text-xs font-semibold', statusColor(programme.status))}>
-              {statusLabel[programme.status]}
+            {/* Solid chip under the tinted badge: stays readable on any cover image. */}
+            <span className="absolute right-3 top-3 rounded-full bg-card/95 shadow-sm">
+              <span className={cn('block rounded-full px-2 py-0.5 text-xs font-semibold', statusColor(programme.status))}>
+                {statusLabel[programme.status]}
+              </span>
             </span>
           </div>
         )}

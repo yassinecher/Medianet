@@ -113,3 +113,35 @@
 @media (prefers-reduced-motion: reduce) {
   .beam-ring { animation: none; opacity: 0.5; --beam-angle: 30deg; }
 }
+
+/* ── Touch targets ────────────────────────────────────────────────────────
+   On touch screens every control gets a touch area of at least 40 × 40 px —
+   an invisible ::after centred on it — without changing how anything looks.
+   Everything sits inside :where() so specificity stays 0: Tailwind position
+   utilities (absolute, fixed, sticky) always win. Skipped: elements that clip
+   it (overflow-hidden), position children of their own (.absolute inside), or
+   opt out with .no-tap-area. Overlapping areas go to the later element. */
+@media (pointer: coarse) {
+  :where(button, a[href], [role='button'], [role='tab'], [role='switch'], summary):where(:not(.overflow-hidden, .no-tap-area, :has(.absolute))) {
+    position: relative;
+  }
+  :where(button, a[href], [role='button'], [role='tab'], [role='switch'], summary):where(:not(.overflow-hidden, .no-tap-area, :has(.absolute)))::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 40px);
+    height: max(100%, 40px);
+    transform: translate(-50%, -50%);
+  }
+  /* Form controls can't carry ::after: give them a touch-friendly minimum instead
+     (min-* wins over Tailwind's h-4 / h-7 without touching wider layouts). */
+  :where(input[type='checkbox'], input[type='radio']) {
+    min-width: 1.25rem;
+    min-height: 1.25rem;
+  }
+  :where(select) {
+    min-height: 2rem;
+  }
+}
+

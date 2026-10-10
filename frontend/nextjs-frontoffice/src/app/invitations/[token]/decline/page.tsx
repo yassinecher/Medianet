@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
+import Link from 'next/link'
 import { ThumbsDown, XCircle, Loader2 } from 'lucide-react'
 import { notificationsApi } from '@/lib/api'
 import { Particles } from '@/components/magicui/particles'
@@ -29,7 +30,7 @@ export default function RsvpDeclinePage() {
             <h1 className="mt-4 text-xl font-bold text-foreground">Réponse enregistrée</h1>
             <p className="mt-2 text-sm text-muted-foreground">Merci de nous avoir informés. Nous espérons vous voir prochainement.</p></>
           )}
-          {state === 'error' && <><XCircle className="mx-auto h-14 w-14 text-red-500" /><h1 className="mt-4 text-xl font-bold">Lien invalide</h1><p className="mt-2 text-sm text-muted-foreground">Ce lien a expiré ou est incorrect.</p></>}
+          {state === 'error' && <><XCircle className="mx-auto h-14 w-14 text-red-500" /><h1 className="mt-4 text-xl font-bold">Lien invalide</h1><p className="mt-2 text-sm text-muted-foreground">Ce lien a expiré ou est incorrect.</p><Link href="/" className="mt-5 inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent">Retour à l&apos;accueil</Link></>}
         </div>
       </motion.div>
     </div>

@@ -55,7 +55,7 @@ export default function TasksPage() {
     <AppShell>
       <div className="mx-auto max-w-3xl">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Mes Tâches</h1>
+          <h1 className="text-2xl font-bold text-foreground">Mes tâches</h1>
           <p className="text-muted-foreground">Ouvrez une tâche pour suivre les étapes, déposer vos documents et soumettre le livrable.</p>
         </motion.div>
 

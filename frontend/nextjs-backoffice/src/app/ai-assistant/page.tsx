@@ -519,10 +519,13 @@ export default function AdminAiPage() {
   // ── Render ─────────────────────────────────────────────────────────────
   return (
     <AdminLayout>
-      <div className="grid gap-4 lg:grid-cols-[260px_1fr_320px] h-[calc(100vh-8rem)]">
+      {/* Phones: one column, the chat first and tall enough to use; the side
+          panels follow at their natural height (the fixed-height 3-column
+          layout only from lg). */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:h-[calc(100vh-8rem)] lg:grid-cols-[260px_1fr_320px]">
 
         {/* ── LEFT: Conversation history ─────────────────────────── */}
-        <div className="flex flex-col gap-3 overflow-hidden">
+        <div className="order-3 flex max-h-72 flex-col gap-3 overflow-hidden lg:order-none lg:max-h-none">
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-foreground text-sm">Conversations</h2>
             <Button variant="ghost" size="sm" onClick={newConversation} className="gap-1.5 text-xs">
@@ -551,7 +554,7 @@ export default function AdminAiPage() {
         </div>
 
         {/* ── CENTER: Chat ──────────────────────────────────────── */}
-        <div className="flex flex-col rounded-2xl border border-border bg-card overflow-hidden">
+        <div className="order-1 flex h-[calc(100dvh-9rem)] min-h-[26rem] flex-col overflow-hidden rounded-2xl border border-border bg-card lg:order-none lg:h-auto lg:min-h-0">
           <div className="flex items-center gap-3 border-b border-border px-5 py-3 bg-muted/20">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 shadow-lg shadow-brand-500/30">
               <Bot className="h-5 w-5 text-white" />
@@ -636,7 +639,7 @@ export default function AdminAiPage() {
         </div>
 
         {/* ── RIGHT: Actions panel ──────────────────────────────── */}
-        <div className="flex flex-col gap-3 overflow-hidden">
+        <div className="order-2 flex max-h-[28rem] flex-col gap-3 overflow-hidden lg:order-none lg:max-h-none">
           <div className="inline-flex p-1 rounded-lg border border-border bg-muted/30 self-start text-xs">
             <button type="button" onClick={() => setTab('chat')}
               className={`rounded-md px-3 py-1.5 font-medium transition-colors

@@ -79,8 +79,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   // Centralized page guard: the module owning the current route must be
   // readable, otherwise the content is replaced by an Access Denied screen.
   // Reacts live to permission changes pushed from the backend.
+  // The hydration render uses the server snapshot (no user yet): judging access
+  // there would bounce every cold load of /dashboard to the guide. Wait for mount.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
   const currentItem = navItems.find((i) => pathname === i.href || pathname.startsWith(i.href + '/'))
-  const blocked = !!currentItem && !canSee(currentItem.module)
+  const blocked = mounted && !!currentItem && !canSee(currentItem.module)
   const visibleItems = navItems.filter((i) => canSee(i.module))
 
   // A user without dashboard access lands on their first accessible module.
@@ -151,7 +155,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <p className="truncate text-xs font-medium text-foreground">{user?.firstName} {user?.lastName}</p>
             <p className="truncate text-xs text-muted-foreground">{roleLabel}</p>
           </div>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleLogout}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleLogout} aria-label="Se déconnecter" title="Se déconnecter">
             <LogOut className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -180,11 +184,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Topbar */}
         <header className="flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md">
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileOpen(true)}>
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileOpen(true)} aria-label="Ouvrir le menu">
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
-          <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+          <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Changer de thème" title="Changer de thème">
             <Sun className="h-4 w-4 rotate-0 scale-100 dark:-rotate-90 dark:scale-0 transition-all" />
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 dark:rotate-0 dark:scale-100 transition-all" />
           </Button>

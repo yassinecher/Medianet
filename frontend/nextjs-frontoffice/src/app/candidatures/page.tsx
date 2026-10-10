@@ -33,12 +33,12 @@ export default function CandidaturesPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-4xl">
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 flex items-center justify-between">
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Mes Candidatures</h1>
+            <h1 className="text-2xl font-bold text-foreground">Mes candidatures</h1>
             <p className="text-muted-foreground">{candidatures.length} candidature(s)</p>
           </div>
-          <Link href="/programmes">
+          <Link href="/programmes" className="self-start sm:self-auto">
             <Button className="bg-gradient-to-r from-brand-600 to-brand-accent text-white">
               <Plus className="h-4 w-4" />Nouvelle candidature
             </Button>

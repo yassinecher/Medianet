@@ -77,7 +77,7 @@ function JuryWorkspace({ items, myEvalOf }: { items: any[]; myEvalOf: (c: any) =
             )}
           </h2>
           {items.length > 0 && (
-            <Link href="/evaluations" className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">Tout voir</Link>
+            <Link href="/evaluations" className="-my-2 py-2 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">Tout voir</Link>
           )}
         </div>
         {items.length === 0 ? (
@@ -161,7 +161,7 @@ function MentorWorkspace({ orgs }: { orgs: any[] }) {
           )}
         </h2>
         {orgs.length > 0 && (
-          <Link href="/organizations" className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">Tout voir</Link>
+          <Link href="/organizations" className="-my-2 py-2 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">Tout voir</Link>
         )}
       </div>
       {orgs.length === 0 ? (
@@ -196,6 +196,11 @@ function MentorWorkspace({ orgs }: { orgs: any[] }) {
       )}
     </section>
   )
+}
+
+/** French labels for raw programme statuses (never show « OPEN » to users). */
+const PROGRAMME_STATUS_LABEL: Record<string, string> = {
+  DRAFT: 'Brouillon', OPEN: 'Ouvert', IN_PROGRESS: 'En cours', CLOSED: 'Fermé', ARCHIVED: 'Archivé', COMPLETED: 'Terminé',
 }
 
 export default function DashboardPage() {
@@ -336,7 +341,7 @@ export default function DashboardPage() {
                       return (
                         <button key={r} type="button" role="tab" aria-selected={on} onClick={() => setActiveRole(r)}
                           title={`Afficher votre espace ${meta.long}`}
-                          className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition-colors',
+                          className={cn('inline-flex min-h-8 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition-colors sm:min-h-0',
                             on ? cn('bg-white shadow-sm', meta.text) : 'bg-white/15 text-white hover:bg-white/25')}>
                           <Icon className="h-3.5 w-3.5" />{meta.label}
                           {count > 0 && (
@@ -418,23 +423,24 @@ export default function DashboardPage() {
         )}
 
         {/* ── Stats grid ────────────────────────────────────────────── */}
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
           {loading ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />) :
             stats.map((s, i) => {
               const Icon = s.icon
               return (
                 <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
-                  <MagicCard className="p-5 h-full">
+                  <MagicCard className="p-4 sm:p-5 h-full">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground line-clamp-1">{s.label}</p>
+                        {/* Two lines on phones: a 2-column grid leaves ~100px for the label. */}
+                        <p className="text-xs leading-snug text-muted-foreground line-clamp-2 sm:line-clamp-1">{s.label}</p>
                         <p className={`mt-1 text-3xl font-black tabular-nums ${s.color}`}>
                           <NumberTicker value={s.value} />
                         </p>
-                        <p className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">{s.sub}</p>
+                        <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground line-clamp-2 sm:line-clamp-1">{s.sub}</p>
                       </div>
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${s.bg}`}>
-                        <Icon className={`h-5 w-5 ${s.color}`} />
+                      <div className={`flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl ${s.bg}`}>
+                        <Icon className={`h-4 w-4 sm:h-5 sm:w-5 ${s.color}`} />
                       </div>
                     </div>
                   </MagicCard>
@@ -512,7 +518,7 @@ export default function DashboardPage() {
                             {p.tagline && <p className="line-clamp-1 text-xs text-muted-foreground">{p.tagline}</p>}
                             <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
                               {p.location && <span className="flex items-center gap-0.5"><MapPin className="h-2.5 w-2.5" />{p.location}</span>}
-                              <span className={`rounded-full px-1.5 py-0.5 font-bold ${statusColor(p.status)}`}>{p.status === 'IN_PROGRESS' ? 'En cours' : p.status}</span>
+                              <span className={`rounded-full px-1.5 py-0.5 font-bold ${statusColor(p.status)}`}>{PROGRAMME_STATUS_LABEL[p.status] ?? p.status}</span>
                             </div>
                           </div>
                         </div>
@@ -534,7 +540,7 @@ export default function DashboardPage() {
                     <FileText className="h-4 w-4 text-brand-500" />Mes candidatures récentes
                   </h2>
                   {candidatures.length > 0 && (
-                    <Link href="/candidatures" className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
+                    <Link href="/candidatures" className="-my-2 py-2 text-xs text-brand-600 hover:underline flex items-center gap-0.5">
                       Tout voir<ArrowRight className="h-3 w-3" />
                     </Link>
                   )}
@@ -590,7 +596,7 @@ export default function DashboardPage() {
                   <h2 className="font-bold text-foreground flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-brand-500" />Programmes recommandés
                   </h2>
-                  <Link href="/programmes" className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
+                  <Link href="/programmes" className="-my-2 py-2 text-xs text-brand-600 hover:underline flex items-center gap-0.5">
                     Tout voir<ArrowRight className="h-3 w-3" />
                   </Link>
                 </div>
@@ -629,7 +635,7 @@ export default function DashboardPage() {
                   <CheckSquare className="h-4 w-4 text-brand-500" />Tâches en cours
                 </h2>
                 {tasks.length > 0 && (
-                  <Link href="/tasks" className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
+                  <Link href="/tasks" className="-my-2 py-2 text-xs text-brand-600 hover:underline flex items-center gap-0.5">
                     Tout voir<ArrowRight className="h-3 w-3" />
                   </Link>
                 )}

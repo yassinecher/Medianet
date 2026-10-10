@@ -208,7 +208,7 @@ export default function ProgrammePageBuilder() {
   if (!programme || !fields || !page) {
     return (
       <AdminLayout>
-        <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[280px_1fr]">
           <Skeleton className="h-[60vh] rounded-2xl" />
           <Skeleton className="h-[60vh] rounded-2xl" />
         </div>

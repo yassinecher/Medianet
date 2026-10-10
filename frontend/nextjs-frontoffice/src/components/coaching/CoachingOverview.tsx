@@ -136,12 +136,12 @@ export function CoachingOverview({ p, isMentor, onGoTab }: {
             <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-foreground"><UserRound className="h-4 w-4 text-brand-500" />Contact</h3>
             <p className="text-sm font-semibold text-foreground">{p.porteurName || 'Porteur'}</p>
             {p.porteurEmail && (
-              <a href={`mailto:${p.porteurEmail}`} className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-brand-600 hover:underline dark:text-brand-400">
-                <Mail className="h-3.5 w-3.5" />{p.porteurEmail}
+              <a href={`mailto:${p.porteurEmail}`} className="mt-0.5 flex w-fit items-center gap-1.5 text-xs text-brand-600 [overflow-wrap:anywhere] hover:underline dark:text-brand-400">
+                <Mail className="h-3.5 w-3.5 shrink-0" />{p.porteurEmail}
               </a>
             )}
             {p.programmeName && (
-              <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"><FolderKanban className="h-3.5 w-3.5" />{p.programmeName}</p>
+              <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground"><FolderKanban className="h-3.5 w-3.5 shrink-0" />{p.programmeName}</p>
             )}
           </div>
 

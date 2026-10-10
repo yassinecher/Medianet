@@ -108,7 +108,7 @@ export default function DocumentationPage() {
           description="Tout ce que vous pouvez faire dans la console — expliqué pas à pas, avec des repères visuels de l’interface."
         />
 
-        <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
           {/* ── Sticky table of contents ─────────────────────────────────── */}
           <aside className="lg:sticky lg:top-2 lg:self-start">
             <div className="relative mb-3">
@@ -120,7 +120,7 @@ export default function DocumentationPage() {
                 className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm outline-none transition-colors focus:border-brand-500"
               />
             </div>
-            <nav className="max-h-[calc(100vh-11rem)] space-y-3 overflow-y-auto pr-1">
+            <nav className="max-h-56 space-y-3 overflow-y-auto rounded-lg border border-border p-2 pr-1 lg:max-h-[calc(100vh-11rem)] lg:rounded-none lg:border-0 lg:p-0 lg:pr-1">
               {groups.length === 0 && (
                 <p className="px-2 py-1 text-xs text-muted-foreground">Aucune rubrique ne correspond à « {query} ».</p>
               )}

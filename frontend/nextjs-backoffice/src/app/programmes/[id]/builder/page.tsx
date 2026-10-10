@@ -14,6 +14,7 @@ import toast from 'react-hot-toast'
 import { programmesApi } from '@/lib/api'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { BuilderInnerExported } from '../../builder/Builder'
+import { DesktopHint } from '@/components/ui/desktop-hint'
 
 export default function EditProgrammeBuilderPage() {
   const params = useParams<{ id: string }>()
@@ -125,11 +126,15 @@ export default function EditProgrammeBuilderPage() {
 
   return (
     <AdminLayout>
+      <DesktopHint />
+      {/* The canvas keeps its desktop width; it scrolls here instead of widening the page. */}
+      <div className="max-w-full overflow-x-auto">
       <BuilderInnerExported
         existingProgrammeId={id}
         initialNodes={initial.nodes}
         initialEdges={initial.edges}
       />
+      </div>
     </AdminLayout>
   )
 }

@@ -7,6 +7,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
+import Link from 'next/link'
 import { CheckCircle2, Loader2, AlertTriangle, Send, Star } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { evaluationApi, programmesApi } from '@/lib/api'
@@ -151,6 +152,7 @@ export default function EvaluateTokenPage() {
           <div className="rounded-full bg-rose-500/10 p-3"><AlertTriangle className="h-7 w-7 text-rose-500" /></div>
           <h1 className="text-lg font-bold text-foreground">Évaluation indisponible</h1>
           <p className="max-w-sm text-sm text-muted-foreground">{error ?? 'Lien invalide.'}</p>
+          <Link href="/" className="mt-2 inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent">Retour à l&apos;accueil</Link>
         </div>
       </Shell>
     )

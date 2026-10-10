@@ -573,8 +573,13 @@ export default function CandidaterPage() {
   const [selectedOrgName, setSelectedOrgName] = useState<string>('')
   /** Flips true when the user tries to advance with missing required fields → highlights them. */
   const [showStepErrors, setShowStepErrors] = useState(false)
+  // The hydration render has no user yet: deciding "not logged in" there sent
+  // every direct visit / refresh of this page to /login → /dashboard.
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
 
   useEffect(() => {
+    if (!hydrated) return
     if (!user) { router.push('/login'); return }
     const numericId = Number(id)
     if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -589,7 +594,7 @@ export default function CandidaterPage() {
         router.replace('/programmes')
       })
       .finally(() => setLoading(false))
-  }, [id, user])
+  }, [id, user, hydrated])
 
   const set = (k: keyof FormData, v: string) =>
     setForm(prev => ({ ...prev, [k]: v }))

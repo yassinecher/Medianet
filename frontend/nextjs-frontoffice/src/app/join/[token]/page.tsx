@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Building2, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { orgInvitationsApi } from '@/lib/api'
@@ -64,6 +65,7 @@ export default function JoinPage() {
             <div className="rounded-full bg-rose-500/10 p-3"><AlertTriangle className="h-7 w-7 text-rose-500" /></div>
             <h1 className="text-lg font-bold text-foreground">Invitation indisponible</h1>
             <p className="max-w-xs text-sm text-muted-foreground">{error}</p>
+            <Link href="/" className="mt-2 inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent">Retour à l&apos;accueil</Link>
           </div>
         ) : invite?.alreadyAccepted ? (
           <div className="flex flex-col items-center gap-3 py-8 text-center">

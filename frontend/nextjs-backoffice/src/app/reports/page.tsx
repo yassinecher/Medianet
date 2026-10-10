@@ -167,7 +167,7 @@ export default function ReportsPage() {
             </h1>
             <p className="text-muted-foreground">Vue analytique : utilisateurs, programmes, candidatures et invitations</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex rounded-lg border border-border p-0.5">
               {([3, 6, 12] as const).map((m) => (
                 <button key={m} type="button" onClick={() => setMonths(m)}

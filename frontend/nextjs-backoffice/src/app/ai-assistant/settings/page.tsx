@@ -323,13 +323,13 @@ export default function AiSettingsPage() {
   return (
     <AdminLayout>
       <div className="space-y-6 max-w-7xl">
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3">
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-start gap-3">
           <Link href="/ai-assistant">
             <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
           </Link>
-          <div className="flex-1">
+          <div className="min-w-[12rem] flex-1">
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-brand-500" />Paramètres Assistant IA
+              <Sparkles className="h-6 w-6 shrink-0 text-brand-500" />Paramètres Assistant IA
             </h1>
             <p className="text-sm text-muted-foreground">Configurez votre clé API et choisissez le modèle qu'utilisera l'agent.</p>
           </div>

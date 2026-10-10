@@ -169,8 +169,9 @@ export default function PitchWorkspacePage() {
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
           className="flex flex-wrap items-center gap-3">
           <Link href={backHref}><Button variant="ghost" size="icon" aria-label="Retour à la phase"><ArrowLeft className="h-4 w-4" /></Button></Link>
-          <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-2 truncate text-xl font-bold text-foreground">
+          {/* min width → on phones the actions wrap below; the title wraps instead of hiding its badge */}
+          <div className="min-w-[12rem] flex-1">
+            <h1 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xl font-bold text-foreground [overflow-wrap:anywhere]">
               {sub.title || sub.projectName || `Présentation #${sub.id}`}
               <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
                 sub.kind === 'TRAINING' ? 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300'

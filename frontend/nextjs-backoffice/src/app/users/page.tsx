@@ -264,7 +264,8 @@ export default function UsersPage() {
               return (
                 <motion.div key={u.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}>
                   <MagicCard className="p-4">
-                    <div className="flex items-center gap-4">
+                    {/* Phones: the actions wrap onto their own line under the user. */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                       {/* Avatar */}
                       <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white text-sm font-bold
                         ${disabled
@@ -287,11 +288,11 @@ export default function UsersPage() {
                           )}
                         </div>
                         <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-muted-foreground">
-                          <span>{u.email}</span>
-                          {u.createdAt && <span>· Inscrit {formatDate(u.createdAt)}</span>}
+                          <span className="break-all">{u.email}</span>
+                          {u.createdAt && <span className="whitespace-nowrap">· Inscrit {formatDate(u.createdAt)}</span>}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                      <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto sm:shrink-0 sm:justify-end">
                         {!anyEditing && can('users:update') && (
                           <>
                             <Button variant="ghost" size="sm" onClick={() => openDataEditor(u)} className="gap-1">

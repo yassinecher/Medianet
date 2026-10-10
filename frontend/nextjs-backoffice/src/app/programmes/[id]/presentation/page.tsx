@@ -20,6 +20,7 @@ import { programmesApi, sessionsApi, canvaApi, adminAiApi, notificationsApi, fil
 import { ImageUpload } from '@/components/upload/ImageUpload'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { DesktopHint } from '@/components/ui/desktop-hint'
 
 /**
  * Studio de présentation v4 — Canva-like:
@@ -1417,6 +1418,7 @@ export default function PresentationStudioPage() {
       {/* ══ STUDIO ══ */}
       {mode === 'edit' && (
         <div className="flex h-screen flex-col bg-background print:hidden">
+          <DesktopHint className="m-2 mb-0">Le studio de présentation est conçu pour un grand écran : sur téléphone, utilisez-le pour relire ou présenter, et faites les retouches sur ordinateur.</DesktopHint>
           {/* Row 1 — présentation + actions */}
           <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2">
             <Link href={`/programmes/${programmeId}`}>

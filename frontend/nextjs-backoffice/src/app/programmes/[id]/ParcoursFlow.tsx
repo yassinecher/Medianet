@@ -58,7 +58,7 @@ export function ParcoursFlow({ phases }: { phases: Phase[] }) {
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mb-3">
         <span className="text-sm font-bold text-foreground">Flux du parcours</span>
         <span className="text-[11px] text-muted-foreground">· {flowLabel}</span>
         <span className="ml-auto text-[10px] text-muted-foreground italic">avance automatiquement selon les dates</span>
