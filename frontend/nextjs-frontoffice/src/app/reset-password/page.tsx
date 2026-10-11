@@ -106,7 +106,7 @@ export default function ResetPasswordPage() {
                 </p>
               )}
               <Button type="submit" disabled={loading || !token || password.length < 8 || password !== confirm}
-                className="w-full text-white" style={{ background: 'linear-gradient(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.22)), var(--banner-bg, linear-gradient(90deg,#0084c7,#00a3e0))' }}>
+                className="w-full text-white" style={{ background: 'var(--banner-bg, linear-gradient(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.22)), linear-gradient(90deg,#0084c7,#00a3e0))' }}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Enregistrer le mot de passe
               </Button>

@@ -71,11 +71,11 @@ export function ProgrammeHero({ programme, settings, apply, journeyAnchor }: {
       ) : (
         <>
           <div className="absolute inset-0 -z-20"
-            style={{ background: 'var(--banner-bg, linear-gradient(120deg, #0a6f8f 0%, #0a8fb1 40%, #14c8f3 75%, #fbb431 115%))' }} />
+            style={{ background: 'var(--banner-bg, linear-gradient(rgb(2 6 23 / 0.3), rgb(2 6 23 / 0.3)), linear-gradient(120deg, #0a6f8f 0%, #0a8fb1 40%, #14c8f3 75%, #fbb431 115%))' }} />
           <div className="absolute inset-0 -z-10 opacity-[0.15]"
             style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '30px 30px' }} />
           <div className="absolute -right-24 -top-24 -z-10 h-96 w-96 rounded-full bg-white/20 blur-3xl" />
-          <div className="absolute inset-0 -z-10 bg-gradient-to-t from-slate-950/75 via-slate-950/40 to-slate-950/20" />
+          <div className="absolute inset-0 -z-10 bg-gradient-to-t from-slate-950/70 via-slate-950/20 to-transparent" />
         </>
       )}
 

@@ -91,7 +91,9 @@ export default function ProgrammesPage() {
       <motion.div
         initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}
         className="relative mb-6 overflow-hidden rounded-3xl p-7 sm:p-9 text-white shadow-lg dark:brightness-90"
-        style={{ background: 'var(--banner-bg, linear-gradient(90deg, #fbb431 0%, #0a8fb1 45%, #14c8f3 100%))' }}
+        // The theme's --banner-bg is white-text-safe already; only the bright built-in
+        // default needs a dark layer (white text on it measured 2.1–3.4:1).
+        style={{ background: 'var(--banner-bg, linear-gradient(rgb(0 0 0 / 0.35), rgb(0 0 0 / 0.35)), linear-gradient(90deg, #fbb431 0%, #0a8fb1 45%, #14c8f3 100%))' }}
       >
         {/* dot texture */}
         <div className="pointer-events-none absolute inset-0 opacity-20"
@@ -99,8 +101,6 @@ export default function ProgrammesPage() {
         {/* soft glow blobs */}
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-20 left-1/3 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
-        {/* readability scrim: white text on the bright gold/cyan gradient measured 2.1–3.4:1 */}
-        <div className="pointer-events-none absolute inset-0 bg-black/35" />
 
         <div className="relative">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold backdrop-blur-sm">
